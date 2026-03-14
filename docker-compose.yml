@@ -1,0 +1,30 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: docker/backend.Dockerfile
+    container_name: auraeve-backend
+    restart: unless-stopped
+    environment:
+      PYTHONUNBUFFERED: "1"
+      AURAEVE_STATE_DIR: /app/.auraeve
+    volumes:
+      - ${HOME}/.auraeve:/app/.auraeve
+    ports:
+      - "${BACKEND_PORT:-18080}:8080"
+      - "${NODE_PORT:-8765}:8765"
+
+  webui:
+    build:
+      context: .
+      dockerfile: docker/webui.Dockerfile
+    container_name: auraeve-webui
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      AURAEVE_API_UPSTREAM: "${AURAEVE_API_UPSTREAM:-backend:8080}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "${WEBUI_PORT:-18081}:80"

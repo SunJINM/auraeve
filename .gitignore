@@ -1,0 +1,54 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+# 虚拟环境
+.venv/
+venv/
+env/
+.env
+
+# 敏感配置（包含 API Key 和密钥，请勿提交真实配置）
+auraeve/config.py
+node_client/config.py
+
+# IDE / 编辑器
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Claude Code 本地设置
+.claude/settings.local.json
+
+# 运行时数据
+workspace/memory/
+workspace/scripts/
+workspace/media/
+~/.auraeve/
+
+# 日志
+*.log
+logs/
+deploy/*.pid
+
+# 根目录误操作产生的 Node 文件（前端在 webui/ 目录）
+/node_modules/
+/package.json
+/package-lock.json
+workspace/.clawhub/
+workspace/skills/
+
+workspace/.auraeve/
+
+# Local assistant instructions (do not publish)
+AGENT.md
+CLAUDE.md

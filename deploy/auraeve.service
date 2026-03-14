@@ -1,0 +1,27 @@
+[Unit]
+Description=auraeve AI 助手服务
+After=network.target
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=YOUR_USER
+WorkingDirectory=/YOUR/PATH/TO/auraeve
+ExecStart=/YOUR/PATH/TO/venv/bin/python -u main.py
+Environment="PYTHONUNBUFFERED=1"
+
+# 崩溃时自动重启，重启间隔 5 秒
+Restart=on-failure
+RestartSec=5
+
+# 优雅关闭：先发 SIGTERM，等 30 秒后强制 SIGKILL
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=auraeve
+
+[Install]
+WantedBy=multi-user.target

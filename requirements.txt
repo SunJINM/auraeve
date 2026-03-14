@@ -1,0 +1,70 @@
+# auraeve dependencies
+# Install: pip install -r requirements.txt
+
+# OpenAI-compatible SDK (supports OpenAI / DeepSeek / Moonshot / Qwen / Ollama etc.)
+openai>=1.30.0
+
+# Fault-tolerant JSON parsing
+json-repair>=0.25.0
+
+# Logging
+loguru>=0.7.0
+
+# HTTP client (web_fetch / web_search / DingTalk API)
+httpx>=0.27.0
+# Keep requests dependency set compatible when transitive packages pull chardet.
+chardet<6
+
+# Web content extraction (web_fetch tool)
+readability-lxml>=0.8.1
+
+# DingTalk Stream SDK
+dingtalk-stream>=0.19.0
+
+# Cron expression support
+croniter>=2.0.0
+
+# WebSocket client (NapCat/QQ channel)
+websockets>=12.0
+
+# MCP tool protocol
+mcp>=1.0.0
+
+# TTS voice synthesis (NapCat channel voice messages)
+edge-tts>=6.1.12
+
+# Silk audio decoder: converts QQ silk voice to wav (no ffmpeg needed)
+pilk>=0.2.0
+# Bundled ffmpeg binary for audio normalization
+imageio-ffmpeg>=0.5.0
+
+# Vector memory: numpy for cosine similarity, tiktoken for accurate token estimation
+numpy>=1.24.0
+tiktoken>=0.7.0
+
+# Browser automation (browser tool: navigate, screenshot, act, pdf_save)
+playwright>=1.40.0
+
+# PDF text extraction (pdf tool: extract, metadata, tables)
+pdfplumber>=0.10.0
+
+# File attachment support (inbound files from NapCat/QQ)
+# PDF text extraction via pdfminer (higher fidelity than pdfplumber for raw text)
+pdfminer.six>=20221105
+# MIME type sniffing via magic bytes (requires system libmagic: apt install libmagic1)
+python-magic>=0.4.27
+# PDF page rendering for scanned PDFs (fallback when text extraction yields < 200 chars)
+# requires system poppler: apt install poppler-utils
+pdf2image>=1.17.0
+
+# Optional local STT provider (install only when needed):
+# funasr>=1.1.0
+# torch>=2.0.0
+# torchaudio>=2.0.0
+
+# WebUI: HTTP server + SSE
+fastapi>=0.111.0
+uvicorn>=0.30.0
+
+# CLI framework
+typer>=0.12.0
