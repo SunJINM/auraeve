@@ -20,6 +20,7 @@ const NAV_ITEMS = [
   { key: 'plugins' as const, label: '插件管理', icon: HiPuzzlePiece },
   { key: 'skills' as const, label: '技能管理', icon: HiSparkles },
   { key: 'logs' as const, label: '日志中心', icon: HiDocumentText },
+  { key: 'profile' as const, label: '资料迁移', icon: HiDocumentText },
 ]
 
 interface Props {

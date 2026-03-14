@@ -305,3 +305,13 @@ class LogsExportRequest(BaseModel):
     fromTs: str | None = None
     toTs: str | None = None
     limit: int = Field(default=5000, ge=1, le=10000)
+
+
+class ProfileImportResponse(BaseModel):
+    ok: bool
+    archive: str
+    stateDir: str
+    configPath: str
+    stateBackup: str | None = None
+    configBackup: str | None = None
+    format: str

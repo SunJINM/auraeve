@@ -21,6 +21,7 @@ from auraeve.webui.plugin_service import PluginWebService
 from auraeve.webui.log_service import LogWebService
 from auraeve.webui.skill_service import SkillWebService
 from auraeve.webui.upload_service import UploadWebService
+from auraeve.webui.profile_service import ProfileWebService
 from auraeve.webui.schemas import (
     ChatAbortRequest,
     ChatAbortResponse,
@@ -66,6 +67,7 @@ from auraeve.webui.schemas import (
     LogsStatsResponse,
     LogsContextResponse,
     LogsExportRequest,
+    ProfileImportResponse,
 )
 
 
@@ -106,6 +108,7 @@ class WebUIServer:
         )
         self._server: uvicorn.Server | None = None
         self._upload = UploadWebService()
+        self._profile = ProfileWebService()
         self._logs = LogWebService()
         self._app = self._build_app()
 
@@ -275,6 +278,30 @@ class WebUIServer:
                 media_type=media_type,
                 headers={"Content-Disposition": f'attachment; filename="{filename}"'},
             )
+
+        @app.get("/api/webui/profile/export", dependencies=[auth])
+        async def profile_export():
+            content, filename = self._profile.export_archive()
+            return StreamingResponse(
+                iter([content]),
+                media_type="application/octet-stream",
+                headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+            )
+
+        @app.post("/api/webui/profile/import", response_model=ProfileImportResponse, dependencies=[auth])
+        async def profile_import(
+            file: UploadFile = File(...),
+            force: bool = Query(default=False),
+        ) -> ProfileImportResponse:
+            try:
+                payload = await self._profile.import_archive(file, force=force)
+            except FileNotFoundError as exc:
+                raise HTTPException(status_code=404, detail=str(exc))
+            except RuntimeError as exc:
+                raise HTTPException(status_code=400, detail=str(exc))
+            except Exception as exc:
+                raise HTTPException(status_code=500, detail=f"profile import failed: {exc}")
+            return ProfileImportResponse(**payload)
 
         @app.get("/api/webui/config/get", response_model=ConfigGetResponse, dependencies=[auth])
         async def config_get() -> ConfigGetResponse:

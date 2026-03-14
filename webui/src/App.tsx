@@ -8,6 +8,7 @@ import { McpPage } from './pages/McpPage'
 import { PluginsPage } from './pages/PluginsPage'
 import { SkillsPage } from './pages/SkillsPage'
 import { LogsPage } from './pages/LogsPage'
+import { ProfilePage } from './pages/ProfilePage'
 import { useAppStore } from './store/app'
 
 function App() {
@@ -24,6 +25,7 @@ function App() {
     if (page === 'mcp') return 'MCP 管理'
     if (page === 'plugins') return '插件管理'
     if (page === 'logs') return '日志中心'
+    if (page === 'profile') return '资料迁移'
     return '技能管理'
   }, [page])
 
@@ -65,6 +67,7 @@ function App() {
               {page === 'plugins' && <PluginsPage />}
               {page === 'skills' && <SkillsPage />}
               {page === 'logs' && <LogsPage />}
+              {page === 'profile' && <ProfilePage />}
             </section>
           </main>
         </div>

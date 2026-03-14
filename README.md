@@ -99,7 +99,7 @@ AuraEve 当前记忆体系由三部分组成：
 ### 当前边界
 
 - 长期记忆更新目前是“整文重写”策略（由 LLM 产出完整 `updated_memory_markdown`）
-- 暂无内建冲突合并/版本回滚机制，建议将 `workspace/memory` 纳入你自己的备份策略
+- 导入是全量覆盖模式（可自动生成备份目录），不做细粒度冲突合并
 - 若切换到 `legacy` 上下文引擎，将不会注册 `memory_search` 语义检索工具
 
 ## 配置说明
@@ -125,6 +125,10 @@ python -m auraeve config doctor --fix
 python -m auraeve config get LLM_MODEL
 python -m auraeve config set LLM_MODEL '"gpt-4o-mini"' --strict-json
 python -m auraeve config unset LLM_MODEL
+
+# 个人资料迁移（配置/记忆/技能/插件/状态）
+python -m auraeve profile export ./my-profile.auraeve
+python -m auraeve profile import ./my-profile.auraeve --force
 ```
 
 ## 插件与技能
@@ -191,4 +195,3 @@ auraeve/
 - 仓库中的配置均为模板或占位符，不包含真实密钥
 - 不要提交真实 `auraeve.json`、账号 ID、私有路径、令牌或私钥
 - 建议通过环境变量或私有配置注入敏感信息
-

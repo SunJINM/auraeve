@@ -5,12 +5,14 @@ import json
 import os
 import subprocess
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 import typer
 
 import auraeve.config as cfg
+from auraeve.profile_transfer import export_profile_archive, import_profile_archive
 from auraeve.plugins.cli import (
     disable_command as plugins_disable_command,
     doctor_command as plugins_doctor_command,
@@ -67,12 +69,16 @@ skills_app = typer.Typer(
 deploy_app = typer.Typer(
     help="Deployment helper commands that proxy scripts under deploy/."
 )
+profile_app = typer.Typer(
+    help="Export/import full personal runtime profile (config, memory, skills, plugins, state)."
+)
 
 app.add_typer(config_app, name="config")
 app.add_typer(workspace_app, name="workspace")
 app.add_typer(plugins_app, name="plugins")
 app.add_typer(skills_app, name="skills")
 app.add_typer(deploy_app, name="deploy")
+app.add_typer(profile_app, name="profile")
 
 
 def _print_json(payload: Any) -> None:
@@ -577,6 +583,64 @@ def workspace_resolve(
         print(f"decision: {payload['decision']}")
         print(f"stateDir: {payload['stateDir']}")
         print(f"configPath: {payload['configPath']}")
+    raise typer.Exit(code=0)
+
+
+@profile_app.command("export")
+def profile_export(
+    output: str = typer.Argument(
+        "",
+        help="Output archive path (.auraeve). Default: ./auraeve-profile-YYYYMMDD-HHMMSS.auraeve",
+    ),
+    as_json: bool = typer.Option(False, "--json", help="JSON output."),
+) -> None:
+    """Export full personal profile into one .auraeve archive."""
+    if output.strip():
+        target = output.strip()
+    else:
+        target = f"auraeve-profile-{datetime.now().strftime('%Y%m%d-%H%M%S')}.auraeve"
+    payload = export_profile_archive(target)
+    if as_json:
+        _print_json(payload)
+    else:
+        print(f"Exported profile: {payload['archive']}")
+        print(f"files: {payload['files']}")
+        print(f"bytes: {payload['bytes']}")
+        print(f"stateDir: {payload['stateDir']}")
+        print(f"configPath: {payload['configPath']}")
+    raise typer.Exit(code=0)
+
+
+@profile_app.command("import")
+def profile_import(
+    archive: str = typer.Argument(..., help="Input .auraeve archive path."),
+    force: bool = typer.Option(False, "--force", help="Overwrite existing local profile state."),
+    as_json: bool = typer.Option(False, "--json", help="JSON output."),
+) -> None:
+    """Import profile archive and optionally overwrite local state."""
+    try:
+        payload = import_profile_archive(archive, force=force)
+    except FileNotFoundError as exc:
+        print(str(exc))
+        raise typer.Exit(code=1)
+    except RuntimeError as exc:
+        print(str(exc))
+        raise typer.Exit(code=2)
+    except Exception as exc:
+        print(f"import failed: {exc}")
+        raise typer.Exit(code=3)
+
+    cfg.reload()
+    if as_json:
+        _print_json(payload)
+    else:
+        print(f"Imported profile from: {payload['archive']}")
+        print(f"stateDir: {payload['stateDir']}")
+        print(f"configPath: {payload['configPath']}")
+        if payload.get("stateBackup"):
+            print(f"stateBackup: {payload['stateBackup']}")
+        if payload.get("configBackup"):
+            print(f"configBackup: {payload['configBackup']}")
     raise typer.Exit(code=0)
 
 

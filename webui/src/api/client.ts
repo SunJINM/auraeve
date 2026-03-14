@@ -541,3 +541,48 @@ export const skillApi = {
   doctor: () => req<SkillDoctorResp>('GET', '/skills/doctor'),
   sync: (all = false, dryRun = false) => req<SkillActionResp>('POST', '/skills/sync', { all, dryRun }),
 }
+
+export interface ProfileImportResp {
+  ok: boolean
+  archive: string
+  stateDir: string
+  configPath: string
+  stateBackup?: string | null
+  configBackup?: string | null
+  format: string
+}
+
+export const profileApi = {
+  async exportArchive(): Promise<void> {
+    const res = await fetch(`${BASE}/profile/export`, {
+      method: 'GET',
+      headers: (() => {
+        const h: Record<string, string> = {}
+        const t = token()
+        if (t) h['X-WEBUI-TOKEN'] = t
+        return h
+      })(),
+    })
+    if (res.status === 401) throw new Error('UNAUTHORIZED')
+    if (!res.ok) {
+      throw new Error((await res.text()) || res.statusText)
+    }
+    const blob = await res.blob()
+    const cd = res.headers.get('Content-Disposition') || ''
+    const match = /filename=\"?([^\";]+)\"?/i.exec(cd)
+    const filename = match?.[1] || 'auraeve-profile.auraeve'
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+  },
+  importArchive: (file: File, force = false) => {
+    const form = new FormData()
+    form.append('file', file)
+    return reqForm<ProfileImportResp>(`/profile/import?force=${force ? 'true' : 'false'}`, form)
+  },
+}
