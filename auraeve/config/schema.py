@@ -450,6 +450,8 @@ _SCHEMA_GROUPS: list[tuple[str, str, list[str]]] = [
             "MEMORY_TEXT_WEIGHT",
             "MEMORY_MMR_LAMBDA",
             "MEMORY_TEMPORAL_HALF_LIFE_DAYS",
+            "MEMORY_INCLUDE_SESSIONS",
+            "MEMORY_SESSIONS_MAX_MESSAGES",
         ],
     ),
     (

@@ -143,6 +143,9 @@ async def main(terminal_mode: bool = False) -> None:
             text_weight=getattr(cfg, "MEMORY_TEXT_WEIGHT", 0.3),
             mmr_lambda=getattr(cfg, "MEMORY_MMR_LAMBDA", 0.7),
             half_life_days=getattr(cfg, "MEMORY_TEMPORAL_HALF_LIFE_DAYS", 30.0),
+            sessions_dir=sessions_dir,
+            include_sessions=bool(getattr(cfg, "MEMORY_INCLUDE_SESSIONS", False)),
+            sessions_max_messages=int(getattr(cfg, "MEMORY_SESSIONS_MAX_MESSAGES", 400)),
             execution_workspace=execution_workspace,
         )
         await engine.bootstrap()

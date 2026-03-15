@@ -149,6 +149,8 @@ def build_defaults() -> dict[str, Any]:
         "MEMORY_TEXT_WEIGHT": 0.3,
         "MEMORY_MMR_LAMBDA": 0.7,
         "MEMORY_TEMPORAL_HALF_LIFE_DAYS": 30.0,
+        "MEMORY_INCLUDE_SESSIONS": False,
+        "MEMORY_SESSIONS_MAX_MESSAGES": 400,
         "TOKEN_BUDGET": 120000,
         "COMPACTION_THRESHOLD_RATIO": 0.85,
         "NODE_ENABLED": True,

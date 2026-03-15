@@ -5,7 +5,7 @@ VectorContextEngine：向量记忆检索 + 自动上下文压缩。
 - 记忆检索不再自动注入系统提示词
 - 改由 memory_search 工具（MemorySearchTool）显式调用
 - assemble() 只构建系统提示词 + 历史 + 用户消息，不注入记忆片段
-- after_turn() 继续增量重索引记忆文件，保持向量库更新
+- 索引同步由 MemoryManager 管理（增量 + 周期扫描 + 可选 sessions 源）
 """
 
 from __future__ import annotations
@@ -42,7 +42,7 @@ class VectorContextEngine(ContextEngine):
     """
     完整上下文引擎：
     1. 上下文超限时自动压缩（LLM 摘要 + 标识符保全）
-    2. 每轮结束后增量重索引记忆文件（供 memory_search 工具使用）
+    2. 每轮结束后触发 MemoryManager 增量同步（供 memory_search 工具使用）
     3. 记忆检索已移交给 MemorySearchTool（显式工具，按需调用）
     """
 
@@ -59,6 +59,9 @@ class VectorContextEngine(ContextEngine):
         text_weight: float = 0.3,
         mmr_lambda: float = 0.7,
         half_life_days: float = 30.0,
+        sessions_dir: Path | None = None,
+        include_sessions: bool = False,
+        sessions_max_messages: int = 400,
         execution_workspace: str | None = None,
     ) -> None:
         self.workspace = workspace
@@ -82,6 +85,9 @@ class VectorContextEngine(ContextEngine):
             text_weight=self.text_weight,
             mmr_lambda=self.mmr_lambda,
             half_life_days=self.half_life_days,
+            sessions_dir=sessions_dir,
+            include_sessions=include_sessions,
+            sessions_max_messages=sessions_max_messages,
         )
         self._context_builder = _get_context_builder()(
             workspace,

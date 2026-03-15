@@ -23,7 +23,7 @@ class MemoryGetTool(Tool):
     def description(self) -> str:
         return (
             "按路径读取记忆文件内容（支持 from/lines 行范围）。"
-            "仅允许读取 MEMORY.md、memory.md 或 memory/*.md。"
+            "允许读取 MEMORY.md、memory.md、memory/*.md，以及 sessions/*.md（虚拟会话文档）。"
         )
 
     @property
@@ -52,4 +52,3 @@ class MemoryGetTool(Tool):
                 {"path": path, "text": "", "disabled": True, "error": str(exc)},
                 ensure_ascii=False,
             )
-

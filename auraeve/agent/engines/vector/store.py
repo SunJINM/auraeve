@@ -15,6 +15,7 @@ import math
 import re
 import sqlite3
 import time
+from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -178,27 +179,45 @@ class VectorMemoryStore:
             return 0
 
         content = file_path.read_text(encoding="utf-8", errors="replace")
+        return await self.index_content(
+            path_key=path_str,
+            source=source,
+            content=content,
+            mtime=stat.st_mtime,
+            embedder=embedder,
+        )
+
+    async def index_content(
+        self,
+        *,
+        path_key: str,
+        source: str,
+        content: str,
+        mtime: float,
+        embedder: Embedder,
+    ) -> int:
         file_hash = hashlib.sha256(content.encode()).hexdigest()
 
-        # 检查是否已索引且未变更
         row = self._conn.execute(
-            "SELECT hash FROM memory_files WHERE path = ?", (path_str,)
+            "SELECT hash FROM memory_files WHERE path = ?", (path_key,)
         ).fetchone()
         if row and row[0] == file_hash:
             return 0
 
-        # 分块
-        chunks = _chunk_markdown(content, path_str)
+        chunks = _chunk_markdown(content, path_key)
         if not chunks:
+            # 文件过短时，清理旧索引并保留文件元信息，避免反复脏重建。
+            self._delete_file_chunks(path_key)
+            self._conn.execute(
+                "INSERT OR REPLACE INTO memory_files (path, source, hash, mtime) VALUES (?, ?, ?, ?)",
+                (path_key, source, file_hash, mtime),
+            )
+            self._conn.commit()
             return 0
 
-        # 嵌入（带缓存）
         embeddings = await self._embed_chunks(chunks, embedder)
+        self._delete_file_chunks(path_key)
 
-        # 删除旧 chunk
-        self._delete_file_chunks(path_str)
-
-        # 写入新 chunk
         now = time.time()
         for (chunk_text, start_line, end_line), embedding in zip(chunks, embeddings):
             chunk_hash = hashlib.sha256(chunk_text.encode()).hexdigest()
@@ -208,23 +227,20 @@ class VectorMemoryStore:
                 """INSERT OR REPLACE INTO memory_chunks
                    (id, path, source, start_line, end_line, hash, text, embedding, model, updated_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (chunk_id, path_str, source, start_line, end_line,
+                (chunk_id, path_key, source, start_line, end_line,
                  chunk_hash, chunk_text, emb_json, embedder.model, now),
             )
             if self._has_fts5:
-                self._conn.execute(
-                    "DELETE FROM memory_fts WHERE id = ?", (chunk_id,)
-                )
+                self._conn.execute("DELETE FROM memory_fts WHERE id = ?", (chunk_id,))
                 self._conn.execute(
                     """INSERT INTO memory_fts (text, id, path, source, model, start_line, end_line)
                        VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                    (chunk_text, chunk_id, path_str, source, embedder.model, start_line, end_line),
+                    (chunk_text, chunk_id, path_key, source, embedder.model, start_line, end_line),
                 )
 
-        # 更新文件记录
         self._conn.execute(
             "INSERT OR REPLACE INTO memory_files (path, source, hash, mtime) VALUES (?, ?, ?, ?)",
-            (path_str, source, file_hash, stat.st_mtime),
+            (path_key, source, file_hash, mtime),
         )
         self._conn.commit()
         return len(chunks)
@@ -392,12 +408,6 @@ class VectorMemoryStore:
 
     # ── 文件哈希检查 ──────────────────────────────────────────
 
-    def get_file_hash(self, path_str: str) -> str | None:
-        row = self._conn.execute(
-            "SELECT hash FROM memory_files WHERE path = ?", (path_str,)
-        ).fetchone()
-        return row[0] if row else None
-
     def delete_file(self, path_str: str) -> None:
         self._delete_file_chunks(path_str)
         self._conn.execute("DELETE FROM memory_files WHERE path = ?", (path_str,))
@@ -406,9 +416,16 @@ class VectorMemoryStore:
     def counts(self) -> dict[str, int]:
         files_row = self._conn.execute("SELECT COUNT(*) FROM memory_files").fetchone()
         chunks_row = self._conn.execute("SELECT COUNT(*) FROM memory_chunks").fetchone()
+        source_rows = self._conn.execute(
+            "SELECT source, COUNT(*) FROM memory_chunks GROUP BY source"
+        ).fetchall()
+        by_source: dict[str, int] = defaultdict(int)
+        for source, count in source_rows:
+            by_source[str(source)] = int(count)
         return {
             "files": int(files_row[0] if files_row else 0),
             "chunks": int(chunks_row[0] if chunks_row else 0),
+            "source_counts": dict(by_source),
         }
 
 

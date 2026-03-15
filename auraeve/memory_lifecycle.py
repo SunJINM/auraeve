@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 from dataclasses import dataclass
 from datetime import datetime
@@ -11,6 +12,9 @@ from zoneinfo import ZoneInfo
 from loguru import logger
 
 from auraeve.providers.base import LLMProvider
+
+
+CONTROL_TOKENS = {"__SILENT__", "HEARTBEAT_OK"}
 
 
 @dataclass
@@ -46,6 +50,8 @@ class MemoryLifecycleService:
         self._timezone_name = timezone
         self._memory_dir = workspace / "memory"
         self._memory_file = self._memory_dir / "MEMORY.md"
+        self._audit_dir = self._memory_dir / ".audit"
+        self._audit_file = self._audit_dir / "long_term_patch.log"
         self._queue: asyncio.Queue[LongTermCandidate] = asyncio.Queue()
         self._worker_task: asyncio.Task | None = None
         self._running = False
@@ -74,6 +80,7 @@ class MemoryLifecycleService:
 
     def ensure_initialized(self) -> None:
         self._memory_dir.mkdir(parents=True, exist_ok=True)
+        self._audit_dir.mkdir(parents=True, exist_ok=True)
         if not self._memory_file.exists():
             self._memory_file.write_text(
                 "# MEMORY\n\n"
@@ -94,8 +101,8 @@ class MemoryLifecycleService:
     ) -> None:
         if channel in {"heartbeat", "system", "cron"}:
             return
-        user_text = (user_content or "").strip()
-        assistant_text = (assistant_content or "").strip()
+        user_text = self._sanitize_content(user_content)
+        assistant_text = self._sanitize_content(assistant_content)
         if not user_text and not assistant_text:
             return
 
@@ -123,6 +130,15 @@ class MemoryLifecycleService:
             self._queue.put_nowait(candidate)
         except Exception as exc:  # noqa: BLE001
             logger.warning(f"[memory] enqueue failed: {exc}")
+
+    def _sanitize_content(self, content: str | None) -> str:
+        text = str(content or "").replace("\r\n", "\n").strip()
+        if not text:
+            return ""
+        if text in CONTROL_TOKENS:
+            return ""
+        lines = [line for line in text.split("\n") if line.strip() not in CONTROL_TOKENS]
+        return "\n".join(lines).strip()
 
     def _tz(self) -> ZoneInfo:
         try:
@@ -249,13 +265,49 @@ class MemoryLifecycleService:
         updated = self._apply_patch_operations(current_memory, ops)
         if not updated:
             return
+
         self._memory_file.write_text(updated, encoding="utf-8")
         if self._on_memory_file_changed is not None:
             try:
                 self._on_memory_file_changed(self._memory_file)
             except Exception as exc:  # noqa: BLE001
                 logger.debug(f"[memory] dirty notify failed: {exc}")
+
+        reason = str(parsed.get("reason") or "").strip()
+        self._append_audit_log(
+            item=item,
+            reason=reason,
+            operations=ops,
+            before=current_memory,
+            after=updated,
+        )
         logger.info("[memory] MEMORY.md updated by patch operations")
+
+    def _append_audit_log(
+        self,
+        *,
+        item: LongTermCandidate,
+        reason: str,
+        operations: list[Any],
+        before: str,
+        after: str,
+    ) -> None:
+        try:
+            self._audit_dir.mkdir(parents=True, exist_ok=True)
+            payload = {
+                "time": datetime.now(self._tz()).isoformat(),
+                "session": item.session_key,
+                "channel": item.channel,
+                "chat_id": item.chat_id,
+                "reason": reason,
+                "operations": operations,
+                "before_sha256": hashlib.sha256(before.encode("utf-8", errors="replace")).hexdigest(),
+                "after_sha256": hashlib.sha256(after.encode("utf-8", errors="replace")).hexdigest(),
+            }
+            with self._audit_file.open("a", encoding="utf-8") as f:
+                f.write(json.dumps(payload, ensure_ascii=False) + "\n")
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(f"[memory] audit log append failed: {exc}")
 
     @staticmethod
     def _parse_json(raw: str) -> dict[str, Any] | None:
