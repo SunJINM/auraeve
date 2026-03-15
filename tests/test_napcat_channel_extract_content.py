@@ -1,6 +1,8 @@
 import asyncio
+from pathlib import Path
 
 from auraeve.bus.events import FileAttachment
+from auraeve.bus.events import OutboundMessage
 from auraeve.bus.queue import MessageBus
 from auraeve.channels.napcat import NapCatChannel, NapCatConfig
 
@@ -136,4 +138,28 @@ def test_build_content_marks_audio_when_only_attachment_present() -> None:
         attachments=[FileAttachment(filename="voice.mp3", url="/tmp/voice.mp3", mime_type="audio/mpeg")],
     )
     assert content == "[语音]"
+
+
+def test_build_message_segments_image_file_uses_base64_uri(tmp_path: Path) -> None:
+    channel = _build_channel()
+    image_path = tmp_path / "sample.png"
+    image_path.write_bytes(b"\x89PNG\r\n\x1a\nfake")
+    msg = OutboundMessage(channel="napcat", chat_id="private:1", content="", file_path=str(image_path))
+
+    segments = channel._build_message_segments(msg)
+    assert len(segments) == 1
+    assert segments[0]["type"] == "image"
+    assert str(segments[0]["data"]["file"]).startswith("base64://")
+
+
+def test_build_message_segments_audio_file_uses_base64_uri(tmp_path: Path) -> None:
+    channel = _build_channel()
+    audio_path = tmp_path / "sample.wav"
+    audio_path.write_bytes(b"RIFFxxxxWAVEfake")
+    msg = OutboundMessage(channel="napcat", chat_id="private:1", content="", file_path=str(audio_path))
+
+    segments = channel._build_message_segments(msg)
+    assert len(segments) == 1
+    assert segments[0]["type"] == "record"
+    assert str(segments[0]["data"]["file"]).startswith("base64://")
 

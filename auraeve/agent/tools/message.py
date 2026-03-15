@@ -1,6 +1,7 @@
 """消息发送工具：向用户发送钉钉消息，支持文本、文件附件和图片。"""
 
 from typing import Any, Callable, Awaitable
+from urllib.parse import urlparse
 
 from auraeve.agent.tools.base import Tool
 from auraeve.bus.events import OutboundMessage
@@ -53,6 +54,19 @@ class MessageTool(Tool):
                 return resolved_channel, owner_id
         resolved_chat_id = chat_id or self._default_chat_id
         return resolved_channel, resolved_chat_id
+
+    @staticmethod
+    def _is_http_url(value: str | None) -> bool:
+        if not value:
+            return False
+        s = str(value).strip()
+        if not s:
+            return False
+        try:
+            parsed = urlparse(s)
+        except Exception:
+            return False
+        return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
 
     @property
     def name(self) -> str:
@@ -112,6 +126,8 @@ class MessageTool(Tool):
         **kwargs: Any
     ) -> str:
         channel, chat_id = self._resolve_channel_chat_id(channel, chat_id)
+        prefer_image_url = self._is_http_url(image_url)
+        normalized_file_path = None if prefer_image_url else (file_path or None)
 
         if not channel or not chat_id:
             return "错误：未指定目标渠道/聊天"
@@ -122,7 +138,7 @@ class MessageTool(Tool):
             channel=channel,
             chat_id=chat_id,
             content=content,
-            file_path=file_path or None,
+            file_path=normalized_file_path,
             image_url=image_url or None,
         )
         direct_sender = self._direct_senders.get(channel)
@@ -134,10 +150,12 @@ class MessageTool(Tool):
                 # 总线发送：异步投递，不感知发送结果（兜底）
                 await self._send_callback(msg)
             parts = [f"消息已发送至 {channel}:{chat_id}"]
-            if file_path:
-                parts.append(f"文件：{file_path}")
+            if normalized_file_path:
+                parts.append(f"文件：{normalized_file_path}")
             if image_url:
                 parts.append(f"图片：{image_url}")
+            if prefer_image_url and file_path:
+                parts.append("已优先使用 image_url（忽略本地 file_path）")
             return "，".join(parts)
         except Exception as e:
             return f"发送消息出错：{str(e)}"

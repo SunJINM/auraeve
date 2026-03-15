@@ -289,6 +289,7 @@ class ContextBuilder:
             "- 任务产出了文件（write_file 写入）→ 任务完成前主动调用 message(file_path=...) 发送",
             "- 主动推送通知 → message(content='通知内容')",
             "- 发送网络图片 → message(content='', image_url='https://...')",
+            "- 当你已经拿到公网图片 URL 时，禁止先下载到本地再发 file_path；必须直接使用 image_url 发送",
             "",
             "用户说'发文件/图片给我'时：先用 exec 或 list_dir 找到绝对路径，再调用 message。",
             "**绝不能回复\"无法发送文件\"——这是已支持的功能。**",

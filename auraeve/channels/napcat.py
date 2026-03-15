@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import mimetypes
 import time
@@ -129,15 +130,12 @@ class NapCatChannel(BaseChannel):
         if msg.file_path:
             mime, _ = mimetypes.guess_type(msg.file_path)
             ext = Path(msg.file_path).suffix.lower()
-            norm = msg.file_path.replace("\\", "/")
             if mime and mime.startswith("image/"):
-                segments.append({"type": "image", "data": {"file": f"file:///{norm}"}})
+                b64_uri = self._encode_file_as_base64_uri(msg.file_path)
+                segments.append({"type": "image", "data": {"file": b64_uri}})
             elif (mime and mime.startswith("audio/")) or ext in {".mp3", ".wav", ".ogg", ".amr", ".silk", ".m4a"}:
-                import base64
-
-                with open(msg.file_path, "rb") as f:
-                    b64 = base64.b64encode(f.read()).decode()
-                segments.append({"type": "record", "data": {"file": f"base64://{b64}"}})
+                b64_uri = self._encode_file_as_base64_uri(msg.file_path)
+                segments.append({"type": "record", "data": {"file": b64_uri}})
                 return segments
         if msg.content:
             segments.append({"type": "text", "data": {"text": msg.content}})
@@ -178,21 +176,24 @@ class NapCatChannel(BaseChannel):
         is_image = bool(mime and mime.startswith("image/"))
         if is_audio or is_image:
             return
-        import base64
-
-        with open(file_path, "rb") as f:
-            b64 = base64.b64encode(f.read()).decode()
+        b64_uri = self._encode_file_as_base64_uri(file_path)
         file_name = Path(file_path).name
         if chat_kind == "private":
             await self._call_action(
                 "upload_private_file",
-                {"user_id": int(target_id), "file": f"base64://{b64}", "name": file_name},
+                {"user_id": int(target_id), "file": b64_uri, "name": file_name},
             )
         else:
             await self._call_action(
                 "upload_group_file",
-                {"group_id": int(target_id), "file": f"base64://{b64}", "name": file_name},
+                {"group_id": int(target_id), "file": b64_uri, "name": file_name},
             )
+
+    @staticmethod
+    def _encode_file_as_base64_uri(file_path: str) -> str:
+        with open(file_path, "rb") as f:
+            b64 = base64.b64encode(f.read()).decode()
+        return f"base64://{b64}"
 
     def _timeout_for_action(self, action: str) -> float:
         if action in {"get_image", "get_file", "get_record"}:
