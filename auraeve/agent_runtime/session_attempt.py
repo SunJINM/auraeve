@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import re
 import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
@@ -36,6 +37,12 @@ _DEFAULT_LOOP_GUARD = {
     "onRepeat": "warn_inject",  # warn_inject | block_tools | slowdown
     "slowdownBackoffMs": 500,
 }
+
+_MAX_TOOL_RESULT_CHARS = 4_000
+_DATA_URL_RE = re.compile(
+    r"data:(?P<mime>[a-zA-Z0-9.+-]+/[a-zA-Z0-9.+-]+);base64,(?P<data>[A-Za-z0-9+/=\s]+)"
+)
+_BASE64_URI_RE = re.compile(r"base64://(?P<data>[A-Za-z0-9+/=\s]{256,})")
 
 
 def _tool_fingerprint(tool_calls: list[Any]) -> str:
@@ -392,7 +399,7 @@ class SessionAttemptRunner:
                             "status": status,
                             "errorKind": error_kind or None,
                             "durationMs": duration_ms,
-                            "resultText": result_text,
+                            "resultLength": len(result_text),
                             "resultPreview": _truncate_text(result_text, 800),
                         },
                         session_key=thread_id,
@@ -431,11 +438,8 @@ class SessionAttemptRunner:
             )
 
             for tc, result, meta in results:
-                msgs = _add_tool_result(msgs, tc.id, tc.name, result)
-                effective_tool_name = tc.name.removeprefix("proxy_")
-                if effective_tool_name == "screen_capture" and result.startswith("data:image"):
-                    summary = result.split("\n", 1)[-1] if "\n" in result else "[截图]"
-                    msgs[-1] = {**msgs[-1], "content": f"[截图已用于本次分析，{summary}]"}
+                compact_result = _compact_tool_result(tc.name, result)
+                msgs = _add_tool_result(msgs, tc.id, tc.name, compact_result)
                 if meta.get("status") != "success":
                     msgs[-1] = {
                         **msgs[-1],
@@ -527,3 +531,33 @@ def _classify_tool_result(result_text: str) -> tuple[str, str]:
     if text.startswith("工具执行出错："):
         return "failed", "tool_exception"
     return "success", ""
+
+
+def _compact_tool_result(tool_name: str, result_text: str) -> str:
+    text = str(result_text or "")
+    text = _replace_embedded_binary(text)
+    if len(text) <= _MAX_TOOL_RESULT_CHARS:
+        return text
+    head = text[:2500]
+    tail = text[-1000:]
+    return (
+        f"{head}\n\n[tool_result_truncated tool={tool_name} "
+        f"omitted_chars={len(text) - len(head) - len(tail)} total_chars={len(text)}]\n\n{tail}"
+    )
+
+
+def _replace_embedded_binary(text: str) -> str:
+    def _replace_data_url(match: re.Match[str]) -> str:
+        mime = match.group("mime")
+        b64 = match.group("data")
+        approx_bytes = int(len("".join(b64.split())) * 0.75)
+        return f"[inline-data-url omitted mime={mime} approx_bytes={approx_bytes}]"
+
+    def _replace_base64_uri(match: re.Match[str]) -> str:
+        b64 = match.group("data")
+        approx_bytes = int(len("".join(b64.split())) * 0.75)
+        return f"[inline-base64-uri omitted approx_bytes={approx_bytes}]"
+
+    text = _DATA_URL_RE.sub(_replace_data_url, text)
+    text = _BASE64_URI_RE.sub(_replace_base64_uri, text)
+    return text

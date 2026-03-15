@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
-import base64
 import json
+import time
+import uuid
+from pathlib import Path
 from typing import Any
 
 from auraeve.agent.tools.base import Tool
@@ -17,15 +19,16 @@ class BrowserTool(Tool):
     - navigate：打开 URL
     - act：点击/输入/选择等交互
     - snapshot：获取页面无障碍树（文本描述，无需截图）
-    - screenshot：截图并返回 base64
+    - screenshot：截图并保存到本地文件，返回路径
     - pdf_save：将页面保存为 PDF
     - close：关闭当前页面
     """
 
-    def __init__(self) -> None:
+    def __init__(self, screenshot_dir: str | Path | None = None) -> None:
         self._browser = None
         self._page = None
         self._playwright = None
+        self._screenshot_dir: Path | None = Path(screenshot_dir).expanduser() if screenshot_dir else None
 
     @property
     def name(self) -> str:
@@ -38,7 +41,7 @@ class BrowserTool(Tool):
             "- navigate(url)：打开指定 URL\n"
             "- act(action, selector?, text?)：点击/填写/选择/悬停/按键等\n"
             "- snapshot：获取页面内容快照（无障碍树文本，比截图更省 token）\n"
-            "- screenshot：截取页面截图，返回 base64 图片\n"
+            "- screenshot：截取页面截图并保存为本地 PNG，返回文件路径\n"
             "- pdf_save(path)：将当前页面保存为 PDF 文件\n"
             "- close：关闭浏览器\n"
             "使用前需先 navigate，所有操作共享同一浏览器实例。"
@@ -219,8 +222,18 @@ class BrowserTool(Tool):
             return "错误：请先执行 navigate 操作"
         try:
             img_bytes = await self._page.screenshot(type="png", full_page=False)
-            b64 = base64.b64encode(img_bytes).decode()
-            return f"data:image/png;base64,{b64}"
+            screenshot_dir = self._screenshot_dir
+            if screenshot_dir is None:
+                screenshot_dir = Path.cwd() / "workspace" / "artifacts" / "browser"
+            screenshot_dir.mkdir(parents=True, exist_ok=True)
+            filename = f"screenshot-{time.strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:8]}.png"
+            target = screenshot_dir / filename
+            target.write_bytes(img_bytes)
+            return (
+                f"截图已保存：{target.resolve()}\n"
+                f"文件大小：{len(img_bytes)} bytes\n"
+                f"如需发送给用户，可调用 message(content='', file_path='{target.resolve()}')"
+            )
         except Exception as e:
             return f"截图失败：{e}"
 

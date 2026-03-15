@@ -92,7 +92,7 @@ def build_tool_registry(
         todo_tool.set_thread_id(thread_id)
     registry.register(todo_tool)
 
-    registry.register(BrowserTool())
+    registry.register(BrowserTool(screenshot_dir=Path(tool_workspace) / "artifacts" / "browser"))
     registry.register(PdfTool(provider=provider, model=model))
 
     if engine is not None:
