@@ -5,7 +5,7 @@ import json
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
 from loguru import logger
@@ -38,6 +38,7 @@ class MemoryLifecycleService:
         provider: LLMProvider,
         model: str,
         timezone: str = "Asia/Shanghai",
+        on_memory_file_changed: Callable[[Path], None] | None = None,
     ) -> None:
         self._workspace = workspace
         self._provider = provider
@@ -48,6 +49,7 @@ class MemoryLifecycleService:
         self._queue: asyncio.Queue[LongTermCandidate] = asyncio.Queue()
         self._worker_task: asyncio.Task | None = None
         self._running = False
+        self._on_memory_file_changed = on_memory_file_changed
 
     async def start(self) -> None:
         self.ensure_initialized()
@@ -75,8 +77,8 @@ class MemoryLifecycleService:
         if not self._memory_file.exists():
             self._memory_file.write_text(
                 "# MEMORY\n\n"
-                "长期记忆区：仅保留稳定、跨天仍有价值的信息。\n"
-                "由系统基于对话自动维护。\n",
+                "## Facts\n"
+                "- [identity] 用户偏好自然口语交流。\n",
                 encoding="utf-8",
             )
 
@@ -164,6 +166,11 @@ class MemoryLifecycleService:
         )
         with day_file.open("a", encoding="utf-8") as f:
             f.write(chunk)
+        if self._on_memory_file_changed is not None:
+            try:
+                self._on_memory_file_changed(day_file)
+            except Exception as exc:  # noqa: BLE001
+                logger.debug(f"[memory] dirty notify failed: {exc}")
 
     async def _worker_loop(self) -> None:
         while self._running:
@@ -214,9 +221,12 @@ class MemoryLifecycleService:
         system_prompt = (
             "你是记忆维护器。任务：判断这轮对话是否值得写入长期记忆。"
             "如果不需要更新，返回 should_update=false。"
-            "如果需要，返回 should_update=true，并给出完整 updated_memory_markdown。"
+            "如果需要，返回 should_update=true，并给出 operations 数组。"
             "输出必须是 JSON 对象，字段固定："
-            "should_update(boolean), reason(string), updated_memory_markdown(string)。"
+            "should_update(boolean), reason(string), operations(array)。"
+            "operations 的每一项格式："
+            "{op: add|update|remove, key: string, content?: string}。"
+            "不要返回整篇 markdown。"
         )
         response = await self._provider.chat(
             messages=[
@@ -233,11 +243,19 @@ class MemoryLifecycleService:
             return
         if not bool(parsed.get("should_update")):
             return
-        updated = str(parsed.get("updated_memory_markdown") or "").strip()
+        ops = parsed.get("operations")
+        if not isinstance(ops, list) or not ops:
+            return
+        updated = self._apply_patch_operations(current_memory, ops)
         if not updated:
             return
-        self._memory_file.write_text(updated.rstrip() + "\n", encoding="utf-8")
-        logger.info("[memory] MEMORY.md updated by llm judgement")
+        self._memory_file.write_text(updated, encoding="utf-8")
+        if self._on_memory_file_changed is not None:
+            try:
+                self._on_memory_file_changed(self._memory_file)
+            except Exception as exc:  # noqa: BLE001
+                logger.debug(f"[memory] dirty notify failed: {exc}")
+        logger.info("[memory] MEMORY.md updated by patch operations")
 
     @staticmethod
     def _parse_json(raw: str) -> dict[str, Any] | None:
@@ -256,3 +274,54 @@ class MemoryLifecycleService:
             except Exception:
                 return None
         return None
+
+    @staticmethod
+    def _parse_memory_items(markdown: str) -> dict[str, str]:
+        items: dict[str, str] = {}
+        for line in (markdown or "").splitlines():
+            line = line.strip()
+            if not line.startswith("- [") or "] " not in line:
+                continue
+            try:
+                key = line.split("- [", 1)[1].split("]", 1)[0].strip()
+                content = line.split("] ", 1)[1].strip()
+            except Exception:
+                continue
+            if key and content:
+                items[key] = content
+        return items
+
+    @staticmethod
+    def _render_memory_items(items: dict[str, str]) -> str:
+        lines = ["# MEMORY", "", "## Facts"]
+        for key in sorted(items):
+            lines.append(f"- [{key}] {items[key]}")
+        lines.append("")
+        return "\n".join(lines)
+
+    def _apply_patch_operations(self, current_markdown: str, ops: list[Any]) -> str | None:
+        items = self._parse_memory_items(current_markdown)
+        changed = False
+        for op in ops:
+            if not isinstance(op, dict):
+                continue
+            action = str(op.get("op") or "").strip().lower()
+            key = str(op.get("key") or "").strip()
+            if not key:
+                continue
+            if action == "remove":
+                if key in items:
+                    items.pop(key, None)
+                    changed = True
+                continue
+            if action not in {"add", "update"}:
+                continue
+            content = str(op.get("content") or "").strip()
+            if not content:
+                continue
+            if items.get(key) != content:
+                items[key] = content
+                changed = True
+        if not changed:
+            return None
+        return self._render_memory_items(items)

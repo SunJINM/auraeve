@@ -420,6 +420,29 @@ class RuntimeKernel:
             lines.append("- privilege: owner")
         return "\n".join(lines)
 
+    @staticmethod
+    def _sanitize_assistant_output(content: str | None) -> str | None:
+        """Sanitize control tokens from assistant output.
+
+        Rules:
+        - exact control token reply -> silent (return None)
+        - mixed content + control token lines -> drop control lines, keep text
+        - empty/blank output -> silent
+        """
+        if content is None:
+            return None
+
+        text = str(content).replace("\r\n", "\n")
+        text = text.strip().strip('"').strip("'").strip()
+        if not text:
+            return None
+        if text in {SILENT_REPLY_TOKEN, HEARTBEAT_OK}:
+            return None
+
+        lines = [line for line in text.split("\n") if line.strip() not in {SILENT_REPLY_TOKEN, HEARTBEAT_OK}]
+        cleaned = "\n".join(lines).strip()
+        return cleaned or None
+
     # Message processing
 
     async def _process_message(
@@ -533,8 +556,8 @@ class RuntimeKernel:
         if recovery_result.recovery_actions:
             logger.debug(f"[kernel] recovery actions: {recovery_result.recovery_actions}")
 
-        if final_content is None:
-            final_content = SILENT_REPLY_TOKEN
+        sanitized_content = self._sanitize_assistant_output(final_content)
+        persist_content = sanitized_content if sanitized_content is not None else SILENT_REPLY_TOKEN
 
         # Persist session (with identity snapshot).
         identity_snapshot = {
@@ -556,7 +579,7 @@ class RuntimeKernel:
             sender_id=msg.sender_id,
             **({"identity": identity_snapshot} if identity_snapshot else {}),
         )
-        session.add_message("assistant", final_content,
+        session.add_message("assistant", persist_content,
                             tools_used=tools_used if tools_used else None)
         self.sessions.save(session)
 
@@ -568,7 +591,7 @@ class RuntimeKernel:
                     channel=msg.channel,
                     chat_id=msg.chat_id,
                     user_content=msg.content,
-                    assistant_content=final_content,
+                    assistant_content=sanitized_content or "",
                     tools_used=tools_used if tools_used else [],
                 )
             )
@@ -579,13 +602,10 @@ class RuntimeKernel:
         ))
 
         # Silent token handling
-        _text = final_content.strip().strip('"').strip("'").strip()
-        if not _text:
+        if sanitized_content is None:
+            logger.debug("[kernel] silent/heartbeat token detected, skip outbound")
             return None
-        if _text in (SILENT_REPLY_TOKEN, HEARTBEAT_OK):
-            logger.debug(f"[kernel] silent token detected ({_text}), skip outbound")
-            return None
-        final_content = _text
+        final_content = sanitized_content
 
         # message_sending hook
         send_event = HookMessageSendingEvent(
@@ -648,7 +668,7 @@ class RuntimeKernel:
             chat_id=origin_chat_id,
         )
 
-        final_content = recovery_result.final_content or "后台任务已完成。"
+        final_content = self._sanitize_assistant_output(recovery_result.final_content) or "后台任务已完成。"
         session.add_message("user", f"[系统:{msg.sender_id}] {msg.content}")
         session.add_message("assistant", final_content)
         self.sessions.save(session)

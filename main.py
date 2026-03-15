@@ -122,6 +122,7 @@ async def main(terminal_mode: bool = False) -> None:
     execution_workspace = str(workspace.expanduser().resolve())
 
     #  ?
+    memory_file_change_notifier = None
     engine_type = getattr(cfg, "CONTEXT_ENGINE", "vector")
     if engine_type == "vector":
         from auraeve.agent.engines.vector.engine import VectorContextEngine
@@ -145,6 +146,7 @@ async def main(terminal_mode: bool = False) -> None:
             execution_workspace=execution_workspace,
         )
         await engine.bootstrap()
+        memory_file_change_notifier = engine.memory_manager.mark_dirty
     else:
         from auraeve.agent.engines.legacy import LegacyContextEngine
         engine = LegacyContextEngine(
@@ -254,6 +256,7 @@ async def main(terminal_mode: bool = False) -> None:
             provider=provider,
             model=cfg.LLM_MODEL,
             timezone=os.getenv("AURAEVE_TIMEZONE") or os.getenv("TZ") or "Asia/Shanghai",
+            on_memory_file_changed=memory_file_change_notifier,
         ),
     )
 
@@ -858,6 +861,8 @@ async def main(terminal_mode: bool = False) -> None:
         heartbeat.stop()
         if agent.memory_lifecycle is not None:
             await agent.memory_lifecycle.stop()
+        if engine_type == "vector" and hasattr(engine, "memory_manager"):
+            await engine.memory_manager.close()
         await agent.close_mcp()
         for task in list(channel_tasks.values()):
             if not task.done():

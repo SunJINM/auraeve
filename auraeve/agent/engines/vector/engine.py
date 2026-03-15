@@ -10,7 +10,6 @@ VectorContextEngine：向量记忆检索 + 自动上下文压缩。
 
 from __future__ import annotations
 
-import hashlib
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -26,6 +25,7 @@ from auraeve.agent.engines.vector.compaction import (
     should_compact,
 )
 from auraeve.agent.engines.vector.store import Embedder, VectorMemoryStore
+from auraeve.memory import MemoryManager
 
 _context_builder_cls = None
 
@@ -36,9 +36,6 @@ def _get_context_builder():
         from auraeve.agent.context import ContextBuilder
         _context_builder_cls = ContextBuilder
     return _context_builder_cls
-
-
-_EVERGREEN_FILES = {"MEMORY.MD", "AGENTS.MD", "SOUL.MD", "USER.MD", "TOOLS.MD", "IDENTITY.MD"}
 
 
 class VectorContextEngine(ContextEngine):
@@ -76,14 +73,24 @@ class VectorContextEngine(ContextEngine):
         self.half_life_days = half_life_days
 
         self.store = VectorMemoryStore(db_path)
+        self.memory_manager = MemoryManager(
+            workspace=workspace,
+            store=self.store,
+            embedder=self.embedder,
+            search_limit=self.search_limit,
+            vector_weight=self.vector_weight,
+            text_weight=self.text_weight,
+            mmr_lambda=self.mmr_lambda,
+            half_life_days=self.half_life_days,
+        )
         self._context_builder = _get_context_builder()(
             workspace,
             execution_workspace=execution_workspace,
         )
 
     async def bootstrap(self) -> None:
-        """启动时全量索引记忆文件。"""
-        indexed = await self._reindex_memory_files()
+        """启动时全量索引记忆文件并启动后台增量扫描。"""
+        indexed = await self.memory_manager.bootstrap()
         logger.info(f"向量记忆引擎初始化：已索引 {indexed} 个记忆文件")
 
     async def assemble(
@@ -148,38 +155,7 @@ class VectorContextEngine(ContextEngine):
         )
 
     async def after_turn(self, session_id: str, messages: list[dict]) -> None:
-        """每轮结束后增量重索引记忆文件。"""
-        indexed = await self._reindex_memory_files()
+        """每轮结束后执行事件驱动增量同步。"""
+        indexed = await self.memory_manager.sync(reason="turn", force=False)
         if indexed > 0:
             logger.debug(f"记忆文件重索引：{indexed} 个文件已更新")
-
-    async def _reindex_memory_files(self) -> int:
-        """扫描 workspace/memory/ 下所有 .md 文件，增量重索引。"""
-        memory_dir = self.workspace / "memory"
-        if not memory_dir.exists():
-            return 0
-
-        total = 0
-        for file_path in sorted(memory_dir.glob("*.md")):
-            basename = file_path.name.upper()
-            source = "memory" if basename in _EVERGREEN_FILES else "daily"
-
-            try:
-                content = file_path.read_text(encoding="utf-8", errors="replace")
-                file_hash = hashlib.sha256(content.encode()).hexdigest()
-            except Exception:
-                continue
-
-            cached_hash = self.store.get_file_hash(str(file_path))
-            if cached_hash == file_hash:
-                continue
-
-            try:
-                count = await self.store.index_file(file_path, source, self.embedder)
-                if count > 0:
-                    logger.debug(f"  索引 {file_path.name}：{count} 个片段")
-                    total += 1
-            except Exception as e:
-                logger.warning(f"  索引 {file_path.name} 失败：{e}")
-
-        return total

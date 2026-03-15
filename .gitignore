@@ -52,3 +52,6 @@ workspace/.auraeve/
 # Local assistant instructions (do not publish)
 AGENT.md
 CLAUDE.md
+
+# Private design docs (local only)
+docs/private/

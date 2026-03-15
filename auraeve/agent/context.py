@@ -146,6 +146,8 @@ class ContextBuilder:
             "browser":        "控制浏览器（导航、截图、交互）",
             "pdf":            "处理 PDF 文件（提取文本/表格/LLM 分析）",
             "memory_search":  "语义搜索历史记忆（向量 + BM25 混合检索）",
+            "memory_get":     "按路径读取记忆文件片段（行范围）",
+            "memory_status":  "查看记忆索引状态与降级信息",
             "message":        "发送消息、文件、图片到渠道",
             "spawn":          "派生子 Agent 执行复杂后台任务",
             "cron":           "管理定时任务和唤醒事件（用于提醒；设置提醒时，写入自然语言描述以便触发时读起来像提醒）",
@@ -154,7 +156,7 @@ class ContextBuilder:
         TOOL_ORDER = [
             "read_file", "write_file", "edit_file", "list_dir", "exec",
             "web_search", "web_fetch", "browser", "pdf",
-            "memory_search", "message", "spawn", "cron", "todo",
+            "memory_search", "memory_get", "memory_status", "message", "spawn", "cron", "todo",
         ]
 
         enabled = [t for t in TOOL_ORDER if t in tools]
@@ -229,7 +231,7 @@ class ContextBuilder:
             "## 记忆召回",
             "在回答任何关于历史工作、决策、日期、人物、偏好或待办事项的问题前，"
             "**必须先运行** `memory_search` 搜索 MEMORY.md 和 memory/*.md；"
-            "然后根据搜索结果提取所需内容。",
+            "然后根据搜索结果用 `memory_get` 精确读取所需行范围。",
             "检索后如果置信度仍低，如实告知用户你已检索但信息不足。",
             "引用记忆时注明来源文件（如 memory/MEMORY.md#42 行），方便用户核实。",
             "",

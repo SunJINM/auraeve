@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any
 from auraeve.agent.tools.base import Tool
 
 if TYPE_CHECKING:
-    from auraeve.agent.engines.vector.store import Embedder, VectorMemoryStore
+    from auraeve.memory.manager import MemoryManager
 
 
 class MemorySearchTool(Tool):
@@ -28,21 +28,11 @@ class MemorySearchTool(Tool):
 
     def __init__(
         self,
-        store: "VectorMemoryStore",
-        embedder: "Embedder",
+        manager: "MemoryManager",
         search_limit: int = 8,
-        vector_weight: float = 0.7,
-        text_weight: float = 0.3,
-        mmr_lambda: float = 0.7,
-        half_life_days: float = 30.0,
     ) -> None:
-        self._store = store
-        self._embedder = embedder
+        self._manager = manager
         self._search_limit = search_limit
-        self._vector_weight = vector_weight
-        self._text_weight = text_weight
-        self._mmr_lambda = mmr_lambda
-        self._half_life_days = half_life_days
 
     @property
     def name(self) -> str:
@@ -86,37 +76,22 @@ class MemorySearchTool(Tool):
     async def execute(
         self,
         query: str,
-        max_results: int = 8,
+        max_results: int | None = None,
         min_score: float = 0.05,
         **kwargs: Any,
     ) -> str:
+        resolved_limit = max_results if max_results is not None else self._search_limit
         try:
-            query_vec = await self._embedder.embed(query)
-        except Exception as e:
-            return json.dumps(
-                {"disabled": True, "reason": f"嵌入生成失败: {e}"},
-                ensure_ascii=False,
-            )
-
-        try:
-            results = self._store.hybrid_search(
+            results = await self._manager.search(
                 query=query,
-                query_vec=query_vec,
-                model=self._embedder.model,
-                limit=min(max_results, 20),
-                vector_weight=self._vector_weight,
-                text_weight=self._text_weight,
-                half_life_days=self._half_life_days,
-                mmr_lambda=self._mmr_lambda,
+                max_results=min(resolved_limit, 20),
+                min_score=min_score,
             )
         except Exception as e:
             return json.dumps(
-                {"disabled": True, "reason": f"向量检索失败: {e}"},
+                {"disabled": True, "reason": f"记忆检索失败: {e}"},
                 ensure_ascii=False,
             )
-
-        # 过滤低相关性结果
-        results = [r for r in results if r.score >= min_score]
 
         if not results:
             return json.dumps(
@@ -137,8 +112,18 @@ class MemorySearchTool(Tool):
                 item["lines"] = f"{start}-{end}"
             items.append(item)
 
+        status = self._manager.status()
         return json.dumps(
-            {"results": items, "total": len(items)},
+            {
+                "results": items,
+                "total": len(items),
+                "mode": status.get("search_mode", "hybrid"),
+                "warning": (
+                    "embedding 不可用，当前使用关键词降级检索"
+                    if status.get("search_mode") == "fts-only"
+                    else ""
+                ),
+            },
             ensure_ascii=False,
             indent=2,
         )

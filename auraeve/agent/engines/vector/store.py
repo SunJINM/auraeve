@@ -98,6 +98,14 @@ class VectorMemoryStore:
         self._has_fts5 = _check_fts5(self._conn)
         self._create_tables()
 
+    @property
+    def db_path(self) -> Path:
+        return self._db_path
+
+    @property
+    def fts_available(self) -> bool:
+        return self._has_fts5
+
     # ── 建表 ────────────────────────────────────────────────
 
     def _create_tables(self) -> None:
@@ -389,6 +397,19 @@ class VectorMemoryStore:
             "SELECT hash FROM memory_files WHERE path = ?", (path_str,)
         ).fetchone()
         return row[0] if row else None
+
+    def delete_file(self, path_str: str) -> None:
+        self._delete_file_chunks(path_str)
+        self._conn.execute("DELETE FROM memory_files WHERE path = ?", (path_str,))
+        self._conn.commit()
+
+    def counts(self) -> dict[str, int]:
+        files_row = self._conn.execute("SELECT COUNT(*) FROM memory_files").fetchone()
+        chunks_row = self._conn.execute("SELECT COUNT(*) FROM memory_chunks").fetchone()
+        return {
+            "files": int(files_row[0] if files_row else 0),
+            "chunks": int(chunks_row[0] if chunks_row else 0),
+        }
 
 
 # ── Markdown 分块 ────────────────────────────────────────────
