@@ -127,7 +127,7 @@ class SubAgentWSServer:
 
         await websocket.send(encode(NodeConnectOkMsg(
             assigned_trace_id=f"trace-{node_id}",
-            pending_tasks=[{"task_id": t.task_id, "goal": t.goal} for t in pending],
+            pending_tasks=pending,
         )))
 
         logger.info(f"[ws_server] 子体握手成功: {node_id}")
