@@ -456,12 +456,12 @@ _SCHEMA_GROUPS: list[tuple[str, str, list[str]]] = [
     ),
     (
         "node",
-        "节点系统",
+        "子体系统",
         [
             "NODE_ENABLED",
             "NODE_HOST",
-            "NODE_PORT",
             "NODE_TOKENS",
+            "SUBAGENT_WS_PORT",
         ],
     ),
     (

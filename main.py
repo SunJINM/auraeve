@@ -754,41 +754,7 @@ async def main(terminal_mode: bool = False) -> None:
         bus.subscribe_outbound("webui", webui_channel.send)
         logger.info(f"WebUIttp://{getattr(cfg, 'WEBUI_HOST', '0.0.0.0')}:{webui_bind_port}")
 
-    #   
-    node_channel = None
-    if getattr(cfg, "NODE_ENABLED", False):
-        from auraeve.nodes.manager import NodeManager
-        from auraeve.nodes.channel import NodeChannel, NodeChannelConfig
-        from auraeve.agent.tools.node import create_node_tools
-
-        node_store_dir = cfg.resolve_nodes_dir()
-        ensure_dir(node_store_dir)
-        node_manager = NodeManager(store_dir=node_store_dir)
-
-        # Initialize paired nodes from config NODE_TOKENS.
-        node_tokens: dict = getattr(cfg, "NODE_TOKENS", {})
-        for nid, info in node_tokens.items():
-            if not node_manager.get_paired_node(nid):
-                node_manager.register_paired_node(
-                    node_id=nid,
-                    token=info["token"],
-                    display_name=info.get("display_name", nid),
-                    platform=info.get("platform", "unknown"),
-                )
-
-        node_cfg = NodeChannelConfig(
-            host=getattr(cfg, "NODE_HOST", "0.0.0.0"),
-            port=getattr(cfg, "NODE_PORT", 8765),
-        )
-        node_channel = NodeChannel(config=node_cfg, manager=node_manager)
-
-        # 
-        for t in create_node_tools(node_manager):
-            agent.register_tool(t)
-
-        logger.info(f"Node service: ws://{node_cfg.host}:{node_cfg.port}; paired={len(node_tokens)}")
-
-    # 新子体 WebSocket 服务
+    # 子体 WebSocket 服务
     subagent_ws_server = None
     if getattr(cfg, "NODE_ENABLED", False):
         from auraeve.subagents.transport.auth import TokenAuth
@@ -870,8 +836,6 @@ async def main(terminal_mode: bool = False) -> None:
             bus.dispatch_outbound(),
             *channel_tasks.values(),
         ]
-        if node_channel:
-            tasks.append(node_channel.start())
         if subagent_ws_server:
             tasks.append(subagent_ws_server.start())
         if webui_server:
@@ -901,8 +865,6 @@ async def main(terminal_mode: bool = False) -> None:
             await webui_server.stop()
         if subagent_ws_server:
             await subagent_ws_server.stop()
-        if node_channel:
-            await node_channel.stop()
         bus.stop()
         pid_file.unlink(missing_ok=True)
         logger.info("auraeve stopped.")

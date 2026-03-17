@@ -11,7 +11,6 @@ from auraeve.agent.tools.pdf import PdfTool
 from auraeve.agent.tools.plan import TodoTool
 from auraeve.agent.tools.registry import ToolRegistry
 from auraeve.agent.tools.shell import ExecTool
-from auraeve.agent.tools.spawn import SpawnTool
 from auraeve.agent.tools.subagent_task import SubAgentTaskTool
 from auraeve.agent.tools.web import WebFetchTool, WebSearchTool
 from auraeve.execution.dispatcher import ExecutionDispatcher
@@ -30,7 +29,6 @@ def build_tool_registry(
     plan_manager,
     channel_users: dict[str, str] | None = None,
     notify_channel: str = "",
-    spawn_manager=None,
     task_orchestrator=None,
     cron_service=None,
     origin_channel: str | None = None,
@@ -82,8 +80,6 @@ def build_tool_registry(
 
     if task_orchestrator is not None:
         registry.register(SubAgentTaskTool(orchestrator=task_orchestrator))
-    elif spawn_manager is not None:
-        registry.register(SpawnTool(manager=spawn_manager))
 
     if cron_service is not None and profile == "main":
         cron_tool = CronTool(cron_service)

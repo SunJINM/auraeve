@@ -3,7 +3,7 @@
 - PromptAssembler 负责提示词组装（支持 `before_prompt_build` 钩子）
 - SessionAttemptRunner + RunOrchestrator 共享执行内核
 - ToolPolicyEngine 负责分层工具策略判定
-- SubagentGovernor + SubagentRegistry 负责子代理生命周期与并发治理
+- TaskOrchestrator 负责子体编排与生命周期管理
 """
 from __future__ import annotations
 
@@ -20,7 +20,6 @@ from auraeve.agent.engines.base import ContextEngine
 from auraeve.agent.tools.registry import ToolRegistry
 from auraeve.agent.tools.message import MessageTool
 from auraeve.agent.tools.media_understand import MediaUnderstandTool
-from auraeve.agent.tools.spawn import SpawnTool
 from auraeve.agent.tools.subagent_task import SubAgentTaskTool
 from auraeve.agent.tools.cron import CronTool
 from auraeve.agent.tools.plan import TodoTool
@@ -36,8 +35,6 @@ from .prompt.assembler import PromptAssembler
 from .session_attempt import SessionAttemptRunner
 from .run_orchestrator import RunOrchestrator
 from .tool_policy.engine import ToolPolicyEngine
-from .subagents.registry import SubagentRegistry
-from .subagents.governor import SubagentGovernor
 
 if TYPE_CHECKING:
     from auraeve.cron.service import CronService
@@ -129,29 +126,7 @@ class RuntimeKernel:
             token_budget=token_budget,
         )
 
-        # 子代理台账与治理器（旧系统，保留兼容）
-        self._sub_registry = SubagentRegistry()
-        self._governor = SubagentGovernor(
-            registry=self._sub_registry,
-            provider=provider,
-            workspace=workspace,
-            bus=bus,
-            model=self.model,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            max_iterations=50,
-            brave_api_key=brave_api_key,
-            exec_timeout=exec_timeout,
-            restrict_to_workspace=restrict_to_workspace,
-            thinking_budget_tokens=thinking_budget_tokens,
-            policy=self.policy,
-            hooks=self.hooks,
-            max_global_concurrent=max_global_subagent_concurrent,
-            max_session_concurrent=max_session_subagent_concurrent,
-            execution_workspace=execution_workspace,
-        )
-
-        # 新子体编排系统
+        # 子体编排系统
         from auraeve.subagents.data.repositories import SubagentDB
         from auraeve.subagents.control_plane.orchestrator import TaskOrchestrator as _TaskOrchestrator
 
@@ -276,7 +251,6 @@ class RuntimeKernel:
             plan_manager=self._plan,
             channel_users=self._channel_users,
             notify_channel=self._notify_channel,
-            spawn_manager=self._governor,
             task_orchestrator=self._task_orchestrator,
             cron_service=self.cron_service,
             engine=self.engine,
@@ -347,9 +321,6 @@ class RuntimeKernel:
         message_tool = self.tools.get("message")
         if message_tool is not None and isinstance(message_tool, MessageTool):
             message_tool.set_context(channel, chat_id)
-        spawn_tool = self.tools.get("spawn")
-        if spawn_tool is not None and isinstance(spawn_tool, SpawnTool):
-            spawn_tool.set_context(channel, chat_id)
         subagent_tool = self.tools.get("subagent")
         if subagent_tool is not None and isinstance(subagent_tool, SubAgentTaskTool):
             subagent_tool.set_context(channel, chat_id)
