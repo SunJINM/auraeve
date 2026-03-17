@@ -34,14 +34,14 @@ async def main() -> None:
         from auraeve.agent.tools.registry import ToolRegistry
         registry = ToolRegistry()
         # 远程子体仅注册安全工具
-        from auraeve.agent.tools.fs import ReadFileTool, WriteFileTool, ListDirTool
-        from auraeve.agent.tools.shell import ShellTool
+        from auraeve.agent.tools.filesystem import ReadFileTool, WriteFileTool, ListDirTool
+        from auraeve.agent.tools.shell import ExecTool
         from auraeve.agent.tools.web import WebSearchTool, WebFetchTool
 
         registry.register(ReadFileTool())
         registry.register(WriteFileTool())
         registry.register(ListDirTool())
-        registry.register(ShellTool())
+        registry.register(ExecTool(working_dir=str(args.workspace)))
         registry.register(WebSearchTool())
         registry.register(WebFetchTool())
         return registry
