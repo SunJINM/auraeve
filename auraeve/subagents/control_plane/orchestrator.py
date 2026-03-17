@@ -344,6 +344,7 @@ class TaskOrchestrator:
         if not task:
             return
 
+        task.result = result
         new_status = TaskStatus.COMPLETED if success else TaskStatus.FAILED
         self._transition(task, new_status, "done" if success else "failed")
 

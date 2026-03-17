@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     depends_on TEXT DEFAULT '[]',
     budget TEXT DEFAULT '{}',
     policy_profile TEXT DEFAULT 'default',
+    result TEXT DEFAULT '',
     compensate_action TEXT,
     trace_id TEXT NOT NULL,
     origin_channel TEXT DEFAULT '',
@@ -127,14 +128,14 @@ class SubagentDB:
         conn.execute(
             """INSERT OR REPLACE INTO tasks
                (task_id, goal, assigned_node_id, priority, status, depends_on,
-                budget, policy_profile, compensate_action, trace_id,
+                budget, policy_profile, result, compensate_action, trace_id,
                 origin_channel, origin_chat_id, created_at, updated_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 task.task_id, task.goal, task.assigned_node_id, task.priority,
                 task.status.value, json.dumps(task.depends_on),
                 json.dumps(task.budget.to_dict()), task.policy_profile,
-                task.compensate_action, task.trace_id,
+                task.result, task.compensate_action, task.trace_id,
                 task.origin_channel, task.origin_chat_id,
                 task.created_at, task.updated_at,
             ),
@@ -205,6 +206,7 @@ class SubagentDB:
             depends_on=json.loads(row["depends_on"] or "[]"),
             budget=TaskBudget.from_dict(json.loads(row["budget"] or "{}")),
             policy_profile=row["policy_profile"] or "default",
+            result=row["result"] or "",
             compensate_action=row["compensate_action"],
             trace_id=row["trace_id"],
             origin_channel=row["origin_channel"] or "",

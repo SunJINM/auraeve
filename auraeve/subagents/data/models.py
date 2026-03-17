@@ -140,6 +140,7 @@ class Task:
     depends_on: list[str] = field(default_factory=list)
     budget: TaskBudget = field(default_factory=TaskBudget)
     policy_profile: str = "default"
+    result: str = ""
     compensate_action: str | None = None
     trace_id: str = ""
     origin_channel: str = ""

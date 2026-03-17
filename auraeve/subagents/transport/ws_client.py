@@ -153,7 +153,7 @@ class SubAgentWSClient:
         elif msg_type == "peer.message":
             logger.info(f"[ws_client] 收到子体间消息: {msg.get('from_node_id')}")
         else:
-            logger.warning(f"[ws_client] 未知消息: {msg_type}")
+            logger.debug(f"[ws_client] 忽略未知消息: {msg_type}")
 
     async def _send(self, msg: Any) -> bool:
         if not self._ws:
