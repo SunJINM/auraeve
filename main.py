@@ -788,7 +788,27 @@ async def main(terminal_mode: bool = False) -> None:
 
         logger.info(f"Node service: ws://{node_cfg.host}:{node_cfg.port}; paired={len(node_tokens)}")
 
-    #   PID 
+    # 新子体 WebSocket 服务
+    subagent_ws_server = None
+    if getattr(cfg, "NODE_ENABLED", False):
+        from auraeve.subagents.transport.auth import TokenAuth
+        from auraeve.subagents.transport.ws_server import SubAgentWSServer
+
+        subagent_auth = TokenAuth()
+        node_tokens_v2: dict = getattr(cfg, "NODE_TOKENS", {})
+        for nid, info in node_tokens_v2.items():
+            subagent_auth.add_token(nid, info["token"])
+
+        subagent_ws_port = getattr(cfg, "SUBAGENT_WS_PORT", 9800)
+        subagent_ws_server = SubAgentWSServer(
+            orchestrator=agent._task_orchestrator,
+            auth=subagent_auth,
+            host=getattr(cfg, "NODE_HOST", "0.0.0.0"),
+            port=subagent_ws_port,
+        )
+        logger.info(f"SubAgent WS service: ws://0.0.0.0:{subagent_ws_port}")
+
+    #   PID
     pid_file.write_text(str(os.getpid()))
 
     #  ?/  
@@ -852,6 +872,8 @@ async def main(terminal_mode: bool = False) -> None:
         ]
         if node_channel:
             tasks.append(node_channel.start())
+        if subagent_ws_server:
+            tasks.append(subagent_ws_server.start())
         if webui_server:
             tasks.append(webui_server.start())
         if webui_channel:
@@ -877,6 +899,8 @@ async def main(terminal_mode: bool = False) -> None:
             await webui_channel.stop()
         if webui_server:
             await webui_server.stop()
+        if subagent_ws_server:
+            await subagent_ws_server.stop()
         if node_channel:
             await node_channel.stop()
         bus.stop()

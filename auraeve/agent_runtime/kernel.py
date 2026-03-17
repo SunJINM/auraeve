@@ -21,6 +21,7 @@ from auraeve.agent.tools.registry import ToolRegistry
 from auraeve.agent.tools.message import MessageTool
 from auraeve.agent.tools.media_understand import MediaUnderstandTool
 from auraeve.agent.tools.spawn import SpawnTool
+from auraeve.agent.tools.subagent_task import SubAgentTaskTool
 from auraeve.agent.tools.cron import CronTool
 from auraeve.agent.tools.plan import TodoTool
 from auraeve.agent.tools.assembler import build_tool_registry
@@ -128,7 +129,7 @@ class RuntimeKernel:
             token_budget=token_budget,
         )
 
-        # 子代理台账与治理器
+        # 子代理台账与治理器（旧系统，保留兼容）
         self._sub_registry = SubagentRegistry()
         self._governor = SubagentGovernor(
             registry=self._sub_registry,
@@ -148,6 +149,28 @@ class RuntimeKernel:
             max_global_concurrent=max_global_subagent_concurrent,
             max_session_concurrent=max_session_subagent_concurrent,
             execution_workspace=execution_workspace,
+        )
+
+        # 新子体编排系统
+        from auraeve.subagents.data.repositories import SubagentDB
+        from auraeve.subagents.control_plane.orchestrator import TaskOrchestrator as _TaskOrchestrator
+
+        subagent_db_path = workspace / "data" / "subagent.db"
+        subagent_db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._subagent_db = SubagentDB(subagent_db_path)
+        self._task_orchestrator = _TaskOrchestrator(
+            db=self._subagent_db,
+            provider=provider,
+            bus=bus,
+            workspace=workspace,
+            policy=self.policy,
+            model=self.model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            max_iterations=50,
+            thinking_budget_tokens=thinking_budget_tokens,
+            max_global_tasks=max_global_subagent_concurrent,
+            max_node_tasks=max_session_subagent_concurrent,
         )
 
         # 主执行器与统一运行编排器
@@ -254,6 +277,7 @@ class RuntimeKernel:
             channel_users=self._channel_users,
             notify_channel=self._notify_channel,
             spawn_manager=self._governor,
+            task_orchestrator=self._task_orchestrator,
             cron_service=self.cron_service,
             engine=self.engine,
             execution_workspace=self._execution_workspace,
@@ -326,6 +350,9 @@ class RuntimeKernel:
         spawn_tool = self.tools.get("spawn")
         if spawn_tool is not None and isinstance(spawn_tool, SpawnTool):
             spawn_tool.set_context(channel, chat_id)
+        subagent_tool = self.tools.get("subagent")
+        if subagent_tool is not None and isinstance(subagent_tool, SubAgentTaskTool):
+            subagent_tool.set_context(channel, chat_id)
         cron_tool = self.tools.get("cron")
         if cron_tool is not None and isinstance(cron_tool, CronTool):
             cron_tool.set_context(channel, chat_id)
