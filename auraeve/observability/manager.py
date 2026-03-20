@@ -614,7 +614,7 @@ class ObservabilityManager:
                 stat = path.stat()
             except OSError:
                 continue
-            files.append((path, stat.st_size, stat.mtime))
+            files.append((path, stat.st_size, stat.st_mtime))
             total_bytes += stat.st_size
         files.sort(key=lambda item: item[2])
 
