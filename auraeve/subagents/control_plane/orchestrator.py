@@ -20,7 +20,7 @@ from auraeve.subagents.runtime.capabilities import CapabilityRegistry
 from .scheduler import Scheduler, SchedulerWeights
 from .approval_center import ApprovalCenter
 from .capability_tracker import CapabilityTracker
-from .telemetry_hub import TelemetryHub
+from .telemetry_hub import TelemetryHub, new_span_id
 
 if TYPE_CHECKING:
     from auraeve.providers.base import LLMProvider
@@ -81,6 +81,12 @@ class TaskOrchestrator:
         # 远程子体 WebSocket 发送回调: node_id -> send(msg_dict)
         self._remote_senders: dict[str, Any] = {}
 
+        # 补偿任务 -> 原任务 ID 映射
+        self._compensation_map: dict[str, str] = {}
+
+        # 记忆合并服务（延迟初始化）
+        self._merge_service = None
+
         # 注册本地节点
         self._register_local_node()
 
@@ -129,6 +135,83 @@ class TaskOrchestrator:
             origin_chat_id=task.origin_chat_id,
             thread_id=f"sub:{task.task_id}",
             execution_workspace=self._execution_workspace,
+        )
+
+    def _build_subagent_policy(self, task: Task) -> "ToolPolicyEngine":
+        """构建集成 PolicyEngineV2 四维风险评估的子体策略引擎。"""
+        from auraeve.subagents.control_plane.policy_v2 import PolicyEngineV2, PolicyContext as V2Context
+        from auraeve.agent_runtime.tool_policy.engine import (
+            ToolPolicyEngine,
+            PolicyContext,
+            PolicyResult,
+            PolicyDecision,
+        )
+
+        v2 = PolicyEngineV2()
+        base_policy = self._policy
+
+        class SubagentPolicyEngine(ToolPolicyEngine):
+            """在现有策略层上叠加 PolicyEngineV2 四维风险评估。"""
+
+            def __init__(self, base: ToolPolicyEngine, policy_v2: PolicyEngineV2,
+                         node_id: str, task_priority: int, policy_profile: str):
+                super().__init__(
+                    is_subagent=True,
+                    global_deny=set(base._global_deny),
+                    session_policy=dict(base._session_policy),
+                )
+                self._base = base
+                self._v2 = policy_v2
+                self._node_id = node_id
+                self._task_priority = task_priority
+                self._policy_profile = policy_profile
+
+            async def evaluate(self, ctx: PolicyContext) -> PolicyResult:
+                # 先执行基础策略
+                base_result = await self._base.evaluate(ctx)
+                if not base_result.allowed:
+                    return base_result
+
+                # 叠加 PolicyEngineV2 四维风险评估
+                v2_ctx = V2Context(
+                    tool_name=ctx.tool_name,
+                    args=ctx.args,
+                    node_id=self._node_id,
+                    task_priority=self._task_priority,
+                    policy_profile=self._policy_profile,
+                )
+                v2_result = self._v2.evaluate(v2_ctx)
+
+                if v2_result.denied:
+                    return PolicyResult(
+                        allowed=False,
+                        reason=v2_result.reason,
+                        rewritten_args=base_result.rewritten_args,
+                        trace=base_result.trace + [PolicyDecision(
+                            layer="policy_v2",
+                            rule_id="v2_denied",
+                            allowed=False,
+                            reason=v2_result.reason,
+                        )],
+                    )
+
+                # 将风险信息附加到 trace 中供审批参考
+                if v2_result.requires_approval:
+                    base_result.trace.append(PolicyDecision(
+                        layer="policy_v2",
+                        rule_id=f"v2_risk:{v2_result.risk_level.value}",
+                        allowed=True,
+                        reason=f"PolicyV2: {v2_result.reason} (需审批)",
+                    ))
+
+                return base_result
+
+        return SubagentPolicyEngine(
+            base=base_policy,
+            policy_v2=v2,
+            node_id=task.assigned_node_id or "local",
+            task_priority=task.priority,
+            policy_profile=task.policy_profile,
         )
 
     # ── 公开 API ────────────────────────────────────────────────────────────
@@ -182,6 +265,9 @@ class TaskOrchestrator:
         created: list[Task] = []
         id_map: dict[str, str] = {}  # 临时ID -> 实际ID
 
+        # DAG 共享同一个 trace_id，便于追踪整个任务组
+        dag_trace_id = Task.new_trace_id()
+
         # 第一轮：创建所有任务
         for t in tasks:
             temp_id = t.get("id", "")
@@ -193,7 +279,7 @@ class TaskOrchestrator:
                 budget=TaskBudget.from_dict(t["budget"]) if "budget" in t else TaskBudget(),
                 policy_profile=t.get("policy_profile", "default"),
                 compensate_action=t.get("compensate_action"),
-                trace_id=Task.new_trace_id(),
+                trace_id=dag_trace_id,
                 origin_channel=t.get("origin_channel", ""),
                 origin_chat_id=t.get("origin_chat_id", ""),
             )
@@ -308,7 +394,7 @@ class TaskOrchestrator:
         self._telemetry.record_span(
             task_id=task_id,
             trace_id=self._get_trace_id(task_id),
-            span_id=TelemetryHub.__module__,  # placeholder
+            span_id=new_span_id(),
             parent_span_id="",
             operation="progress",
             node_id=self._get_node_id(task_id),
@@ -377,8 +463,15 @@ class TaskOrchestrator:
             )
             self._db.save_memory_delta(delta)
 
+        # 触发记忆合并
+        self._try_merge_memory()
+
         # 推送结果到用户渠道
         await self._deliver_result(task, result, success)
+
+        # 补偿任务完成时，回写原任务状态为 COMPENSATED
+        if success and task.goal.startswith("[补偿] "):
+            self._complete_compensation(task_id)
 
         # DAG: 检查是否可以触发下游任务
         if success:
@@ -540,7 +633,9 @@ class TaskOrchestrator:
                     origin_chat_id=task.origin_chat_id,
                     assigned_node_id=task.assigned_node_id,
                 )
-                logger.info(f"[orchestrator] 补偿任务已创建: {comp_task.task_id}")
+                # 记录补偿任务与原任务的关联
+                self._compensation_map[comp_task.task_id] = task.task_id
+                logger.info(f"[orchestrator] 补偿任务已创建: {comp_task.task_id} (原任务: {task.task_id})")
             except Exception as e:
                 logger.error(f"[orchestrator] 补偿任务创建失败: {e}")
 
@@ -576,6 +671,30 @@ class TaskOrchestrator:
         if any(k in goal_lower for k in ("搜索", "网页", "api")):
             return "web"
         return "general"
+
+    def _complete_compensation(self, comp_task_id: str) -> None:
+        """补偿任务完成后，将原任务状态迁移到 COMPENSATED。"""
+        original_task_id = self._compensation_map.pop(comp_task_id, None)
+        if not original_task_id:
+            return
+        original_task = self._db.get_task(original_task_id)
+        if original_task and is_valid_transition(original_task.status, TaskStatus.COMPENSATED):
+            self._transition(original_task, TaskStatus.COMPENSATED, "compensation_done")
+            logger.info(f"[orchestrator] 原任务 {original_task_id} 已补偿完成")
+
+    def _try_merge_memory(self) -> None:
+        """尝试触发记忆增量合并到母体知识图谱。"""
+        try:
+            if self._merge_service is None:
+                from auraeve.subagents.memory.merge_service import MemoryMergeService
+                from auraeve.subagents.data.graph_store import GraphStore
+                graph_path = self._workspace / "data" / "knowledge_graph.db"
+                graph_path.parent.mkdir(parents=True, exist_ok=True)
+                graph = GraphStore(graph_path)
+                self._merge_service = MemoryMergeService(self._db, graph)
+            self._merge_service.merge_pending(batch_size=20)
+        except Exception as e:
+            logger.error(f"[orchestrator] 记忆合并失败: {e}")
 
     def format_task_summary(self, task: Task) -> str:
         icon = STATUS_ICON.get(task.status, "❓")

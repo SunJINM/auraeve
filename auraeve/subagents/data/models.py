@@ -56,6 +56,9 @@ _VALID_TRANSITIONS: dict[TaskStatus, set[TaskStatus]] = {
 TERMINAL_STATUSES = {
     TaskStatus.COMPLETED,
     TaskStatus.COMPENSATED,
+    TaskStatus.FAILED,
+    TaskStatus.CANCELED,
+    TaskStatus.TIMED_OUT,
 }
 
 
@@ -64,10 +67,11 @@ def is_valid_transition(from_status: TaskStatus, to_status: TaskStatus) -> bool:
 
 
 def is_terminal(status: TaskStatus) -> bool:
-    return status in TERMINAL_STATUSES or (
-        status in (TaskStatus.FAILED, TaskStatus.CANCELED, TaskStatus.TIMED_OUT)
-        and status not in _VALID_TRANSITIONS.get(status, set())
-    )
+    """判断任务是否处于终态。
+    FAILED/CANCELED/TIMED_OUT 虽然可以迁移到 COMPENSATING，
+    但在没有补偿动作时视为终态。
+    """
+    return status in TERMINAL_STATUSES
 
 
 # ── 风险等级 ────────────────────────────────────────────────────────────────

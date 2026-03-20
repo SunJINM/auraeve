@@ -64,12 +64,15 @@ class LocalSubAgentExecutor:
 
         tools = self._tool_builder(task)
 
+        # 使用集成 PolicyEngineV2 的增强策略引擎
+        policy = self._orchestrator._build_subagent_policy(task)
+
         loop = ReActLoop(
             provider=self._provider,
             tools=tools,
             reporter=reporter,
             memory=memory,
-            policy=self._policy,
+            policy=policy,
             model=self._model,
             temperature=self._temperature,
             max_tokens=self._max_tokens,
@@ -86,7 +89,13 @@ class LocalSubAgentExecutor:
     async def _run(self, task: Task, loop: ReActLoop) -> None:
         logger.info(f"[local_executor] 本地子体启动: {task.task_id}")
         try:
-            await loop.run(task)
+            result = await loop.run(task)
+            # 检测超时结果，更新任务状态为 TIMED_OUT
+            if result and "任务执行超时" in result:
+                from auraeve.subagents.data.models import is_valid_transition
+                t = self._orchestrator._db.get_task(task.task_id)
+                if t and is_valid_transition(t.status, TaskStatus.TIMED_OUT):
+                    self._orchestrator._db.update_task_status(task.task_id, TaskStatus.TIMED_OUT)
         except asyncio.CancelledError:
             logger.info(f"[local_executor] 本地子体被取消: {task.task_id}")
         except Exception as e:

@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 
 
 class MemoryMergeService:
-    """从子体增量队列中拉取 delta，合并到母体知识图谱。
+    """从子体增量队列中拉取 delta，合并到母体知识图谱和向量记忆。
 
     合并策略：
     - fact: 检查冲突，高置信度覆盖低置信度，否则标记 conflict
@@ -34,10 +34,12 @@ class MemoryMergeService:
         db: SubagentDB,
         graph: GraphStore,
         conflict_threshold: float = 0.3,
+        vector_store=None,
     ) -> None:
         self._db = db
         self._graph = graph
         self._conflict_threshold = conflict_threshold
+        self._vector_store = vector_store
 
     def merge_pending(self, batch_size: int = 50) -> int:
         """拉取 pending 增量并合并，返回处理数量。"""
@@ -52,6 +54,7 @@ class MemoryMergeService:
                 self._db.update_delta_status(delta.delta_id, status)
                 if status == MergeStatus.MERGED:
                     merged += 1
+                    self._write_to_vector_store(delta)
             except Exception as e:
                 logger.error(f"[merge] delta {delta.delta_id} 合并失败: {e}")
                 self._db.update_delta_status(delta.delta_id, MergeStatus.REJECTED)
@@ -152,3 +155,33 @@ class MemoryMergeService:
             entity, detail = content.split(":", 1)
             return entity.strip(), detail.strip()
         return "", content.strip()
+
+    def _write_to_vector_store(self, delta: MemoryDelta) -> None:
+        """将合并成功的增量写入向量记忆索引。
+
+        通过写入临时 .md 文件，让 VectorMemoryStore 的文件更新机制自动索引。
+        """
+        if self._vector_store is None:
+            return
+        try:
+            import hashlib
+            import time as _time
+            from pathlib import Path
+
+            # 写入到向量记忆的 subagent 目录
+            db_path = Path(self._vector_store.db_path) if hasattr(self._vector_store, 'db_path') else None
+            if db_path is None:
+                return
+            memory_dir = db_path.parent.parent / "memory" / "subagent_deltas"
+            memory_dir.mkdir(parents=True, exist_ok=True)
+
+            content = (
+                f"# {delta.delta_type.value}: {delta.delta_id}\n\n"
+                f"来源: node={delta.node_id}, task={delta.task_id}\n"
+                f"置信度: {delta.confidence}\n\n"
+                f"{delta.content}\n"
+            )
+            file_path = memory_dir / f"{delta.delta_id}.md"
+            file_path.write_text(content, encoding="utf-8")
+        except Exception as e:
+            logger.warning(f"[merge] 向量记忆写入失败: {e}")

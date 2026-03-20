@@ -47,6 +47,8 @@ class SubAgentWSServer:
         self._ping_timeout = ping_timeout
         self._connections: dict[str, object] = {}  # node_id -> websocket
         self._server = None
+        # 子体间通信授权表: (from_node, to_node) -> expires_at
+        self._peer_authorizations: dict[tuple[str, str], float] = {}
 
     async def start(self) -> None:
         try:
@@ -169,17 +171,60 @@ class SubAgentWSServer:
                 context=msg.get("context", {}),
             )
         elif msg_type == "peer.request":
-            logger.info(f"[ws_server] 子体间通信请求: {node_id} → {msg.get('target_node_id')}")
+            await self._handle_peer_request(node_id, msg)
         elif msg_type == "peer.message":
-            await self._route_peer_message(msg)
+            await self._route_peer_message(node_id, msg)
         elif msg_type == "pong":
             pass
         else:
             logger.warning(f"[ws_server] 未知消息类型: {msg_type} from {node_id}")
 
-    async def _route_peer_message(self, msg: dict) -> None:
-        """路由子体间消息。"""
+    async def _handle_peer_request(self, from_node: str, msg: dict) -> None:
+        """处理子体间通信授权请求。"""
+        import time
+        target_node = msg.get("target_node_id", "")
+        if not target_node:
+            return
+
+        # 自动授权（授权有效期与任务生命周期一致，默认 1 小时）
+        expires_at = time.time() + 3600
+        self._peer_authorizations[(from_node, target_node)] = expires_at
+        self._peer_authorizations[(target_node, from_node)] = expires_at
+
+        # 通知双方授权已建立
+        auth_msg = {
+            "type": "peer.authorize",
+            "from_node_id": from_node,
+            "to_node_id": target_node,
+            "expires_at": expires_at,
+        }
+        from_ws = self._connections.get(from_node)
+        to_ws = self._connections.get(target_node)
+        if from_ws:
+            await from_ws.send(encode(auth_msg))
+        if to_ws:
+            await to_ws.send(encode(auth_msg))
+        logger.info(f"[ws_server] 子体间通信已授权: {from_node} ↔ {target_node}")
+
+    def _is_peer_authorized(self, from_node: str, to_node: str) -> bool:
+        """检查子体间通信是否已授权且未过期。"""
+        import time
+        expires_at = self._peer_authorizations.get((from_node, to_node), 0)
+        if expires_at <= time.time():
+            self._peer_authorizations.pop((from_node, to_node), None)
+            return False
+        return True
+
+    async def _route_peer_message(self, from_node: str, msg: dict) -> None:
+        """路由子体间消息（需授权检查）。"""
         to_node = msg.get("to_node_id", "")
+        if not to_node:
+            return
+
+        if not self._is_peer_authorized(from_node, to_node):
+            logger.warning(f"[ws_server] 子体间通信未授权: {from_node} → {to_node}")
+            return
+
         ws = self._connections.get(to_node)
         if ws:
             await ws.send(encode(msg))

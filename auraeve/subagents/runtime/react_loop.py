@@ -57,7 +57,6 @@ class ReActLoop:
         self._steer_queue = steer_queue or asyncio.Queue()
         self._paused = asyncio.Event()
         self._paused.set()  # 初始未暂停
-        self._canceled = False
 
     async def run(self, task: "Task") -> str:
         """执行完整 ReAct 循环，返回最终结果文本。"""
@@ -67,6 +66,10 @@ class ReActLoop:
 
         start_time = time.time()
         task_id = task.task_id
+        budget = task.budget
+
+        # 等待暂停恢复（如果已暂停）
+        await self._paused.wait()
 
         hooks = PluginRegistry().build_hook_runner()
         runner = SessionAttemptRunner(
@@ -74,7 +77,7 @@ class ReActLoop:
             tools=self._tools,
             policy=self._policy,
             hooks=hooks,
-            max_iterations=self._max_iterations,
+            max_iterations=min(self._max_iterations, budget.max_steps),
             thinking_budget_tokens=self._thinking_budget_tokens,
         )
         orchestrator = RunOrchestrator(
@@ -93,7 +96,9 @@ class ReActLoop:
         await self._reporter.report_progress(task_id, 0, "开始执行任务")
 
         try:
-            result = await orchestrator.run(
+            # 使用预算时长作为超时限制
+            timeout = budget.max_duration_s if budget.max_duration_s > 0 else None
+            coro = orchestrator.run(
                 messages=messages,
                 model=self._model,
                 temperature=self._temperature,
@@ -101,6 +106,11 @@ class ReActLoop:
                 thread_id=f"sub:{task_id}",
                 steer_queue=self._steer_queue,
             )
+            if timeout:
+                result = await asyncio.wait_for(coro, timeout=timeout)
+            else:
+                result = await coro
+
             final_content = result.final_content or "任务已完成。"
             duration = time.time() - start_time
 
@@ -113,8 +123,16 @@ class ReActLoop:
             )
             return final_content
 
+        except asyncio.TimeoutError:
+            duration = time.time() - start_time
+            error_msg = f"任务执行超时（预算 {budget.max_duration_s}s，实际 {duration:.0f}s）"
+            logger.warning(f"[react_loop] 任务 {task_id} 超时: {error_msg}")
+            await self._reporter.report_done(
+                task_id=task_id, success=False, result=error_msg,
+            )
+            return error_msg
+
         except asyncio.CancelledError:
-            self._canceled = True
             await self._reporter.report_done(
                 task_id=task_id, success=False, result="任务被取消",
             )
@@ -142,7 +160,8 @@ class ReActLoop:
         self._paused.set()
 
     def cancel(self) -> None:
-        self._canceled = True
+        # 取消通过外层 asyncio.Task.cancel() 实现
+        pass
 
     def _build_system_prompt(self, task: "Task") -> str:
         import os
