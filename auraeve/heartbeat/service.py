@@ -8,24 +8,14 @@ from loguru import logger
 
 DEFAULT_HEARTBEAT_INTERVAL_S = 30 * 60  # 默认 30 分钟
 
-HEARTBEAT_PROMPT = """现在是你的后台心跳时间。按顺序做以下几件事，然后判断要不要主动联系主人。
+HEARTBEAT_PROMPT = """现在是你的后台心跳时间。
 
-## 检查清单
+只读取工作区的 HEARTBEAT.md。
 
-1. **HEARTBEAT.md** — 读取工作区的 HEARTBEAT.md，有待处理任务就执行
-2. **搁置的事项** — 读取 memory/MEMORY.md，找出主人说过"以后再说""暂时搁置""下次再看"之类的内容，如果已经超过 3 天，考虑主动跟进
-3. **未完成的讨论** — grep 今天和昨天的每日笔记（memory/YYYY-MM-DD.md），找有没有没有结论的话题或 Action Item
-4. **Obsidian 今日计划** — 用 MCP 工具读取今天的计划文件（计划/2026/月/今天日期.md），有未完成的 - [ ] 任务就提醒主人
-5. **时间节点** — 现在是否接近主人通常的工作开始或结束时间？有没有需要提醒的事？
+- 如果其中有明确待处理事项，就处理它们；只有确实值得打扰主人时，才主动联系主人
+- 如果没有待处理事项，或都不值得打扰，就只回复 HEARTBEAT_OK
 
-## 判断标准
-
-- 发现值得告知主人的内容 → 调用 message 工具主动发送，内容简洁，一次不超过 3 条
-- 没有值得打扰主人的内容 → 只回复 HEARTBEAT_OK，保持安静
-
-## 原则
-
-宁可少说，不要刷屏。不确定主人是否关心就不说。只有真正值得的事才开口。"""
+如果HEARTBEAT.md 中没有要求，就不要读取 memory/MEMORY.md、每日笔记、计划文件，也不要做额外搜索。"""
 
 HEARTBEAT_OK_TOKEN = "HEARTBEAT_OK"
 
@@ -41,6 +31,12 @@ def _is_heartbeat_empty(content: str | None) -> bool:
             continue
         return False
     return True
+
+
+def _normalize_heartbeat_text(content: str | None) -> str:
+    if not content:
+        return ""
+    return content.replace("\r\n", "\n").strip()
 
 
 class HeartbeatService:
@@ -68,6 +64,10 @@ class HeartbeatService:
     def heartbeat_file(self) -> Path:
         return self.workspace / "HEARTBEAT.md"
 
+    @property
+    def template_heartbeat_file(self) -> Path:
+        return Path(__file__).resolve().parents[2] / "workspace" / "HEARTBEAT.md"
+
     def _read_heartbeat_file(self) -> str | None:
         if self.heartbeat_file.exists():
             try:
@@ -75,6 +75,20 @@ class HeartbeatService:
             except Exception:
                 return None
         return None
+
+    def _read_template_heartbeat_file(self) -> str | None:
+        if self.template_heartbeat_file.exists():
+            try:
+                return self.template_heartbeat_file.read_text()
+            except Exception:
+                return None
+        return None
+
+    def _is_template_heartbeat(self, content: str | None) -> bool:
+        template_content = self._read_template_heartbeat_file()
+        if template_content is None:
+            return False
+        return _normalize_heartbeat_text(content) == _normalize_heartbeat_text(template_content)
 
     async def start(self) -> None:
         if not self.enabled:
@@ -103,6 +117,13 @@ class HeartbeatService:
 
     async def _tick(self) -> None:
         logger.info("心跳：主动感知中...")
+        heartbeat_content = self._read_heartbeat_file()
+        if _is_heartbeat_empty(heartbeat_content):
+            logger.info("心跳：HEARTBEAT.md 为空，跳过模型调用")
+            return
+        if self._is_template_heartbeat(heartbeat_content):
+            logger.info("心跳：HEARTBEAT.md 与模板一致，跳过模型调用")
+            return
         if self.on_heartbeat:
             try:
                 response = await self.on_heartbeat(HEARTBEAT_PROMPT)
@@ -114,6 +135,11 @@ class HeartbeatService:
                 logger.error(f"心跳任务执行失败：{e}")
 
     async def trigger_now(self) -> str | None:
+        heartbeat_content = self._read_heartbeat_file()
+        if _is_heartbeat_empty(heartbeat_content):
+            return HEARTBEAT_OK_TOKEN
+        if self._is_template_heartbeat(heartbeat_content):
+            return HEARTBEAT_OK_TOKEN
         if self.on_heartbeat:
             return await self.on_heartbeat(HEARTBEAT_PROMPT)
         return None

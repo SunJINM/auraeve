@@ -80,7 +80,7 @@ AuraEve 当前记忆体系由三部分组成：
 
 - 主 Agent 提示词在 `memory_search` 可用时，会要求先检索再回答历史相关问题
 - 子 Agent（`minimal` 模式）不会注入完整记忆召回规则
-- 心跳提示词会引导读取 `HEARTBEAT.md`、`memory/MEMORY.md`、近两日日志进行主动跟进判断
+- 心跳只检查 `HEARTBEAT.md`；当文件为空或内容仍与模板一致时，会直接跳过模型调用
 
 ### 相关配置项
 
