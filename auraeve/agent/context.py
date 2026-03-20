@@ -149,14 +149,14 @@ class ContextBuilder:
             "memory_get":     "按路径读取记忆文件片段（行范围）",
             "memory_status":  "查看记忆索引状态与降级信息",
             "message":        "发送消息、文件、图片到渠道",
-            "spawn":          "派生子 Agent 执行复杂后台任务",
+            "subagent":       "子体任务全生命周期管理（spawn/dag/list/status/steer/pause/resume/cancel/approve），支持本地与远程节点调度",
             "cron":           "管理定时任务和唤醒事件（用于提醒；设置提醒时，写入自然语言描述以便触发时读起来像提醒）",
             "todo":           "管理当前任务规划列表",
         }
         TOOL_ORDER = [
             "read_file", "write_file", "edit_file", "list_dir", "exec",
             "web_search", "web_fetch", "browser", "pdf",
-            "memory_search", "memory_get", "memory_status", "message", "spawn", "cron", "todo",
+            "memory_search", "memory_get", "memory_status", "message", "subagent", "cron", "todo",
         ]
 
         enabled = [t for t in TOOL_ORDER if t in tools]
