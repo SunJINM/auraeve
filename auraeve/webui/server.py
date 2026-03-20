@@ -18,6 +18,7 @@ from auraeve.webui.auth import verify_token
 from auraeve.webui.chat_service import ChatService
 from auraeve.webui.config_service import ConfigService
 from auraeve.webui.mcp_service import MCPWebService
+from auraeve.webui.node_service import NodeWebService
 from auraeve.webui.plugin_service import PluginWebService
 from auraeve.webui.log_service import LogWebService
 from auraeve.webui.skill_service import SkillWebService
@@ -70,6 +71,18 @@ from auraeve.webui.schemas import (
     LogsExportRequest,
     ProfileImportResponse,
     RestartResponse,
+    NodeListResponse,
+    NodeDetailResponse,
+    NodeActionResponse,
+    TaskListResponse,
+    TaskDetailResponse,
+    TaskActionRequest,
+    TaskSteerRequest,
+    TaskSubmitRequest,
+    ApprovalListResponse,
+    ApprovalDecideRequest,
+    DeltaListResponse,
+    NodeOverviewResponse,
 )
 
 
@@ -89,6 +102,7 @@ class WebUIServer:
         mcp_events_provider: Callable[[], list[dict[str, Any]]] | None = None,
         mcp_reconnect_provider: Callable[[str], Awaitable[dict[str, Any]]] | None = None,
         restart_callback: Callable[[], Awaitable[None]] | None = None,
+        orchestrator: Any | None = None,
     ) -> None:
         self._chat = chat_service
         self._config = config_service
@@ -109,6 +123,7 @@ class WebUIServer:
             if mcp_status_provider and mcp_events_provider and mcp_reconnect_provider
             else None
         )
+        self._nodes = NodeWebService(orchestrator) if orchestrator else None
         self._server: uvicorn.Server | None = None
         self._restart_callback = restart_callback
         self._upload = UploadWebService()
@@ -454,6 +469,104 @@ class WebUIServer:
                 logger.info("WebUI 收到重启请求，即将重启服务...")
                 asyncio.get_running_loop().call_later(0.5, lambda: asyncio.create_task(self._restart_callback()))  # type: ignore[misc]
                 return RestartResponse(ok=True, message="服务即将重启，请稍候...")
+
+        # ── 节点控制模块路由 ──────────────────────────────────────────────
+        if self._nodes is not None:
+            @app.get("/api/webui/nodes/overview", response_model=NodeOverviewResponse, dependencies=[auth])
+            async def nodes_overview() -> NodeOverviewResponse:
+                return NodeOverviewResponse(**self._nodes.get_overview())
+
+            @app.get("/api/webui/nodes/list", response_model=NodeListResponse, dependencies=[auth])
+            async def nodes_list() -> NodeListResponse:
+                return NodeListResponse(**self._nodes.list_nodes())
+
+            @app.get("/api/webui/nodes/detail", response_model=NodeDetailResponse, dependencies=[auth])
+            async def nodes_detail(nodeId: str = Query(min_length=1, max_length=100)) -> NodeDetailResponse:
+                return NodeDetailResponse(**self._nodes.get_node_detail(nodeId))
+
+            @app.post("/api/webui/nodes/disconnect", response_model=NodeActionResponse, dependencies=[auth])
+            async def nodes_disconnect(req: TaskActionRequest) -> NodeActionResponse:
+                return NodeActionResponse(**self._nodes.disconnect_node(req.taskId))
+
+            @app.get("/api/webui/nodes/tasks", response_model=TaskListResponse, dependencies=[auth])
+            async def nodes_tasks(
+                status: str | None = Query(default=None, max_length=30),
+                nodeId: str | None = Query(default=None, max_length=100),
+                limit: int = Query(default=50, ge=1, le=500),
+            ) -> TaskListResponse:
+                return TaskListResponse(**self._nodes.list_tasks(status=status, node_id=nodeId, limit=limit))
+
+            @app.get("/api/webui/nodes/tasks/detail", response_model=TaskDetailResponse, dependencies=[auth])
+            async def nodes_task_detail(taskId: str = Query(min_length=1, max_length=100)) -> TaskDetailResponse:
+                return TaskDetailResponse(**self._nodes.get_task_detail(taskId))
+
+            @app.post("/api/webui/nodes/tasks/pause", response_model=NodeActionResponse, dependencies=[auth])
+            async def nodes_task_pause(req: TaskActionRequest) -> NodeActionResponse:
+                return NodeActionResponse(**(await self._nodes.pause_task(req.taskId)))
+
+            @app.post("/api/webui/nodes/tasks/resume", response_model=NodeActionResponse, dependencies=[auth])
+            async def nodes_task_resume(req: TaskActionRequest) -> NodeActionResponse:
+                return NodeActionResponse(**(await self._nodes.resume_task(req.taskId)))
+
+            @app.post("/api/webui/nodes/tasks/cancel", response_model=NodeActionResponse, dependencies=[auth])
+            async def nodes_task_cancel(req: TaskActionRequest) -> NodeActionResponse:
+                return NodeActionResponse(**(await self._nodes.cancel_task(req.taskId, req.reason or "webui_cancel")))
+
+            @app.post("/api/webui/nodes/tasks/steer", response_model=NodeActionResponse, dependencies=[auth])
+            async def nodes_task_steer(req: TaskSteerRequest) -> NodeActionResponse:
+                return NodeActionResponse(**(await self._nodes.steer_task(req.taskId, req.message)))
+
+            @app.post("/api/webui/nodes/tasks/submit", response_model=NodeActionResponse, dependencies=[auth])
+            async def nodes_task_submit(req: TaskSubmitRequest) -> NodeActionResponse:
+                return NodeActionResponse(**(await self._nodes.submit_task(
+                    goal=req.goal,
+                    priority=req.priority,
+                    assigned_node_id=req.assignedNodeId,
+                    origin_channel=req.originChannel,
+                    origin_chat_id=req.originChatId,
+                )))
+
+            @app.get("/api/webui/nodes/approvals", response_model=ApprovalListResponse, dependencies=[auth])
+            async def nodes_approvals(
+                status: str | None = Query(default=None, max_length=30),
+                limit: int = Query(default=100, ge=1, le=500),
+            ) -> ApprovalListResponse:
+                return ApprovalListResponse(**self._nodes.list_approvals(status=status, limit=limit))
+
+            @app.post("/api/webui/nodes/approvals/decide", response_model=NodeActionResponse, dependencies=[auth])
+            async def nodes_approval_decide(req: ApprovalDecideRequest) -> NodeActionResponse:
+                return NodeActionResponse(**self._nodes.decide_approval(req.approvalId, req.decision, req.decidedBy))
+
+            @app.get("/api/webui/nodes/deltas", response_model=DeltaListResponse, dependencies=[auth])
+            async def nodes_deltas(
+                mergeStatus: str | None = Query(default=None, max_length=30),
+                nodeId: str | None = Query(default=None, max_length=100),
+                limit: int = Query(default=100, ge=1, le=500),
+            ) -> DeltaListResponse:
+                return DeltaListResponse(**self._nodes.list_deltas(
+                    merge_status=mergeStatus, node_id=nodeId, limit=limit,
+                ))
+
+            @app.post("/api/webui/nodes/memory/merge", response_model=NodeActionResponse, dependencies=[auth])
+            async def nodes_memory_merge() -> NodeActionResponse:
+                return NodeActionResponse(**self._nodes.trigger_merge())
+
+            @app.get("/api/webui/nodes/stream", dependencies=[auth])
+            async def nodes_stream() -> StreamingResponse:
+                async def _stream():
+                    async for event in self._nodes.subscribe():
+                        data = json.dumps(event, ensure_ascii=False)
+                        yield f"data: {data}\n\n"
+
+                return StreamingResponse(
+                    _stream(),
+                    media_type="text/event-stream",
+                    headers={
+                        "Cache-Control": "no-cache",
+                        "X-Accel-Buffering": "no",
+                        "Connection": "keep-alive",
+                    },
+                )
 
         if self._static_dir and self._static_dir.exists():
             app.mount("/", StaticFiles(directory=str(self._static_dir), html=True), name="static")

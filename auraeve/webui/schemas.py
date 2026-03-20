@@ -320,3 +320,86 @@ class ProfileImportResponse(BaseModel):
 class RestartResponse(BaseModel):
     ok: bool
     message: str
+
+
+# ── 节点控制模块 ──────────────────────────────────────────────────────────
+
+
+class NodeListResponse(BaseModel):
+    ok: bool
+    nodes: list[dict[str, Any]] = Field(default_factory=list)
+    onlineCount: int = 0
+    totalCount: int = 0
+
+
+class NodeDetailResponse(BaseModel):
+    ok: bool
+    node: dict[str, Any] | None = None
+    capabilityScores: list[dict[str, Any]] = Field(default_factory=list)
+    tasks: list[dict[str, Any]] = Field(default_factory=list)
+    message: str | None = None
+
+
+class NodeActionResponse(BaseModel):
+    ok: bool
+    message: str = ""
+    taskId: str | None = None
+
+
+class TaskListResponse(BaseModel):
+    ok: bool
+    tasks: list[dict[str, Any]] = Field(default_factory=list)
+    total: int = 0
+
+
+class TaskDetailResponse(BaseModel):
+    ok: bool
+    task: dict[str, Any] | None = None
+    events: list[dict[str, Any]] = Field(default_factory=list)
+    message: str | None = None
+
+
+class TaskActionRequest(BaseModel):
+    taskId: str = Field(min_length=1, max_length=100)
+    reason: str = Field(default="", max_length=500)
+
+
+class TaskSteerRequest(BaseModel):
+    taskId: str = Field(min_length=1, max_length=100)
+    message: str = Field(min_length=1, max_length=2000)
+
+
+class TaskSubmitRequest(BaseModel):
+    goal: str = Field(min_length=1, max_length=5000)
+    priority: int = Field(default=5, ge=1, le=10)
+    assignedNodeId: str = Field(default="", max_length=100)
+    originChannel: str = Field(default="", max_length=100)
+    originChatId: str = Field(default="", max_length=200)
+
+
+class ApprovalListResponse(BaseModel):
+    ok: bool
+    approvals: list[dict[str, Any]] = Field(default_factory=list)
+    total: int = 0
+
+
+class ApprovalDecideRequest(BaseModel):
+    approvalId: str = Field(min_length=1, max_length=100)
+    decision: Literal["approved", "rejected", "revised"]
+    decidedBy: str = Field(default="webui", max_length=100)
+
+
+class DeltaListResponse(BaseModel):
+    ok: bool
+    deltas: list[dict[str, Any]] = Field(default_factory=list)
+    total: int = 0
+
+
+class NodeOverviewResponse(BaseModel):
+    ok: bool
+    onlineNodes: int = 0
+    totalNodes: int = 0
+    runningTasks: int = 0
+    pendingApprovals: int = 0
+    pendingDeltas: int = 0
+    taskStatusCounts: dict[str, int] = Field(default_factory=dict)

@@ -8,6 +8,7 @@ import { McpPage } from './pages/McpPage'
 import { PluginsPage } from './pages/PluginsPage'
 import { SkillsPage } from './pages/SkillsPage'
 import { LogsPage } from './pages/LogsPage'
+import { NodesPage } from './pages/NodesPage'
 import { ProfilePage } from './pages/ProfilePage'
 import { useAppStore } from './store/app'
 
@@ -24,6 +25,7 @@ function App() {
     if (page === 'config') return '参数配置'
     if (page === 'mcp') return 'MCP 管理'
     if (page === 'plugins') return '插件管理'
+    if (page === 'nodes') return '节点控制'
     if (page === 'logs') return '日志中心'
     if (page === 'profile') return '资料迁移'
     return '技能管理'
@@ -66,6 +68,7 @@ function App() {
               {page === 'mcp' && <McpPage />}
               {page === 'plugins' && <PluginsPage />}
               {page === 'skills' && <SkillsPage />}
+              {page === 'nodes' && <NodesPage />}
               {page === 'logs' && <LogsPage />}
               {page === 'profile' && <ProfilePage />}
             </section>

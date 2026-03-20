@@ -750,6 +750,7 @@ async def main(terminal_mode: bool = False) -> None:
             mcp_events_provider=agent.get_mcp_events,
             mcp_reconnect_provider=agent.reconnect_mcp_server,
             restart_callback=lambda: _shutdown(restart=True),
+            orchestrator=agent._task_orchestrator,
         )
         webui_channel = WebUIChannel(WebUIChannelConfig(), bus, chat_svc)
         bus.subscribe_outbound("webui", webui_channel.send)

@@ -10,6 +10,7 @@ import {
   HiDocumentText,
   HiSparkles,
   HiSun,
+  HiServerStack,
 } from 'react-icons/hi2'
 import { useAppStore } from '../store/app'
 
@@ -19,6 +20,7 @@ const NAV_ITEMS = [
   { key: 'mcp' as const, label: 'MCP 管理', icon: HiCircleStack },
   { key: 'plugins' as const, label: '插件管理', icon: HiPuzzlePiece },
   { key: 'skills' as const, label: '技能管理', icon: HiSparkles },
+  { key: 'nodes' as const, label: '节点控制', icon: HiServerStack },
   { key: 'logs' as const, label: '日志中心', icon: HiDocumentText },
   { key: 'profile' as const, label: '资料迁移', icon: HiDocumentText },
 ]

@@ -294,6 +294,32 @@ class SubagentDB:
         )
         conn.commit()
 
+    def list_approvals(
+        self,
+        status: ApprovalStatus | None = None,
+        limit: int = 100,
+    ) -> list[Approval]:
+        sql = "SELECT * FROM approvals WHERE 1=1"
+        params: list[Any] = []
+        if status:
+            sql += " AND status=?"
+            params.append(status.value)
+        sql += " ORDER BY created_at DESC LIMIT ?"
+        params.append(limit)
+        rows = self._get_conn().execute(sql, params).fetchall()
+        return [
+            Approval(
+                approval_id=r["approval_id"], task_id=r["task_id"],
+                action_desc=r["action_desc"],
+                risk_level=RiskLevel(r["risk_level"]),
+                status=ApprovalStatus(r["status"]),
+                decided_by=r["decided_by"] or "",
+                decided_at=r["decided_at"],
+                created_at=r["created_at"],
+            )
+            for r in rows
+        ]
+
     # ── Artifact ────────────────────────────────────────────────────────────
 
     def save_artifact(self, artifact: TaskArtifact) -> None:
@@ -338,6 +364,12 @@ class SubagentDB:
                 (now, node_id),
             )
         conn.commit()
+
+    def get_all_nodes(self) -> list[NodeSession]:
+        rows = self._get_conn().execute(
+            "SELECT * FROM node_sessions ORDER BY is_online DESC, connected_at DESC"
+        ).fetchall()
+        return [self._row_to_node(r) for r in rows]
 
     def get_online_nodes(self) -> list[NodeSession]:
         rows = self._get_conn().execute(
@@ -400,6 +432,33 @@ class SubagentDB:
             (status.value, delta_id),
         )
         conn.commit()
+
+    def list_deltas(
+        self,
+        merge_status: MergeStatus | None = None,
+        node_id: str | None = None,
+        limit: int = 100,
+    ) -> list[MemoryDelta]:
+        sql = "SELECT * FROM memory_deltas WHERE 1=1"
+        params: list[Any] = []
+        if merge_status:
+            sql += " AND merge_status=?"
+            params.append(merge_status.value)
+        if node_id:
+            sql += " AND node_id=?"
+            params.append(node_id)
+        sql += " ORDER BY created_at DESC LIMIT ?"
+        params.append(limit)
+        rows = self._get_conn().execute(sql, params).fetchall()
+        return [
+            MemoryDelta(
+                delta_id=r["delta_id"], task_id=r["task_id"], node_id=r["node_id"],
+                delta_type=DeltaType(r["delta_type"]), content=r["content"],
+                confidence=r["confidence"], merge_status=MergeStatus(r["merge_status"]),
+                created_at=r["created_at"],
+            )
+            for r in rows
+        ]
 
     # ── CapabilityScore ─────────────────────────────────────────────────────
 

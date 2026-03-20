@@ -556,6 +556,205 @@ export const systemApi = {
   restart: () => req<{ ok: boolean; message: string }>('POST', '/restart'),
 }
 
+// ── 节点控制 API ──────────────────────────────────────
+
+export interface NodeOverviewResp {
+  ok: boolean
+  onlineNodes: number
+  totalNodes: number
+  runningTasks: number
+  pendingApprovals: number
+  pendingDeltas: number
+  taskStatusCounts: Record<string, number>
+}
+
+export interface CapabilityScoreItem {
+  domain: string
+  score: number
+  successCount: number
+  failCount: number
+  avgDurationS: number
+}
+
+export interface NodeItem {
+  nodeId: string
+  displayName: string
+  platform: string
+  capabilities: Record<string, unknown>[]
+  isOnline: boolean
+  connectedAt: number
+  disconnectedAt: number
+  runningTasks: number
+  capabilityScores: CapabilityScoreItem[]
+}
+
+export interface NodeListResp {
+  ok: boolean
+  nodes: NodeItem[]
+  onlineCount: number
+  totalCount: number
+}
+
+export interface NodeDetailResp {
+  ok: boolean
+  node?: NodeItem
+  capabilityScores?: CapabilityScoreItem[]
+  tasks?: TaskItem[]
+  message?: string
+}
+
+export interface TaskBudget {
+  max_steps: number
+  max_duration_s: number
+  max_tool_calls: number
+  max_tokens: number
+}
+
+export interface TaskItem {
+  taskId: string
+  goal: string
+  assignedNodeId: string
+  priority: number
+  status: string
+  dependsOn: string[]
+  budget: TaskBudget
+  policyProfile: string
+  result: string
+  compensateAction: string | null
+  traceId: string
+  originChannel: string
+  originChatId: string
+  createdAt: number
+  updatedAt: number
+}
+
+export interface TaskListResp {
+  ok: boolean
+  tasks: TaskItem[]
+  total: number
+}
+
+export interface TaskEventItem {
+  seq: number
+  eventType: string
+  payload: Record<string, unknown>
+  traceId: string
+  spanId: string
+  createdAt: number
+}
+
+export interface TaskDetailResp {
+  ok: boolean
+  task?: TaskItem
+  events?: TaskEventItem[]
+  message?: string
+}
+
+export interface ApprovalItem {
+  approvalId: string
+  taskId: string
+  actionDesc: string
+  riskLevel: string
+  status: string
+  decidedBy: string
+  decidedAt: number
+  createdAt: number
+}
+
+export interface ApprovalListResp {
+  ok: boolean
+  approvals: ApprovalItem[]
+  total: number
+}
+
+export interface DeltaItem {
+  deltaId: string
+  taskId: string
+  nodeId: string
+  deltaType: string
+  content: string
+  confidence: number
+  mergeStatus: string
+  createdAt: number
+}
+
+export interface DeltaListResp {
+  ok: boolean
+  deltas: DeltaItem[]
+  total: number
+}
+
+export interface NodeActionResp {
+  ok: boolean
+  message: string
+  taskId?: string
+}
+
+export interface NodeStreamEvent {
+  type: string
+  [k: string]: unknown
+}
+
+export const nodesApi = {
+  overview: () => req<NodeOverviewResp>('GET', '/nodes/overview'),
+  list: () => req<NodeListResp>('GET', '/nodes/list'),
+  detail: (nodeId: string) => req<NodeDetailResp>('GET', `/nodes/detail?nodeId=${encodeURIComponent(nodeId)}`),
+  disconnect: (nodeId: string) => req<NodeActionResp>('POST', '/nodes/disconnect', { taskId: nodeId }),
+
+  // 任务管理
+  tasks: (opts?: { status?: string; nodeId?: string; limit?: number }) => {
+    const p = new URLSearchParams()
+    if (opts?.status) p.set('status', opts.status)
+    if (opts?.nodeId) p.set('nodeId', opts.nodeId)
+    if (opts?.limit) p.set('limit', String(opts.limit))
+    return req<TaskListResp>('GET', `/nodes/tasks?${p.toString()}`)
+  },
+  taskDetail: (taskId: string) =>
+    req<TaskDetailResp>('GET', `/nodes/tasks/detail?taskId=${encodeURIComponent(taskId)}`),
+  pauseTask: (taskId: string) => req<NodeActionResp>('POST', '/nodes/tasks/pause', { taskId }),
+  resumeTask: (taskId: string) => req<NodeActionResp>('POST', '/nodes/tasks/resume', { taskId }),
+  cancelTask: (taskId: string, reason = 'webui_cancel') =>
+    req<NodeActionResp>('POST', '/nodes/tasks/cancel', { taskId, reason }),
+  steerTask: (taskId: string, message: string) =>
+    req<NodeActionResp>('POST', '/nodes/tasks/steer', { taskId, message }),
+  submitTask: (goal: string, opts?: { priority?: number; assignedNodeId?: string }) =>
+    req<NodeActionResp>('POST', '/nodes/tasks/submit', { goal, ...opts }),
+
+  // 审批
+  approvals: (status?: string, limit = 100) => {
+    const p = new URLSearchParams()
+    if (status) p.set('status', status)
+    p.set('limit', String(limit))
+    return req<ApprovalListResp>('GET', `/nodes/approvals?${p.toString()}`)
+  },
+  decideApproval: (approvalId: string, decision: string, decidedBy = 'webui') =>
+    req<NodeActionResp>('POST', '/nodes/approvals/decide', { approvalId, decision, decidedBy }),
+
+  // 记忆增量
+  deltas: (opts?: { mergeStatus?: string; nodeId?: string; limit?: number }) => {
+    const p = new URLSearchParams()
+    if (opts?.mergeStatus) p.set('mergeStatus', opts.mergeStatus)
+    if (opts?.nodeId) p.set('nodeId', opts.nodeId)
+    if (opts?.limit) p.set('limit', String(opts.limit))
+    return req<DeltaListResp>('GET', `/nodes/deltas?${p.toString()}`)
+  },
+  triggerMerge: () => req<NodeActionResp>('POST', '/nodes/memory/merge'),
+
+  // SSE 事件流
+  stream(onEvent: (e: NodeStreamEvent) => void): () => void {
+    const t = token()
+    const url = `${BASE}/nodes/stream${t ? `?token=${t}` : ''}`
+    const es = new EventSource(url)
+    es.onmessage = (ev) => {
+      try { onEvent(JSON.parse(ev.data)) } catch { /* skip */ }
+    }
+    es.onerror = () => {
+      onEvent({ type: 'error' })
+    }
+    return () => es.close()
+  },
+}
+
 export const profileApi = {
   async exportArchive(): Promise<void> {
     const res = await fetch(`${BASE}/profile/export`, {

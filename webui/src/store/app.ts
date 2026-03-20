@@ -12,8 +12,8 @@ interface AppState {
   logout: () => void
 
   // 当前页面
-  page: 'chat' | 'config' | 'mcp' | 'plugins' | 'skills' | 'logs' | 'profile'
-  setPage: (p: 'chat' | 'config' | 'mcp' | 'plugins' | 'skills' | 'logs' | 'profile') => void
+  page: 'chat' | 'config' | 'mcp' | 'plugins' | 'skills' | 'logs' | 'profile' | 'nodes'
+  setPage: (p: 'chat' | 'config' | 'mcp' | 'plugins' | 'skills' | 'logs' | 'profile' | 'nodes') => void
 
   // 当前会话
   sessionKey: string
