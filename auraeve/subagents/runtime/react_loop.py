@@ -184,6 +184,18 @@ class ReActLoop:
             f"工具调用上限: {task.budget.max_tool_calls}"
         )
 
+        # 节点身份说明
+        node_id = task.assigned_node_id or ""
+        if node_id and node_id != "local":
+            node_section = (
+                f"\n\n## 执行节点\n"
+                f"你正在远程节点 `{node_id}` 上运行。\n"
+                f"你的所有工具（exec、read_file、write_file 等）都直接操作本节点的文件系统和 Shell。\n"
+                f"**不要使用 SSH 连接到其他机器**——你已经在目标节点上，直接执行命令即可。"
+            )
+        else:
+            node_section = ""
+
         return (
             f"# 子体执行环境\n\n"
             f"## 当前时间\n{now}\n\n"
@@ -193,6 +205,7 @@ class ReActLoop:
             f"完成后给出清晰结论，不要求用户二次确认。\n"
             f"若收到 [引导消息]，立即调整执行方向。\n"
             f"高风险操作会触发审批流程，请等待审批结果。\n"
+            f"{node_section}"
             f"{memory_section}"
         )
 

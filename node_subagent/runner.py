@@ -91,6 +91,7 @@ class RemoteSubAgentRunner:
         task = Task(
             task_id=task_id,
             goal=goal,
+            assigned_node_id=self._node_id,
             budget=TaskBudget(
                 max_steps=budget_raw.get("max_steps", 50),
                 max_duration_s=budget_raw.get("max_duration_s", 600),

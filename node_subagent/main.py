@@ -22,12 +22,12 @@ async def main() -> None:
     args = parser.parse_args()
 
     # 延迟导入避免循环依赖
-    from auraeve.subagents.control_plane.policy_v2 import PolicyEngineV2
+    from auraeve.agent_runtime.tool_policy.engine import ToolPolicyEngine
     from .runner import RemoteSubAgentRunner
 
     # 构建 provider（需要根据实际配置）
     provider = _build_provider(args.model)
-    policy = PolicyEngineV2()
+    policy = ToolPolicyEngine(is_subagent=True)
 
     def tool_builder(task):
         """构建远程子体可用工具集。"""
