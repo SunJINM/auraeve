@@ -640,19 +640,68 @@ class TaskOrchestrator:
                 logger.error(f"[orchestrator] 补偿任务创建失败: {e}")
 
     async def _deliver_result(self, task: Task, result: str, success: bool) -> None:
+        """将子体结果注入母体对话上下文，由母体 LLM 决定如何回复用户。"""
         if not task.origin_channel:
             return
+
+        # DAG 批次：同 trace 下有多个任务时，等全部完成再一次性注入
+        if task.trace_id:
+            siblings = self._db.list_tasks_by_trace(task.trace_id)
+            if len(siblings) > 1:
+                pending = [
+                    t for t in siblings
+                    if t.status not in (TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELED)
+                ]
+                if pending:
+                    logger.info(
+                        f"[orchestrator] DAG 任务 {task.task_id} 完成，"
+                        f"等待同批次剩余 {len(pending)} 个任务"
+                    )
+                    return
+                # 全部完成，汇总注入
+                return await self._deliver_dag_results(siblings, task)
+
+        # 独立任务：直接注入母体上下文
+        await self._inject_result_to_mother(task, result, success)
+
+    async def _deliver_dag_results(self, tasks: list[Task], trigger_task: Task) -> None:
+        """DAG 全部完成后，汇总结果注入母体。"""
+        lines = ["[子体任务批次完成]", ""]
+        for t in tasks:
+            icon = "✅" if t.status == TaskStatus.COMPLETED else "❌"
+            lines.append(f"{icon} 任务: {t.goal}")
+            if t.result:
+                lines.append(f"结果: {t.result[:1500]}")
+            lines.append("")
+
+        content = "\n".join(lines)
+        await self._inject_result_to_mother(trigger_task, content, True, raw=True)
+
+    async def _inject_result_to_mother(
+        self, task: Task, result: str, success: bool, raw: bool = False,
+    ) -> None:
+        """将结果作为 InboundMessage 注入母体消息总线，激活母体 LLM 处理。"""
         try:
-            from auraeve.bus.events import OutboundMessage
+            from auraeve.bus.events import InboundMessage
             icon = "✅" if success else "❌"
-            content = f"{icon} **子体任务完成: {task.goal[:50]}**\n\n{result[:2000]}"
-            await self._bus.publish_outbound(OutboundMessage(
+            if raw:
+                content = result
+            else:
+                content = (
+                    f"[子体任务完成]\n"
+                    f"任务: {task.goal}\n"
+                    f"状态: {icon} {'成功' if success else '失败'}\n"
+                    f"结果:\n{result[:3000]}"
+                )
+            await self._bus.publish_inbound(InboundMessage(
                 channel=task.origin_channel,
+                sender_id="subagent_system",
                 chat_id=task.origin_chat_id,
                 content=content,
+                metadata={"is_subagent_result": True, "task_id": task.task_id},
             ))
         except Exception as e:
-            logger.error(f"[orchestrator] 结果推送失败: {e}")
+            logger.error(f"[orchestrator] 结果注入母体失败: {e}")
 
     def _get_trace_id(self, task_id: str) -> str:
         task = self._db.get_task(task_id)

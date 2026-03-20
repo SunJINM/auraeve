@@ -167,6 +167,14 @@ class SubagentDB:
         rows = self._get_conn().execute(sql, params).fetchall()
         return [self._row_to_task(r) for r in rows]
 
+    def list_tasks_by_trace(self, trace_id: str) -> list[Task]:
+        """查询同一 trace_id 下的所有任务（DAG 批次）。"""
+        rows = self._get_conn().execute(
+            "SELECT * FROM tasks WHERE trace_id=? ORDER BY created_at ASC",
+            (trace_id,),
+        ).fetchall()
+        return [self._row_to_task(r) for r in rows]
+
     def update_task_status(self, task_id: str, status: TaskStatus) -> None:
         now = time.time()
         self._get_conn().execute(
