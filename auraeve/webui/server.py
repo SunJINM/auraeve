@@ -1,6 +1,7 @@
 ﻿"""WebUI FastAPI service routes and lifecycle."""
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 from typing import Any, Awaitable, Callable
@@ -68,6 +69,7 @@ from auraeve.webui.schemas import (
     LogsContextResponse,
     LogsExportRequest,
     ProfileImportResponse,
+    RestartResponse,
 )
 
 
@@ -86,6 +88,7 @@ class WebUIServer:
         mcp_status_provider: Callable[[], dict[str, Any]] | None = None,
         mcp_events_provider: Callable[[], list[dict[str, Any]]] | None = None,
         mcp_reconnect_provider: Callable[[str], Awaitable[dict[str, Any]]] | None = None,
+        restart_callback: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
         self._chat = chat_service
         self._config = config_service
@@ -107,6 +110,7 @@ class WebUIServer:
             else None
         )
         self._server: uvicorn.Server | None = None
+        self._restart_callback = restart_callback
         self._upload = UploadWebService()
         self._profile = ProfileWebService()
         self._logs = LogWebService()
@@ -443,6 +447,13 @@ class WebUIServer:
         @app.post("/api/webui/skills/sync", response_model=SkillActionResponse, dependencies=[auth])
         async def skills_sync(req: SkillSyncRequest) -> SkillActionResponse:
             return SkillActionResponse(**self._skills.sync(all_skills=req.all, dry_run=req.dryRun))
+
+        if self._restart_callback is not None:
+            @app.post("/api/webui/restart", response_model=RestartResponse, dependencies=[auth])
+            async def restart_service() -> RestartResponse:
+                logger.info("WebUI 收到重启请求，即将重启服务...")
+                asyncio.get_running_loop().call_later(0.5, lambda: asyncio.create_task(self._restart_callback()))  # type: ignore[misc]
+                return RestartResponse(ok=True, message="服务即将重启，请稍候...")
 
         if self._static_dir and self._static_dir.exists():
             app.mount("/", StaticFiles(directory=str(self._static_dir), html=True), name="static")

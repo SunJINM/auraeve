@@ -552,6 +552,10 @@ export interface ProfileImportResp {
   format: string
 }
 
+export const systemApi = {
+  restart: () => req<{ ok: boolean; message: string }>('POST', '/restart'),
+}
+
 export const profileApi = {
   async exportArchive(): Promise<void> {
     const res = await fetch(`${BASE}/profile/export`, {

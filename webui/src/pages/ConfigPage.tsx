@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { motion } from 'framer-motion'
 import { HoverEffectCard } from '../components/HoverEffectCard'
-import { configApi, type ConfigSchemaGroup } from '../api/client'
+import { configApi, systemApi, type ConfigSchemaGroup } from '../api/client'
 import './ManagePages.css'
 
 type ConfigValues = Record<string, unknown>
@@ -16,6 +16,9 @@ export function ConfigPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState<{ type: 'ok' | 'error' | 'warn'; text: string } | null>(null)
+  const [showRestartConfirm, setShowRestartConfirm] = useState(false)
+  const [restarting, setRestarting] = useState(false)
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -35,6 +38,12 @@ export function ConfigPage() {
   }, [])
 
   useEffect(() => { load() }, [load])
+
+  useEffect(() => {
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current)
+    }
+  }, [])
 
   const changeField = (key: string, val: unknown) => {
     setEdited((prev) => ({ ...prev, [key]: val }))
@@ -93,6 +102,32 @@ export function ConfigPage() {
     }
   }
 
+  const doRestart = async () => {
+    setShowRestartConfirm(false)
+    setRestarting(true)
+    setMsg({ type: 'warn', text: '正在重启服务，请稍候...' })
+    try {
+      await systemApi.restart()
+    } catch {
+      // 请求可能因服务关闭而失败，这是预期行为
+    }
+    // 轮询等待服务恢复
+    pollRef.current = setInterval(async () => {
+      try {
+        const res = await fetch('/api/webui/health')
+        if (res.ok) {
+          if (pollRef.current) clearInterval(pollRef.current)
+          pollRef.current = null
+          setRestarting(false)
+          setMsg({ type: 'ok', text: '服务已重启完成' })
+          void load()
+        }
+      } catch {
+        // 服务尚未恢复，继续轮询
+      }
+    }, 2000)
+  }
+
   if (loading) return (
     <div className="mgmt-shell">
       <div className="mgmt-orb mgmt-orb-a" />
@@ -149,9 +184,12 @@ export function ConfigPage() {
               </div>
             </div>
             <div className="mgmt-actions">
-              <button className="mgmt-btn" onClick={() => void load()} disabled={saving}>刷新</button>
-              <button className="mgmt-btn" onClick={() => void save(false)} disabled={saving}>保存</button>
-              <button className="mgmt-btn primary" onClick={() => void save(true)} disabled={saving}>应用</button>
+              <button className="mgmt-btn" onClick={() => void load()} disabled={saving || restarting}>刷新</button>
+              <button className="mgmt-btn" onClick={() => void save(false)} disabled={saving || restarting}>保存</button>
+              <button className="mgmt-btn primary" onClick={() => void save(true)} disabled={saving || restarting}>应用</button>
+              <button className="mgmt-btn danger" onClick={() => setShowRestartConfirm(true)} disabled={saving || restarting}>
+                {restarting ? '重启中...' : '重启服务'}
+              </button>
             </div>
           </div>
 
@@ -227,6 +265,28 @@ export function ConfigPage() {
           </div>
         </HoverEffectCard>
       </motion.div>
+
+      {/* 重启确认弹窗 */}
+      {showRestartConfirm && (
+        <div className="cfg-overlay" onClick={() => setShowRestartConfirm(false)}>
+          <motion.div
+            className="cfg-confirm"
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.2 }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="cfg-confirm-title">确认重启服务</h3>
+            <p className="cfg-confirm-desc">
+              重启将中断所有正在进行的会话和任务，服务恢复前页面将暂时无法操作。确定要继续吗？
+            </p>
+            <div className="cfg-confirm-actions">
+              <button className="mgmt-btn" onClick={() => setShowRestartConfirm(false)}>取消</button>
+              <button className="mgmt-btn danger" onClick={() => void doRestart()}>确认重启</button>
+            </div>
+          </motion.div>
+        </div>
+      )}
     </div>
   )
 }

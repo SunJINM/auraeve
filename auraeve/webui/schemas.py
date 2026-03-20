@@ -315,3 +315,8 @@ class ProfileImportResponse(BaseModel):
     stateBackup: str | None = None
     configBackup: str | None = None
     format: str
+
+
+class RestartResponse(BaseModel):
+    ok: bool
+    message: str

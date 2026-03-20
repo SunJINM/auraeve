@@ -749,6 +749,7 @@ async def main(terminal_mode: bool = False) -> None:
             mcp_status_provider=agent.get_mcp_status,
             mcp_events_provider=agent.get_mcp_events,
             mcp_reconnect_provider=agent.reconnect_mcp_server,
+            restart_callback=lambda: _shutdown(restart=True),
         )
         webui_channel = WebUIChannel(WebUIChannelConfig(), bus, chat_svc)
         bus.subscribe_outbound("webui", webui_channel.send)
@@ -781,14 +782,25 @@ async def main(terminal_mode: bool = False) -> None:
     event_loop = asyncio.get_running_loop()
     _restart_flag = False
 
+    _gather_task: asyncio.Task | None = None
+
     async def _shutdown(restart: bool = False):
         nonlocal _restart_flag
         _restart_flag = restart
-        action = "" if restart else ""
-        logger.info(f"{action}...")
+        action = "重启" if restart else "关闭"
+        logger.info(f"{action}中...")
+        # 设置所有组件的 stop flag
         agent.stop()
         cron_service.stop()
         heartbeat.stop()
+        bus.stop()
+        if webui_server:
+            await webui_server.stop()
+        if subagent_ws_server:
+            await subagent_ws_server.stop()
+        # cancel gather task 让主循环立即退出进入 finally 清理
+        if _gather_task and not _gather_task.done():
+            _gather_task.cancel()
 
     def _on_sigterm():
         asyncio.create_task(_shutdown(restart=False))
@@ -842,8 +854,9 @@ async def main(terminal_mode: bool = False) -> None:
             tasks.append(webui_server.start())
         if webui_channel:
             tasks.append(webui_channel.start())
-        await asyncio.gather(*tasks)
-    except KeyboardInterrupt:
+        _gather_task = asyncio.ensure_future(asyncio.gather(*tasks))
+        await _gather_task
+    except (KeyboardInterrupt, asyncio.CancelledError):
         logger.info("?..")
     finally:
         cron_service.stop()
