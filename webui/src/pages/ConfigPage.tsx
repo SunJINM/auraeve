@@ -1,6 +1,8 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
+import { motion } from 'framer-motion'
+import { HoverEffectCard } from '../components/HoverEffectCard'
 import { configApi, type ConfigSchemaGroup } from '../api/client'
-import clsx from 'clsx'
+import './ManagePages.css'
 
 type ConfigValues = Record<string, unknown>
 
@@ -40,6 +42,11 @@ export function ConfigPage() {
 
   const mergedValues = { ...values, ...edited }
   const changedCount = Object.keys(edited).length
+
+  const fieldCountText = useMemo(() => {
+    const total = schema.reduce((sum, g) => sum + g.fields.length, 0)
+    return `${total} 项配置`
+  }, [schema])
 
   const buildPayload = (): ConfigValues => {
     if (mode === 'raw') {
@@ -87,162 +94,139 @@ export function ConfigPage() {
   }
 
   if (loading) return (
-    <div className="flex items-center justify-center h-full" style={{ color: 'var(--text-secondary)' }}>
-      加载中...
+    <div className="mgmt-shell">
+      <div className="mgmt-orb mgmt-orb-a" />
+      <div className="mgmt-orb mgmt-orb-b" />
+      <div className="mgmt-orb mgmt-orb-c" />
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
+        <span className="mgmt-muted">加载中...</span>
+      </div>
     </div>
   )
 
   return (
-    <div className="flex flex-col h-full">
-      {/* 工具栏 */}
-      <div
-        className="flex items-center gap-3 px-6 py-3 border-b"
-        style={{ borderColor: 'var(--glass-border)', background: 'var(--glass-bg)', backdropFilter: 'blur(12px)' }}
+    <div className="mgmt-shell">
+      <div className="mgmt-orb mgmt-orb-a" />
+      <div className="mgmt-orb mgmt-orb-b" />
+      <div className="mgmt-orb mgmt-orb-c" />
+
+      <motion.div
+        className="mgmt-stage"
+        initial={{ opacity: 0, y: 8, scale: 0.99 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ duration: 0.4, type: 'spring', stiffness: 150, damping: 22 }}
       >
-        <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-          参数配置
-          {changedCount > 0 && (
-            <span className="ml-2 px-2 py-0.5 rounded-full text-xs" style={{ background: 'var(--accent)', color: '#fff' }}>
-              {changedCount} 项已修改
-            </span>
-          )}
-        </span>
-        <div className="ml-auto flex items-center gap-2">
-          {/* Form/Raw 切换 */}
-          <div className="flex rounded-lg overflow-hidden" style={{ border: '1px solid var(--glass-border)' }}>
-            {(['form', 'raw'] as const).map((m) => (
-              <button
-                key={m}
-                onClick={() => setMode(m)}
-                className="px-3 py-1 text-xs font-medium transition-all"
-                style={
-                  mode === m
-                    ? { background: 'var(--accent)', color: '#fff' }
-                    : { color: 'var(--text-secondary)' }
-                }
-              >
-                {m === 'form' ? '表单' : 'Raw'}
-              </button>
-            ))}
+        <HoverEffectCard className="mgmt-card" maxXRotation={0.02} maxYRotation={0.02} hoverLight={false}>
+          {/* Hero 区 */}
+          <div className="mgmt-hero">
+            <div>
+              <h2 className="mgmt-title">参数配置</h2>
+              <p className="mgmt-subtitle">查看、修改和应用系统运行参数</p>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {changedCount > 0 && (
+                <span className="mgmt-pill" style={{ borderColor: 'rgba(178, 73, 248, 0.5)', color: 'var(--accent)' }}>
+                  {changedCount} 项已修改
+                </span>
+              )}
+              <span className="mgmt-pill">{fieldCountText}</span>
+            </div>
           </div>
-          <button
-            onClick={load}
-            className="px-3 py-1 text-xs rounded-lg transition-all hover:opacity-80"
-            style={{ background: 'var(--glass-bg)', color: 'var(--text-secondary)', border: '1px solid var(--glass-border)' }}
-          >
-            刷新
-          </button>
-          <button
-            onClick={() => save(false)}
-            disabled={saving}
-            className="px-3 py-1 text-xs rounded-lg font-medium transition-all disabled:opacity-40 hover:opacity-80"
-            style={{ background: 'var(--glass-bg)', color: 'var(--accent)', border: `1px solid var(--accent)` }}
-          >
-            保存
-          </button>
-          <button
-            onClick={() => save(true)}
-            disabled={saving}
-            className="px-3 py-1 text-xs rounded-lg font-medium transition-all disabled:opacity-40"
-            style={{ background: 'var(--accent)', color: '#fff' }}
-          >
-            应用
-          </button>
-        </div>
-      </div>
 
-      {/* 状态消息 */}
-      {msg && (
-        <div
-          className="mx-6 mt-3 px-4 py-2 rounded-xl text-sm"
-          style={{
-            background: msg.type === 'ok' ? 'rgba(34,197,94,0.1)' : msg.type === 'warn' ? 'rgba(234,179,8,0.1)' : 'rgba(239,68,68,0.1)',
-            color: msg.type === 'ok' ? 'var(--success)' : msg.type === 'warn' ? '#ca8a04' : 'var(--danger)',
-            border: `1px solid currentColor`,
-          }}
-        >
-          {msg.text}
-        </div>
-      )}
+          {/* 工具栏 */}
+          <div className="mgmt-toolbar">
+            <div className="mgmt-inline">
+              <div className="cfg-mode-switch">
+                {(['form', 'raw'] as const).map((m) => (
+                  <button
+                    key={m}
+                    className={`cfg-mode-btn ${mode === m ? 'active' : ''}`}
+                    onClick={() => setMode(m)}
+                  >
+                    {m === 'form' ? '表单' : 'Raw'}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="mgmt-actions">
+              <button className="mgmt-btn" onClick={() => void load()} disabled={saving}>刷新</button>
+              <button className="mgmt-btn" onClick={() => void save(false)} disabled={saving}>保存</button>
+              <button className="mgmt-btn primary" onClick={() => void save(true)} disabled={saving}>应用</button>
+            </div>
+          </div>
 
-      {/* 内容区 */}
-      <div className="flex-1 overflow-y-auto px-6 py-4">
-        {mode === 'raw' ? (
-          <textarea
-            className="w-full h-full min-h-96 rounded-xl px-4 py-3 text-sm font-mono focus:outline-none resize-none"
-            style={{ background: 'var(--input-bg)', color: 'var(--text-primary)', border: '1px solid var(--glass-border)' }}
-            value={rawText}
-            onChange={(e) => setRawText(e.target.value)}
-          />
-        ) : (
-          <div className="space-y-6">
-            {schema.map((group) => (
-              <div key={group.key} className="glass rounded-2xl p-5">
-                <h3 className="text-sm font-semibold mb-4" style={{ color: 'var(--text-primary)' }}>
-                  {group.title}
-                </h3>
-                <div className="space-y-4">
-                  {group.fields.map((field) => {
-                    const val = mergedValues[field.key]
-                    const isDirty = field.key in edited
-                    return (
-                      <div key={field.key} className="flex flex-col gap-1">
-                        <div className="flex items-center gap-2">
-                          <label className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
-                            {field.label}
-                          </label>
-                          {isDirty && (
-                            <span className="text-xs px-1.5 rounded" style={{ background: 'var(--accent)', color: '#fff' }}>已修改</span>
+          {/* 状态消息 */}
+          {msg && (
+            <div className={`mgmt-toast ${msg.type === 'ok' ? 'ok' : msg.type === 'warn' ? 'warn' : 'error'}`}>
+              {msg.text}
+            </div>
+          )}
+
+          {/* 内容区 */}
+          <div className="cfg-content">
+            {mode === 'raw' ? (
+              <div className="mgmt-block">
+                <h3>JSON 编辑</h3>
+                <textarea
+                  className="mgmt-textarea"
+                  style={{ minHeight: 480, fontFamily: 'monospace', fontSize: 13 }}
+                  value={rawText}
+                  onChange={(e) => setRawText(e.target.value)}
+                />
+              </div>
+            ) : (
+              schema.map((group) => (
+                <div key={group.key} className="mgmt-block">
+                  <h3>{group.title}</h3>
+                  <div className="cfg-fields">
+                    {group.fields.map((field) => {
+                      const val = mergedValues[field.key]
+                      const isDirty = field.key in edited
+                      return (
+                        <div key={field.key} className={`cfg-field ${isDirty ? 'dirty' : ''}`}>
+                          <div className="cfg-field-header">
+                            <label className="cfg-field-label">{field.label}</label>
+                            <div className="mgmt-inline" style={{ gap: 4 }}>
+                              {isDirty && <span className="mgmt-pill ok" style={{ fontSize: 10, padding: '2px 6px' }}>已修改</span>}
+                              {field.restartRequired && <span className="mgmt-pill bad" style={{ fontSize: 10, padding: '2px 6px' }}>需重启</span>}
+                            </div>
+                          </div>
+                          {field.description && (
+                            <p className="cfg-field-desc">{field.description}</p>
                           )}
-                          {field.restartRequired && (
-                            <span className="text-xs px-1.5 rounded" style={{ background: 'rgba(234,179,8,0.15)', color: '#ca8a04' }}>需重启</span>
+                          {field.type === 'boolean' ? (
+                            <label className="cfg-toggle" onClick={() => changeField(field.key, !val)}>
+                              <div className={`cfg-toggle-track ${val ? 'on' : ''}`}>
+                                <div className="cfg-toggle-thumb" />
+                              </div>
+                              <span className="cfg-toggle-label">{val ? '启用' : '禁用'}</span>
+                            </label>
+                          ) : (
+                            <input
+                              type={field.sensitive ? 'password' : 'text'}
+                              className={`mgmt-input ${isDirty ? 'cfg-input-dirty' : ''}`}
+                              value={String(val ?? '')}
+                              placeholder={field.sensitive ? '留空则不修改' : ''}
+                              onChange={(e) => {
+                                const raw = e.target.value
+                                const coerced =
+                                  field.type === 'number' ? parseFloat(raw) || raw
+                                  : field.type === 'integer' ? parseInt(raw) || raw
+                                  : raw
+                                changeField(field.key, coerced)
+                              }}
+                            />
                           )}
                         </div>
-                        <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>{field.description}</p>
-                        {field.type === 'boolean' ? (
-                          <label className="flex items-center gap-2 cursor-pointer w-fit">
-                            <div
-                              className={clsx('w-9 h-5 rounded-full transition-all duration-200 relative', val ? 'opacity-100' : 'opacity-40')}
-                              style={{ background: val ? 'var(--accent)' : 'var(--glass-border)' }}
-                              onClick={() => changeField(field.key, !val)}
-                            >
-                              <div
-                                className="absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all duration-200"
-                                style={{ left: val ? '18px' : '2px' }}
-                              />
-                            </div>
-                            <span className="text-xs" style={{ color: 'var(--text-primary)' }}>{val ? '启用' : '禁用'}</span>
-                          </label>
-                        ) : (
-                          <input
-                            type={field.sensitive ? 'password' : 'text'}
-                            className="px-3 py-2 rounded-xl text-sm focus:outline-none"
-                            style={{
-                              background: 'var(--input-bg)',
-                              color: 'var(--text-primary)',
-                              border: `1px solid ${isDirty ? 'var(--accent)' : 'var(--glass-border)'}`,
-                            }}
-                            value={String(val ?? '')}
-                            placeholder={field.sensitive ? '留空则不修改' : ''}
-                            onChange={(e) => {
-                              const raw = e.target.value
-                              const coerced =
-                                field.type === 'number' ? parseFloat(raw) || raw
-                                : field.type === 'integer' ? parseInt(raw) || raw
-                                : raw
-                              changeField(field.key, coerced)
-                            }}
-                          />
-                        )}
-                      </div>
-                    )
-                  })}
+                      )
+                    })}
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
-        )}
-      </div>
+        </HoverEffectCard>
+      </motion.div>
     </div>
   )
 }
