@@ -12,8 +12,8 @@ from auraeve.domain.runs.models import RunEvent
 
 
 class RunEventStore:
-    def __init__(self, path: Path) -> None:
-        self._path = path
+    def __init__(self, path: Path | str) -> None:
+        self._path = Path(path)
 
     def append(self, event: RunEvent) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
