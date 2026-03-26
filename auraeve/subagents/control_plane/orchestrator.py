@@ -29,6 +29,12 @@ if TYPE_CHECKING:
     from .local_executor import LocalSubAgentExecutor
 
 
+def _resolve_delivery_mode(metadata: dict[str, object] | None) -> str:
+    if isinstance(metadata, dict) and metadata.get("session_type") == "dev_acp":
+        return "dev_transcript"
+    return "mother_chat"
+
+
 class TaskOrchestrator:
     """统一任务编排器。管理本地/远程子体的完整任务生命周期。"""
 
@@ -644,6 +650,10 @@ class TaskOrchestrator:
         if not task.origin_channel:
             return
 
+        # 预留通道：当前只做投递分流，不在这里实现真实的 dev transcript 落库。
+        # 真实触发仍依赖上游把 session_type / delivery metadata 正式接入 task/session 绑定。
+        delivery_mode = _resolve_delivery_mode(getattr(task, "metadata", None))
+
         # DAG 批次：同 trace 下有多个任务时，等全部完成再一次性注入
         if task.trace_id:
             siblings = self._db.list_tasks_by_trace(task.trace_id)
@@ -659,12 +669,20 @@ class TaskOrchestrator:
                     )
                     return
                 # 全部完成，汇总注入
-                return await self._deliver_dag_results(siblings, task)
+                return await self._deliver_dag_results(siblings, task, delivery_mode)
 
         # 独立任务：直接注入母体上下文
-        await self._inject_result_to_mother(task, result, success)
+        if delivery_mode == "dev_transcript":
+            await self._inject_result_to_dev_transcript(task, result, success)
+        else:
+            await self._inject_result_to_mother(task, result, success)
 
-    async def _deliver_dag_results(self, tasks: list[Task], trigger_task: Task) -> None:
+    async def _deliver_dag_results(
+        self,
+        tasks: list[Task],
+        trigger_task: Task,
+        delivery_mode: str = "mother_chat",
+    ) -> None:
         """DAG 全部完成后，汇总结果注入母体。"""
         lines = ["[子体任务批次完成]", ""]
         for t in tasks:
@@ -675,7 +693,17 @@ class TaskOrchestrator:
             lines.append("")
 
         content = "\n".join(lines)
-        await self._inject_result_to_mother(trigger_task, content, True, raw=True)
+        if delivery_mode == "dev_transcript":
+            await self._inject_result_to_dev_transcript(trigger_task, content, True, raw=True)
+        else:
+            await self._inject_result_to_mother(trigger_task, content, True, raw=True)
+
+    async def _inject_result_to_dev_transcript(
+        self, task: Task, result: str, success: bool, raw: bool = False,
+    ) -> None:
+        """预留开发 transcript 通道，当前阶段先沿用母体投递。"""
+        logger.info(f"[orchestrator] dev transcript delivery reserved for {task.task_id}")
+        await self._inject_result_to_mother(task, result, success, raw=raw)
 
     async def _inject_result_to_mother(
         self, task: Task, result: str, success: bool, raw: bool = False,
