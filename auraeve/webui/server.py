@@ -24,6 +24,7 @@ from auraeve.webui.log_service import LogWebService
 from auraeve.webui.skill_service import SkillWebService
 from auraeve.webui.upload_service import UploadWebService
 from auraeve.webui.profile_service import ProfileWebService
+from auraeve.webui.dev_session_service import DevSessionService
 from auraeve.webui.schemas import (
     ChatAbortRequest,
     ChatAbortResponse,
@@ -71,6 +72,7 @@ from auraeve.webui.schemas import (
     LogsExportRequest,
     ProfileImportResponse,
     RestartResponse,
+    DevSessionListResponse,
     NodeListResponse,
     NodeDetailResponse,
     NodeActionResponse,
@@ -102,6 +104,7 @@ class WebUIServer:
         mcp_events_provider: Callable[[], list[dict[str, Any]]] | None = None,
         mcp_reconnect_provider: Callable[[str], Awaitable[dict[str, Any]]] | None = None,
         restart_callback: Callable[[], Awaitable[None]] | None = None,
+        dev_session_service: DevSessionService | None = None,
         orchestrator: Any | None = None,
     ) -> None:
         self._chat = chat_service
@@ -126,6 +129,7 @@ class WebUIServer:
         self._nodes = NodeWebService(orchestrator) if orchestrator else None
         self._server: uvicorn.Server | None = None
         self._restart_callback = restart_callback
+        self._dev_sessions = dev_session_service
         self._upload = UploadWebService()
         self._profile = ProfileWebService()
         self._logs = LogWebService()
@@ -189,6 +193,22 @@ class WebUIServer:
         async def chat_abort(req: ChatAbortRequest) -> ChatAbortResponse:
             ok, run_id, status = await self._chat.abort(req.sessionKey, req.runId)
             return ChatAbortResponse(ok=ok, runId=run_id, status=status)  # type: ignore[arg-type]
+
+        @app.get("/api/webui/dev/sessions", response_model=DevSessionListResponse, dependencies=[auth])
+        async def dev_sessions_list(
+            limit: int = Query(default=200, ge=1, le=1000),
+        ) -> DevSessionListResponse:
+            if self._dev_sessions is None:
+                raise HTTPException(
+                    status_code=503,
+                    detail="dev session api is disabled until dev_session_service is injected",
+                )
+            sessions = self._dev_sessions.list_sessions(limit=None)
+            return DevSessionListResponse(
+                ok=True,
+                sessions=[self._dev_sessions.to_dict(session) for session in sessions[:limit]],
+                total=len(sessions),
+            )
 
         @app.get("/api/webui/chat/events", dependencies=[auth])
         async def chat_events(

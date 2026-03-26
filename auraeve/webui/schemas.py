@@ -322,6 +322,25 @@ class RestartResponse(BaseModel):
     message: str
 
 
+class DevSessionItem(BaseModel):
+    sessionId: str
+    sessionKey: str
+    sessionType: str
+    runtimeType: str
+    agentId: str
+    workspaceId: str
+    threadId: str
+    state: str
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class DevSessionListResponse(BaseModel):
+    ok: bool
+    sessions: list[DevSessionItem] = Field(default_factory=list)
+    total: int = 0
+    message: str | None = None
+
+
 # ── 节点控制模块 ──────────────────────────────────────────────────────────
 
 
