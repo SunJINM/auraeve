@@ -175,23 +175,32 @@ class WebUIServer:
             sessionKey: str = Query(min_length=1, max_length=200),
             limit: int = Query(default=200, ge=1, le=1000),
         ) -> ChatHistoryResponse:
-            msgs = self._chat.get_history(sessionKey, limit)
+            try:
+                msgs = self._chat.get_history(sessionKey, limit)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc))
             return ChatHistoryResponse(sessionKey=sessionKey, messages=msgs)
 
         @app.post("/api/webui/chat/send", response_model=ChatSendResponse, dependencies=[auth])
         async def chat_send(req: ChatSendRequest) -> ChatSendResponse:
-            run_id, status = await self._chat.send(
-                session_key=req.sessionKey,
-                message=req.message,
-                idempotency_key=req.idempotencyKey,
-                user_id=req.userId,
-                display_name=req.displayName,
-            )
+            try:
+                run_id, status = await self._chat.send(
+                    session_key=req.sessionKey,
+                    message=req.message,
+                    idempotency_key=req.idempotencyKey,
+                    user_id=req.userId,
+                    display_name=req.displayName,
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc))
             return ChatSendResponse(runId=run_id, status=status)  # type: ignore[arg-type]
 
         @app.post("/api/webui/chat/abort", response_model=ChatAbortResponse, dependencies=[auth])
         async def chat_abort(req: ChatAbortRequest) -> ChatAbortResponse:
-            ok, run_id, status = await self._chat.abort(req.sessionKey, req.runId)
+            try:
+                ok, run_id, status = await self._chat.abort(req.sessionKey, req.runId)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc))
             return ChatAbortResponse(ok=ok, runId=run_id, status=status)  # type: ignore[arg-type]
 
         @app.get("/api/webui/dev/sessions", response_model=DevSessionListResponse, dependencies=[auth])
@@ -214,6 +223,11 @@ class WebUIServer:
         async def chat_events(
             sessionKey: str = Query(min_length=1, max_length=200),
         ) -> StreamingResponse:
+            try:
+                self._chat._ensure_legacy_chat_session(sessionKey)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc))
+
             async def _stream():
                 async for event in self._chat.subscribe(sessionKey):
                     data = json.dumps(event, ensure_ascii=False)

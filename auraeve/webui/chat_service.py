@@ -42,9 +42,15 @@ class ChatService:
         # session_key -> list[asyncio.Queue]（SSE 订阅者）
         self._sse_queues: dict[str, list[asyncio.Queue]] = {}
 
+    @staticmethod
+    def _ensure_legacy_chat_session(session_key: str) -> None:
+        if session_key.startswith("dev:"):
+            raise ValueError("dev sessions must use the dedicated ACP/dev session APIs")
+
     # ─── 历史 ──────────────────────────────────────────────────────
 
     def get_history(self, session_key: str, limit: int = 200) -> list[dict]:
+        self._ensure_legacy_chat_session(session_key)
         session = self._sm.get_or_create(session_key)
         msgs = session.messages[-limit:] if limit else session.messages
         return [
@@ -70,6 +76,7 @@ class ChatService:
         发布入站消息，返回 (run_id, status)。
         status = "in_flight" 表示幂等重入（相同 idempotencyKey 的请求）。
         """
+        self._ensure_legacy_chat_session(session_key)
         if idempotency_key in self._idem:
             run_id = self._idem[idempotency_key]
             return run_id, "in_flight"
@@ -111,6 +118,7 @@ class ChatService:
 
     async def abort(self, session_key: str, run_id: str | None = None) -> tuple[bool, str | None, str]:
         """软中止当前会话运行。返回 (ok, run_id, status)。"""
+        self._ensure_legacy_chat_session(session_key)
         target: RunState | None = None
         if run_id:
             target = self._runs.get(run_id)
@@ -162,6 +170,7 @@ class ChatService:
 
     async def subscribe(self, session_key: str) -> AsyncIterator[dict]:
         """返回异步生成器，持续产出该 session 的事件。"""
+        self._ensure_legacy_chat_session(session_key)
         q: asyncio.Queue = asyncio.Queue(maxsize=128)
         self._sse_queues.setdefault(session_key, []).append(q)
         try:

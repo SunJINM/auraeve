@@ -1,4 +1,9 @@
-"""会话管理：将对话历史持久化为 JSONL 文件。"""
+"""Legacy transcript manager for chat-history compatibility storage.
+
+The ACP redesign keeps this module only for raw transcript/history persistence
+used by older chat flows. Structured session identity now lives under
+``auraeve.domain.sessions`` and should be preferred for any new runtime.
+"""
 
 import json
 from pathlib import Path
