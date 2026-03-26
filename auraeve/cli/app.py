@@ -12,6 +12,7 @@ from typing import Any
 import typer
 
 import auraeve.config as cfg
+from auraeve.app.bootstrap import run_application
 from auraeve.profile_transfer import export_profile_archive, import_profile_archive
 from auraeve.plugins.cli import (
     disable_command as plugins_disable_command,
@@ -34,12 +35,6 @@ from auraeve.skill_system.cli import (
 )
 from auraeve.skill_system.service import doctor_skills, list_skills
 from auraeve.plugins.service import list_plugins, plugin_doctor
-
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
-
-import main as runtime_main
 
 app = typer.Typer(
     name="auraeve",
@@ -146,7 +141,7 @@ def root(
 ) -> None:
     if ctx.invoked_subcommand is None:
         _ensure_runtime_for_run()
-        asyncio.run(runtime_main.main(terminal_mode=terminal))
+        run_application(terminal_mode=terminal)
         raise typer.Exit(code=0)
 
 
@@ -156,7 +151,7 @@ def run_command(
 ) -> None:
     """Start AuraEve runtime services."""
     _ensure_runtime_for_run()
-    asyncio.run(runtime_main.main(terminal_mode=terminal))
+    run_application(terminal_mode=terminal)
     raise typer.Exit(code=0)
 
 

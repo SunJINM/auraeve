@@ -10,6 +10,8 @@ from pathlib import Path
 from loguru import logger
 
 import auraeve.config as cfg
+from auraeve.app.container import AppContainer
+from auraeve.app.bootstrap import create_application
 from auraeve.observability import init_observability
 from auraeve.observability.loguru_sink import loguru_sink
 from auraeve.bus.queue import MessageBus
@@ -58,7 +60,11 @@ def _build_provider():
     )
 
 
-async def main(terminal_mode: bool = False) -> None:
+async def main(
+    terminal_mode: bool = False,
+    application: AppContainer | None = None,
+) -> None:
+    application = application or create_application()
     init_observability(cfg.export_config(mask_sensitive=False))
     #   
     logger.remove()
@@ -750,6 +756,7 @@ async def main(terminal_mode: bool = False) -> None:
             mcp_events_provider=agent.get_mcp_events,
             mcp_reconnect_provider=agent.reconnect_mcp_server,
             restart_callback=lambda: _shutdown(restart=True),
+            dev_session_service=application.dev_session_service,
             orchestrator=agent._task_orchestrator,
         )
         webui_channel = WebUIChannel(WebUIChannelConfig(), bus, chat_svc)
