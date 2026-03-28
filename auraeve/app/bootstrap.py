@@ -25,7 +25,7 @@ def create_application(state_dir: Path | None = None) -> AppContainer:
 
     session_service = SessionService(SessionRepository())
     workspace_service = WorkspaceService()
-    run_service = RunService(RunEventStore(dev_runtime_dir / "events.jsonl"))
+    run_service = RunService(RunEventStore(dev_runtime_dir / "events"))
     artifact_service = ArtifactService()
     dev_session_service = DevSessionService(session_service)
 

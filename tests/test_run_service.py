@@ -5,7 +5,7 @@ from auraeve.services.run_service import RunService
 
 
 def test_run_service_records_prompt_event(tmp_path: Path) -> None:
-    service = RunService(RunEventStore(tmp_path / "events.jsonl"))
+    service = RunService(RunEventStore(tmp_path / "events"))
 
     run_id = service.record_prompt("s1", "hello")
 
@@ -19,7 +19,7 @@ def test_run_service_records_prompt_event(tmp_path: Path) -> None:
 
 
 def test_run_service_filters_events_by_session_id(tmp_path: Path) -> None:
-    service = RunService(RunEventStore(tmp_path / "events.jsonl"))
+    service = RunService(RunEventStore(tmp_path / "events"))
 
     service.record_prompt("s1", "hello")
     service.record_prompt("s2", "world")
@@ -30,7 +30,7 @@ def test_run_service_filters_events_by_session_id(tmp_path: Path) -> None:
 
 
 def test_run_service_preserves_prompt_metadata(tmp_path: Path) -> None:
-    service = RunService(RunEventStore(tmp_path / "events.jsonl"))
+    service = RunService(RunEventStore(tmp_path / "events"))
 
     service.record_prompt("s1", "hello", {"source": "acp"})
 
