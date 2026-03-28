@@ -212,10 +212,10 @@ class WebUIServer:
                     status_code=503,
                     detail="dev session api is disabled until dev_session_service is injected",
                 )
-            sessions = self._dev_sessions.list_sessions(limit=None)
+            sessions = self._dev_sessions.list_sessions(limit=limit)
             return DevSessionListResponse(
                 ok=True,
-                sessions=[self._dev_sessions.to_dict(session) for session in sessions[:limit]],
+                sessions=[self._dev_sessions.to_dict(session) for session in sessions],
                 total=len(sessions),
             )
 

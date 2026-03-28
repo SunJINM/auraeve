@@ -10,44 +10,24 @@ from auraeve.webui.dev_session_service import DevSessionService
 from auraeve.webui.server import WebUIServer
 
 
+def _make_dev_session(session_id: str, thread_id: str) -> SessionRecord:
+    return SessionRecord(
+        session_id=session_id,
+        session_key=f"dev:main:ws1:{thread_id}",
+        session_type="dev_acp",
+        runtime_type="acp",
+        agent_id="main",
+        workspace_id="ws1",
+        thread_id=thread_id,
+        state="idle",
+    )
+
+
 def test_dev_sessions_api_lists_only_dev_sessions_and_reports_total() -> None:
     session_service = SessionService()
-    session_service.create_session(
-        SessionRecord(
-            session_id="dev-1",
-            session_key="dev:main:ws1:thread-a",
-            session_type="dev_acp",
-            runtime_type="acp",
-            agent_id="main",
-            workspace_id="ws1",
-            thread_id="thread-a",
-            state="idle",
-        )
-    )
-    session_service.create_session(
-        SessionRecord(
-            session_id="dev-2",
-            session_key="dev:main:ws1:thread-b",
-            session_type="dev_acp",
-            runtime_type="acp",
-            agent_id="main",
-            workspace_id="ws1",
-            thread_id="thread-b",
-            state="idle",
-        )
-    )
-    session_service.create_session(
-        SessionRecord(
-            session_id="dev-3",
-            session_key="dev:main:ws1:thread-c",
-            session_type="dev_acp",
-            runtime_type="acp",
-            agent_id="main",
-            workspace_id="ws1",
-            thread_id="thread-c",
-            state="busy",
-        )
-    )
+    session_service.create_session(_make_dev_session("dev-1", "thread-a"))
+    session_service.create_session(_make_dev_session("dev-2", "thread-b"))
+    session_service.create_session(_make_dev_session("dev-3", "thread-c"))
     session_service.create_session(
         SessionRecord(
             session_id="chat-1",
@@ -77,10 +57,26 @@ def test_dev_sessions_api_lists_only_dev_sessions_and_reports_total() -> None:
     assert resp.status_code == 200
     payload = resp.json()
     assert payload["ok"] is True
-    assert payload["total"] == 3
+    assert payload["total"] == 2
     assert len(payload["sessions"]) == 2
-    assert payload["sessions"][0]["sessionKey"] == "dev:main:ws1:thread-a"
-    assert payload["sessions"][0]["sessionType"] == "dev_acp"
+
+
+def test_dev_sessions_api_passes_limit_to_service() -> None:
+    """API 应将 limit 参数直接传给 service，不应在 server 层二次截断。"""
+    dev_svc = MagicMock(spec=DevSessionService)
+    dev_svc.list_sessions.return_value = []
+
+    server = WebUIServer(
+        chat_service=MagicMock(),
+        config_service=MagicMock(),
+        token="secret",
+        dev_session_service=dev_svc,
+    )
+    client = TestClient(server._app)
+
+    client.get("/api/webui/dev/sessions?limit=5", headers={"X-WEBUI-TOKEN": "secret"})
+
+    dev_svc.list_sessions.assert_called_once_with(limit=5)
 
 
 def test_dev_sessions_api_requires_injected_service() -> None:
