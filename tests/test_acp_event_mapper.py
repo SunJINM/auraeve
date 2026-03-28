@@ -28,6 +28,7 @@ def test_tool_call_start_event() -> None:
     assert events[0]["type"] == "tool_call_started"
     assert events[0]["toolName"] == "read_file"
     assert events[0]["toolCallId"] == "tc1"
+    assert events[0]["input"] == {}
 
 
 def test_tool_call_finish_event() -> None:
@@ -67,3 +68,17 @@ def test_usage_update_event() -> None:
     assert events[0]["type"] == "usage_update"
     assert events[0]["inputTokens"] == 100
     assert events[0]["outputTokens"] == 50
+
+
+def test_tool_call_start_event_with_input() -> None:
+    mapper = EventMapper()
+    msg = _make_outbound("", metadata={
+        "acp_event": "tool_call_started",
+        "tool_name": "write_file",
+        "tool_call_id": "tc2",
+        "input": {"path": "/tmp/file.txt", "content": "hello"},
+    })
+    events = mapper.map(msg)
+    assert len(events) == 1
+    assert events[0]["type"] == "tool_call_started"
+    assert events[0]["input"] == {"path": "/tmp/file.txt", "content": "hello"}

@@ -40,8 +40,8 @@ class EventMapper:
                 "outputTokens": msg.metadata.get("output_tokens", 0),
             }]
 
-        # 普通文本 → message_chunk
-        if msg.content:
+        # 普通文本 → message_chunk (仅当未指定 acp_event 时)
+        if acp_event is None and msg.content:
             return [{"type": "message_chunk", "text": msg.content}]
 
         return []
