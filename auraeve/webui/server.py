@@ -4,10 +4,13 @@ from __future__ import annotations
 import asyncio
 import json
 from pathlib import Path
-from typing import Any, Awaitable, Callable
+from typing import TYPE_CHECKING, Any, Awaitable, Callable
+
+if TYPE_CHECKING:
+    from auraeve.transports.acp.channel import ACPChannel
 
 import uvicorn
-from fastapi import Depends, FastAPI, File, HTTPException, Query, UploadFile
+from fastapi import Depends, FastAPI, File, HTTPException, Query, UploadFile, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -106,6 +109,7 @@ class WebUIServer:
         restart_callback: Callable[[], Awaitable[None]] | None = None,
         dev_session_service: DevSessionService | None = None,
         orchestrator: Any | None = None,
+        acp_channel: "ACPChannel | None" = None,
     ) -> None:
         self._chat = chat_service
         self._config = config_service
@@ -130,6 +134,7 @@ class WebUIServer:
         self._server: uvicorn.Server | None = None
         self._restart_callback = restart_callback
         self._dev_sessions = dev_session_service
+        self._acp_channel = acp_channel
         self._upload = UploadWebService()
         self._profile = ProfileWebService()
         self._logs = LogWebService()
@@ -601,6 +606,14 @@ class WebUIServer:
                         "Connection": "keep-alive",
                     },
                 )
+
+        # ACP WebSocket 端点
+        if self._acp_channel is not None:
+            _acp_handler = self._acp_channel.build_websocket_handler()
+
+            @app.websocket("/acp")
+            async def acp_websocket(websocket: WebSocket) -> None:
+                await _acp_handler(websocket)
 
         if self._static_dir and self._static_dir.exists():
             app.mount("/", StaticFiles(directory=str(self._static_dir), html=True), name="static")
