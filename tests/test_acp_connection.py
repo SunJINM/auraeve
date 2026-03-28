@@ -58,12 +58,16 @@ async def test_handler_sends_jsonrpc_response(handler) -> None:
 @pytest.mark.asyncio
 async def test_handler_sends_error_response_on_dispatch_error(handler) -> None:
     handler._dispatcher.dispatch = AsyncMock(return_value=JsonRpcError(id="2", code=-32601, message="Method not found"))
+    ws = FakeWebSocket([])
 
     await handler._process_single_message(
-        FakeWebSocket([]),
+        ws,
         json.dumps({"jsonrpc": "2.0", "id": "2", "method": "bad", "params": {}}),
     )
-    # 不抛异常即可（错误已被转换为 JSON-RPC error response）
+    assert len(ws.sent) == 1
+    sent = json.loads(ws.sent[0])
+    assert sent["jsonrpc"] == "2.0"
+    assert sent["error"]["code"] == -32601
 
 
 @pytest.mark.asyncio

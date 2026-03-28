@@ -52,7 +52,10 @@ class ACPConnectionHandler:
         result = await self._dispatcher.dispatch(msg)
         if result is None:
             return
-        await ws.send_text(json.dumps(result.to_dict()))
+        try:
+            await ws.send_text(json.dumps(result.to_dict()))
+        except Exception as exc:
+            logger.warning(f"[acp] failed to send response: {exc}")
 
     async def on_outbound(self, msg: OutboundMessage) -> None:
         """MessageBus 出站消息回调：翻译成 ACP 事件写回 WebSocket。"""
