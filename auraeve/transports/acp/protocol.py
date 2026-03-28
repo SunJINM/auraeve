@@ -60,14 +60,19 @@ def parse_jsonrpc(raw: str) -> JsonRpcRequest | JsonRpcNotification | JsonRpcErr
         return JsonRpcError(id=None, code=-32700, message=f"Parse error: {exc}")
     if not isinstance(data, dict):
         return JsonRpcError(id=None, code=-32600, message="Invalid Request: not an object")
+    if data.get("jsonrpc") != "2.0":
+        return JsonRpcError(id=data.get("id"), code=-32600, message="Invalid Request: jsonrpc must be '2.0'")
+    raw_id = data.get("id")
+    if "id" in data and not isinstance(raw_id, (str, int, type(None))):
+        return JsonRpcError(id=None, code=-32600, message="Invalid Request: id must be string, number, or null")
     method = data.get("method")
     if not isinstance(method, str):
         return JsonRpcError(id=data.get("id"), code=-32600, message="Invalid Request: missing method")
     params = data.get("params", {})
     if not isinstance(params, dict):
-        params = {}
+        return JsonRpcError(id=data.get("id"), code=-32600, message="Invalid Request: params must be an object")
     if "id" in data:
-        return JsonRpcRequest(id=data["id"], method=method, params=params)
+        return JsonRpcRequest(id=raw_id, method=method, params=params)
     return JsonRpcNotification(method=method, params=params)
 
 

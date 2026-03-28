@@ -87,3 +87,24 @@ def test_prompt_params_blocks() -> None:
     )
     assert len(p.blocks) == 1
     assert p.blocks[0]["text"] == "hello"
+
+
+def test_parse_jsonrpc_wrong_version_returns_error() -> None:
+    raw = json.dumps({"jsonrpc": "1.0", "id": "1", "method": "ping", "params": {}})
+    msg = parse_jsonrpc(raw)
+    assert isinstance(msg, JsonRpcError)
+    assert msg.code == -32600
+
+
+def test_parse_jsonrpc_invalid_id_type_returns_error() -> None:
+    raw = json.dumps({"jsonrpc": "2.0", "id": [1, 2], "method": "ping", "params": {}})
+    msg = parse_jsonrpc(raw)
+    assert isinstance(msg, JsonRpcError)
+    assert msg.code == -32600
+
+
+def test_parse_jsonrpc_array_params_returns_error() -> None:
+    raw = json.dumps({"jsonrpc": "2.0", "id": "1", "method": "ping", "params": ["a", "b"]})
+    msg = parse_jsonrpc(raw)
+    assert isinstance(msg, JsonRpcError)
+    assert msg.code == -32600
