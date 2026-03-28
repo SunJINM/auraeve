@@ -167,7 +167,7 @@ class ACPDispatcher:
         if session is None:
             return JsonRpcError(id=req.id, code=ERR_SESSION_NOT_FOUND, message=f"Session not found: {session_id}")
         session.metadata["thought_level"] = req.params.get("mode", "adaptive")
-        self._session_service.create_session(session)
+        self._session_service.update_session(session)
         return JsonRpcResponse(id=req.id, result={"ok": True})
 
     async def _handle_set_session_config_option(self, req: JsonRpcRequest) -> JsonRpcResponse | JsonRpcError:
@@ -178,5 +178,5 @@ class ACPDispatcher:
         key = req.params.get("key", "")
         value = req.params.get("value", "")
         session.metadata[key] = value
-        self._session_service.create_session(session)
+        self._session_service.update_session(session)
         return JsonRpcResponse(id=req.id, result={"ok": True})

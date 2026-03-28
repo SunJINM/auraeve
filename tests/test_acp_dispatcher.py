@@ -30,6 +30,7 @@ def dispatcher():
     session_service.list_sessions = MagicMock(return_value=[])
     session_service.get_session = MagicMock(return_value=None)
     session_service.create_session = MagicMock(side_effect=lambda s: s)
+    session_service.update_session = MagicMock(side_effect=lambda s: s)
     return ACPDispatcher(bus=bus, session_service=session_service, agent_id="main", workspace_id="ws")
 
 

@@ -14,6 +14,10 @@ class SessionService:
         self._repository.save(session)
         return session
 
+    def update_session(self, session: SessionRecord) -> SessionRecord:
+        self._repository.save(session)
+        return session
+
     def get_session(self, session_id: str) -> SessionRecord | None:
         return self._repository.get(session_id)
 
