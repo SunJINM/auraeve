@@ -149,6 +149,7 @@ class Task:
     trace_id: str = ""
     origin_channel: str = ""
     origin_chat_id: str = ""
+    metadata: dict[str, object] = field(default_factory=dict)
     created_at: float = field(default_factory=time.time)
     updated_at: float = field(default_factory=time.time)
 

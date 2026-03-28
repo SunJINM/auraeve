@@ -652,7 +652,7 @@ class TaskOrchestrator:
 
         # 预留通道：当前只做投递分流，不在这里实现真实的 dev transcript 落库。
         # 真实触发仍依赖上游把 session_type / delivery metadata 正式接入 task/session 绑定。
-        delivery_mode = _resolve_delivery_mode(getattr(task, "metadata", None))
+        delivery_mode = _resolve_delivery_mode(task.metadata)
 
         # DAG 批次：同 trace 下有多个任务时，等全部完成再一次性注入
         if task.trace_id:
