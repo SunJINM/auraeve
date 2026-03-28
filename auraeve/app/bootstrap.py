@@ -23,7 +23,7 @@ def create_application(state_dir: Path | None = None) -> AppContainer:
     dev_runtime_dir = resolved_state_dir / "dev_runtime"
     dev_runtime_dir.mkdir(parents=True, exist_ok=True)
 
-    session_service = SessionService(SessionRepository())
+    session_service = SessionService(SessionRepository(dev_runtime_dir / "sessions.jsonl"))
     workspace_service = WorkspaceService()
     run_service = RunService(RunEventStore(dev_runtime_dir / "events"))
     artifact_service = ArtifactService()
