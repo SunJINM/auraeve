@@ -438,6 +438,7 @@ async def main(
     #  WebUI 
     webui_server: WebUIServer | None = None
     webui_channel: WebUIChannel | None = None
+    acp_channel: "ACPChannel | None" = None
     if getattr(cfg, "WEBUI_ENABLED", False):
         webui_bind_port_raw = str(os.getenv("AURAEVE_WEBUI_BIND_PORT", "")).strip()
         webui_bind_port = int(webui_bind_port_raw) if webui_bind_port_raw else int(getattr(cfg, "WEBUI_PORT", 8080))
@@ -744,6 +745,24 @@ async def main(
 
         config_svc = ConfigService(on_runtime_apply=_on_runtime_apply)
         static_dir = Path(__file__).parent / "webui" / "dist"
+
+        # ── ACP Channel ───────────────────────────────────────────────────────────
+        from auraeve.transports.acp.channel import ACPChannel as _ACPChannel, ACPChannelConfig as _ACPChannelConfig
+        from auraeve.services.session_service import SessionService as _ACPSessionService
+        from auraeve.domain.sessions.repository import SessionRepository as _ACPSessionRepository
+
+        _acp_state_dir = ensure_dir(workspace / "acp")
+        _acp_session_repo = _ACPSessionRepository(_acp_state_dir / "sessions.jsonl")
+        _acp_session_service = _ACPSessionService(_acp_session_repo)
+        acp_channel = _ACPChannel(
+            config=_ACPChannelConfig(),
+            bus=bus,
+            session_service=_acp_session_service,
+            token=getattr(cfg, "WEBUI_TOKEN", ""),
+            agent_id="main",
+            workspace_id=str(workspace),
+        )
+
         webui_server = WebUIServer(
             chat_service=chat_svc,
             config_service=config_svc,
@@ -758,6 +777,7 @@ async def main(
             restart_callback=lambda: _shutdown(restart=True),
             dev_session_service=application.dev_session_service,
             orchestrator=agent._task_orchestrator,
+            acp_channel=acp_channel,
         )
         webui_channel = WebUIChannel(WebUIChannelConfig(), bus, chat_svc)
         bus.subscribe_outbound("webui", webui_channel.send)
@@ -862,6 +882,8 @@ async def main(
             tasks.append(webui_server.start())
         if webui_channel:
             tasks.append(webui_channel.start())
+        if acp_channel:
+            tasks.append(acp_channel.start())
         _gather_task = asyncio.ensure_future(asyncio.gather(*tasks))
         await _gather_task
     except (KeyboardInterrupt, asyncio.CancelledError):
