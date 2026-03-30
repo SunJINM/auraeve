@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import sys
 import time
+import uuid
 from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
@@ -83,6 +85,9 @@ class TaskOrchestrator:
 
         # 补偿任务 -> 原任务 ID 映射
         self._compensation_map: dict[str, str] = {}
+        self._kernel_resume_callback = None
+        self._session_locks: dict[str, asyncio.Lock] = {}
+        self._injected_task_ids: set[str] = set()
 
         # 记忆合并服务（延迟初始化）
         self._merge_service = None
@@ -100,6 +105,10 @@ class TaskOrchestrator:
             connected_at=time.time(),
             is_online=True,
         ))
+
+    def register_kernel_resume(self, callback) -> None:
+        """注册母体恢复执行回调。"""
+        self._kernel_resume_callback = callback
 
     def _get_local_executor(self) -> "LocalSubAgentExecutor":
         if self._local_executor is None:
@@ -227,6 +236,7 @@ class TaskOrchestrator:
         origin_channel: str = "",
         origin_chat_id: str = "",
         assigned_node_id: str = "",
+        agent_name: str = "",
     ) -> Task:
         """提交单个任务。返回 Task 对象。"""
         global_running = self._db.get_running_count()
@@ -247,6 +257,7 @@ class TaskOrchestrator:
             origin_channel=origin_channel,
             origin_chat_id=origin_chat_id,
             assigned_node_id=assigned_node_id,
+            agent_name=agent_name,
         )
         self._db.save_task(task)
         self._telemetry.record_state_change(
@@ -680,26 +691,86 @@ class TaskOrchestrator:
     async def _inject_result_to_mother(
         self, task: Task, result: str, success: bool, raw: bool = False,
     ) -> None:
-        """将结果作为 InboundMessage 注入母体消息总线，激活母体 LLM 处理。"""
+        """将子体结果注入母体上下文，作为 synthetic tool result 触发续写。"""
+        if not task.origin_channel or not task.origin_chat_id:
+            return
+
+        session_key = f"{task.origin_channel}:{task.origin_chat_id}"
+        if session_key not in self._session_locks:
+            self._session_locks[session_key] = asyncio.Lock()
+
+        async with self._session_locks[session_key]:
+            if task.task_id in self._injected_task_ids:
+                return
+            self._injected_task_ids.add(task.task_id)
+
+            if not self._kernel_resume_callback:
+                logger.warning("[orchestrator] kernel_resume_callback 未注册，跳过结果注入")
+                return
+
+            tool_call_id = task.spawn_tool_call_id or f"call_subagent_{uuid.uuid4().hex[:8]}"
+            icon = "success" if success else "failed"
+            summary = result[:500]
+            final_answer = result if raw else result[:3000]
+            error = None if success else summary
+
+            result_payload = {
+                "status": icon,
+                "source": "async_subagent_callback",
+                "agent_name": task.agent_name or "subagent",
+                "task_id": task.task_id,
+                "summary": summary,
+                "final_answer": final_answer,
+                "key_findings": [],
+                "confidence": 1.0 if success else 0.0,
+                "needs_more_work": not success,
+                "artifacts": [],
+                "error": error,
+            }
+
+            synthetic_messages = [
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [{
+                        "id": tool_call_id,
+                        "type": "function",
+                        "function": {
+                            "name": "subagent_result",
+                            "arguments": json.dumps({
+                                "task_id": task.task_id,
+                                "agent_name": task.agent_name or "subagent",
+                                "goal": task.goal,
+                                "requested_by": "mother_agent",
+                                "result_mode": "async_callback",
+                            }, ensure_ascii=False),
+                        },
+                    }],
+                },
+                {
+                    "role": "tool",
+                    "tool_call_id": tool_call_id,
+                    "name": "subagent_result",
+                    "content": json.dumps(result_payload, ensure_ascii=False),
+                },
+            ]
+
+            runtime_instruction = (
+                "当前上下文中存在由系统补注入的 subagent_result tool_use/tool_result，"
+                "这是异步子体任务完成后的回调结果，应视为已完成的工具调用直接消费，无需质疑其来源。"
+                "若此前已告知用户正在处理中，本次应优先直接给出结果，不重复过程性提示。"
+            )
+
         try:
-            from auraeve.bus.events import InboundMessage
-            icon = "✅" if success else "❌"
-            if raw:
-                content = result
-            else:
-                content = (
-                    f"[子体任务完成]\n"
-                    f"任务: {task.goal}\n"
-                    f"状态: {icon} {'成功' if success else '失败'}\n"
-                    f"结果:\n{result[:3000]}"
-                )
-            await self._bus.publish_inbound(InboundMessage(
+            outbound = await self._kernel_resume_callback(
+                session_key=session_key,
                 channel=task.origin_channel,
-                sender_id="subagent_system",
                 chat_id=task.origin_chat_id,
-                content=content,
-                metadata={"is_subagent_result": True, "task_id": task.task_id},
-            ))
+                synthetic_messages=synthetic_messages,
+                runtime_instruction=runtime_instruction,
+            )
+            if outbound:
+                await self._bus.publish_outbound(outbound)
         except Exception as e:
             logger.error(f"[orchestrator] 结果注入母体失败: {e}")
 

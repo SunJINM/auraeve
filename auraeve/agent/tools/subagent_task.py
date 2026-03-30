@@ -122,7 +122,7 @@ class SubAgentTaskTool(Tool):
         **kwargs: Any,
     ) -> str:
         if action == "spawn":
-            return await self._spawn(goal, priority, assigned_node_id)
+            return await self._spawn(goal, priority, assigned_node_id, kwargs.get("agent_name", ""))
         elif action == "dag":
             return await self._dag(tasks)
         elif action == "list":
@@ -141,7 +141,13 @@ class SubAgentTaskTool(Tool):
             return self._approve(approval_id, decision)
         return f"未知 action: {action}"
 
-    async def _spawn(self, goal: str | None, priority: int, assigned_node_id: str = "") -> str:
+    async def _spawn(
+        self,
+        goal: str | None,
+        priority: int,
+        assigned_node_id: str = "",
+        agent_name: str = "",
+    ) -> str:
         if not goal:
             return "错误：spawn 需要 goal 参数"
         task = await self._orch.submit_task(
@@ -150,6 +156,7 @@ class SubAgentTaskTool(Tool):
             origin_channel=self._origin_channel,
             origin_chat_id=self._origin_chat_id,
             assigned_node_id=assigned_node_id,
+            agent_name=agent_name,
         )
         return f"任务已创建: {task.task_id}\n目标: {task.goal}\n状态: {STATUS_ICON.get(task.status, '')} {task.status.value}"
 

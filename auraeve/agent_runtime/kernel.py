@@ -165,6 +165,7 @@ class RuntimeKernel:
             max_retries=8,
             is_subagent=False,
         )
+        self._register_subagent_resume()
 
         self._register_default_tools()
         self._mcp_runtime = MCPRuntimeManager(self.tools, mcp_config or {})
@@ -178,6 +179,11 @@ class RuntimeKernel:
         message_tool = self.tools.get("message")
         if message_tool is not None and isinstance(message_tool, MessageTool):
             message_tool.register_direct_sender(channel, sender)
+
+    def _register_subagent_resume(self) -> None:
+        """向子体编排器注册母体续写回调。"""
+        if hasattr(self, "_task_orchestrator") and self._task_orchestrator is not None:
+            self._task_orchestrator.register_kernel_resume(self._resume_with_subagent_result)
 
     async def run(self) -> None:
         self._running = True
