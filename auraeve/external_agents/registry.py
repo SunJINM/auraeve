@@ -10,6 +10,8 @@ class ExternalAgentRegistry:
     _targets: dict[str, ExternalAgentTarget] = field(default_factory=dict)
 
     def register(self, target: ExternalAgentTarget) -> None:
+        if target.id in self._targets:
+            raise ValueError(f"External agent target already registered: {target.id}")
         self._targets[target.id] = target
 
     def has(self, target_id: str) -> bool:
@@ -32,4 +34,3 @@ def build_default_external_agent_registry() -> ExternalAgentRegistry:
             )
         )
     return registry
-

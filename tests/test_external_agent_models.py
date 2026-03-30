@@ -1,8 +1,25 @@
 from auraeve.external_agents.models import (
+    ExternalAgentTarget,
+    ExternalRuntimeError,
+    ExternalRuntimeEvent,
     ExternalRunRequest,
     ExternalRunResult,
     ExternalSessionHandle,
 )
+
+
+def test_external_agent_target_defaults_and_isolation():
+    first = ExternalAgentTarget(id="claude")
+    second = ExternalAgentTarget(id="codex")
+
+    assert first.kind == "coding"
+    assert first.supports_session is True
+    assert first.supports_cwd is True
+    assert first.supports_cancel is True
+    assert first.supports_options == []
+
+    first.supports_options.append("model")
+    assert second.supports_options == []
 
 
 def test_external_session_handle_defaults():
@@ -20,6 +37,27 @@ def test_external_session_handle_defaults():
     assert handle.backend_session_ref is None
     assert handle.node_id is None
     assert handle.last_error is None
+
+
+def test_external_runtime_event_and_error_defaults():
+    runtime_error = ExternalRuntimeError(
+        error_type="process_error",
+        message="command failed",
+    )
+    event = ExternalRuntimeEvent(
+        event_type="failed",
+        session_id="sess-1",
+        target="codex",
+        message="execution failed",
+        error=runtime_error,
+    )
+
+    assert runtime_error.retryable is False
+    assert runtime_error.details == {}
+    assert event.event_type == "failed"
+    assert event.status is None
+    assert event.error is runtime_error
+    assert event.payload == {}
 
 
 def test_external_run_request_keeps_expected_output():
