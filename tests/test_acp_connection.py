@@ -93,3 +93,35 @@ async def test_on_outbound_skips_empty_events(handler) -> None:
     await handler.on_outbound(msg)
 
     assert ws.sent == []
+
+
+@pytest.mark.asyncio
+async def test_new_session_auto_registers_outbound(handler) -> None:
+    """newSession 成功响应后自动订阅 acp:{sessionId} 出站消息。"""
+    ws = FakeWebSocket([])
+    handler._dispatcher.dispatch = AsyncMock(return_value=JsonRpcResponse(
+        id="3",
+        result={"session": {"sessionId": "s42", "sessionKey": "k", "state": "idle", "metadata": {}}},
+    ))
+    await handler._process_single_message(
+        ws,
+        json.dumps({"jsonrpc": "2.0", "id": "3", "method": "newSession", "params": {}}),
+    )
+    assert "s42" in handler._session_ids
+    handler._bus.subscribe_outbound.assert_called_once_with("acp:s42", handler.on_outbound)
+
+
+@pytest.mark.asyncio
+async def test_load_session_auto_registers_outbound(handler) -> None:
+    """loadSession 成功响应后自动订阅 acp:{sessionId} 出站消息。"""
+    ws = FakeWebSocket([])
+    handler._dispatcher.dispatch = AsyncMock(return_value=JsonRpcResponse(
+        id="4",
+        result={"session": {"sessionId": "s99", "sessionKey": "k", "state": "idle", "metadata": {}}, "loaded": True},
+    ))
+    await handler._process_single_message(
+        ws,
+        json.dumps({"jsonrpc": "2.0", "id": "4", "method": "loadSession", "params": {"sessionId": "s99"}}),
+    )
+    assert "s99" in handler._session_ids
+    handler._bus.subscribe_outbound.assert_called_once_with("acp:s99", handler.on_outbound)

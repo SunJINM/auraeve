@@ -9,7 +9,7 @@ from loguru import logger
 from auraeve.bus.events import OutboundMessage
 from auraeve.transports.acp.event_mapper import EventMapper
 from auraeve.transports.acp.protocol import (
-    JsonRpcResponse, JsonRpcError, JsonRpcNotification, parse_jsonrpc,
+    JsonRpcRequest, JsonRpcResponse, JsonRpcError, JsonRpcNotification, parse_jsonrpc,
 )
 
 if TYPE_CHECKING:
@@ -52,6 +52,13 @@ class ACPConnectionHandler:
         result = await self._dispatcher.dispatch(msg)
         if result is None:
             return
+        # 自动订阅：newSession / loadSession 成功时注册出站消息监听
+        if isinstance(result, JsonRpcResponse) and isinstance(msg, JsonRpcRequest):
+            if msg.method in ("newSession", "loadSession"):
+                session = (result.result or {}).get("session", {})
+                session_id = session.get("sessionId", "")
+                if session_id:
+                    self.register_session(session_id)
         try:
             await ws.send_text(json.dumps(result.to_dict()))
         except Exception as exc:
