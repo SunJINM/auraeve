@@ -683,8 +683,6 @@ class RuntimeKernel:
         runtime_instruction: str = "",
     ) -> "OutboundMessage | None":
         """子体异步完成后，以 tool result 语义续写母体 LLM，不插入 user 消息。"""
-        from auraeve.bus.events import OutboundMessage
-
         session = self.sessions.get_or_create(session_key)
         self._set_tool_context(channel, chat_id, session_key)
 

@@ -64,3 +64,32 @@ async def test_resume_with_subagent_result_sends_outbound():
     assert "分析完成" in outbound.content
     session.add_message.assert_called()
     kernel.sessions.save.assert_called_once_with(session)
+
+
+@pytest.mark.asyncio
+async def test_resume_with_compacted_messages_calls_replace_history():
+    kernel = _make_kernel()
+
+    session = MagicMock()
+    session.get_history.return_value = [{"role": "user", "content": "hello"}]
+    kernel.sessions.get_or_create.return_value = session
+
+    compacted = [{"role": "user", "content": "compacted"}]
+    assemble_result = MagicMock()
+    assemble_result.messages = compacted
+    assemble_result.compacted_messages = compacted  # 触发 replace_history 分支
+    kernel.assembler.assemble = AsyncMock(return_value=assemble_result)
+
+    run_result = MagicMock()
+    run_result.final_content = "ok"
+    kernel._orchestrator.run = AsyncMock(return_value=run_result)
+    kernel.engine.after_turn = AsyncMock()
+
+    await kernel._resume_with_subagent_result(
+        session_key="webui:chat1",
+        channel="webui",
+        chat_id="chat1",
+        synthetic_messages=[],
+    )
+
+    session.replace_history.assert_called_once_with(compacted)
