@@ -151,6 +151,8 @@ class Task:
     origin_chat_id: str = ""
     created_at: float = field(default_factory=time.time)
     updated_at: float = field(default_factory=time.time)
+    spawn_tool_call_id: str = ""   # 母体 spawn 时的 tool_call_id，用于 synthetic tool_use
+    agent_name: str = ""           # 子体语义名称，如 data_analyst_agent
 
     @staticmethod
     def new_id() -> str:

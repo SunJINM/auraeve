@@ -31,7 +31,9 @@ CREATE TABLE IF NOT EXISTS tasks (
     origin_channel TEXT DEFAULT '',
     origin_chat_id TEXT DEFAULT '',
     created_at REAL NOT NULL,
-    updated_at REAL NOT NULL
+    updated_at REAL NOT NULL,
+    spawn_tool_call_id TEXT DEFAULT '',
+    agent_name TEXT DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS task_events (
@@ -129,8 +131,9 @@ class SubagentDB:
             """INSERT OR REPLACE INTO tasks
                (task_id, goal, assigned_node_id, priority, status, depends_on,
                 budget, policy_profile, result, compensate_action, trace_id,
-                origin_channel, origin_chat_id, created_at, updated_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                origin_channel, origin_chat_id, created_at, updated_at,
+                spawn_tool_call_id, agent_name)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 task.task_id, task.goal, task.assigned_node_id, task.priority,
                 task.status.value, json.dumps(task.depends_on),
@@ -138,6 +141,7 @@ class SubagentDB:
                 task.result, task.compensate_action, task.trace_id,
                 task.origin_channel, task.origin_chat_id,
                 task.created_at, task.updated_at,
+                task.spawn_tool_call_id, task.agent_name,
             ),
         )
         conn.commit()
@@ -221,6 +225,8 @@ class SubagentDB:
             origin_chat_id=row["origin_chat_id"] or "",
             created_at=row["created_at"],
             updated_at=row["updated_at"],
+            spawn_tool_call_id=row["spawn_tool_call_id"] if "spawn_tool_call_id" in row.keys() else "",
+            agent_name=row["agent_name"] if "agent_name" in row.keys() else "",
         )
 
     # ── TaskEvent ───────────────────────────────────────────────────────────
