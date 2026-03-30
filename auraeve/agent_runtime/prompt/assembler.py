@@ -63,6 +63,8 @@ class PromptAssembler:
         attachments: list[Any] | None = None,
         available_tools: set[str] | None = None,
         prompt_mode: str = "full",
+        extra_suffix_messages: list[dict] | None = None,
+        runtime_instruction: str = "",
     ) -> AssemblerResult:
         """
         执行完整 Prompt 组装管线：
@@ -124,8 +126,23 @@ class PromptAssembler:
         if budget_report.utilization > 0.8:
             logger.debug(f"[assembler] {budget_report.summary()}")
 
+        final_messages = assemble_result.messages
+
+        # 注入 runtime_instruction 到 system 消息末尾（不持久化，仅本次 LLM 调用）
+        if runtime_instruction and final_messages and final_messages[0].get("role") == "system":
+            final_messages = list(final_messages)  # 避免修改原列表
+            final_messages[0] = {
+                **final_messages[0],
+                "content": (final_messages[0].get("content") or "").rstrip()
+                           + f"\n\n[运行时内部约束]\n{runtime_instruction}",
+            }
+
+        # 追加 synthetic tool_use + tool_result（不持久化，仅本次 LLM 调用）
+        if extra_suffix_messages:
+            final_messages = final_messages + extra_suffix_messages
+
         return AssemblerResult(
-            messages=assemble_result.messages,
+            messages=final_messages,
             system_prompt=system_prompt,
             estimated_tokens=assemble_result.estimated_tokens,
             budget_report=budget_report,
