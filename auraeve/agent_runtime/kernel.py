@@ -674,4 +674,50 @@ class RuntimeKernel:
 
         return OutboundMessage(channel=origin_channel, chat_id=origin_chat_id, content=final_content)
 
+    async def _resume_with_subagent_result(
+        self,
+        session_key: str,
+        channel: str,
+        chat_id: str,
+        synthetic_messages: list[dict],
+        runtime_instruction: str = "",
+    ) -> "OutboundMessage | None":
+        """子体异步完成后，以 tool result 语义续写母体 LLM，不插入 user 消息。"""
+        from auraeve.bus.events import OutboundMessage
+
+        session = self.sessions.get_or_create(session_key)
+        self._set_tool_context(channel, chat_id, session_key)
+
+        history = session.get_history()
+
+        assemble_result = await self.assembler.assemble(
+            session_id=session_key,
+            messages=history,
+            current_query="",
+            channel=channel,
+            chat_id=chat_id,
+            available_tools=set(self.tools.tool_names),
+            extra_suffix_messages=synthetic_messages,
+            runtime_instruction=runtime_instruction,
+        )
+        if assemble_result.compacted_messages is not None:
+            session.replace_history(assemble_result.compacted_messages)
+
+        recovery_result = await self._orchestrator.run(
+            messages=assemble_result.messages,
+            model=self.model,
+            temperature=self.temperature,
+            max_tokens=self.max_tokens,
+            thread_id=session_key,
+            channel=channel,
+            chat_id=chat_id,
+        )
+
+        final_content = self._sanitize_assistant_output(recovery_result.final_content) or "任务已完成。"
+        session.add_message("assistant", final_content)
+        self.sessions.save(session)
+        asyncio.create_task(self.engine.after_turn(session_key, session.get_history()))
+
+        return OutboundMessage(channel=channel, chat_id=chat_id, content=final_content)
+
 
