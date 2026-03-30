@@ -80,6 +80,38 @@ async def test_adapter_maps_permission_error():
 
 
 @pytest.mark.asyncio
+async def test_adapter_maps_timeout_error():
+    runner = FakeProcessRunner(stderr="command timed out after 60s", returncode=124)
+    adapter = AcpxAdapter(command="acpx", process_runner=runner)
+    handle = await adapter.ensure_session(
+        target="codex",
+        session_id="sess-3",
+        cwd="D:/repo",
+        mode="oneshot",
+        origin_session_key="terminal:chat",
+        execution_target="local",
+    )
+    request = ExternalRunRequest(
+        task="执行任务",
+        target="codex",
+        cwd="D:/repo",
+        mode="oneshot",
+        label=None,
+        timeout_s=60,
+        context_mode="summary",
+        expected_output="generic",
+        session_id="sess-3",
+        execution_target="local",
+    )
+
+    result = await adapter.run_turn(request, handle)
+
+    assert result.status == "error"
+    assert result.error_type == "timeout"
+    assert result.retryable is False
+
+
+@pytest.mark.asyncio
 async def test_adapter_process_error_is_retryable():
     runner = FakeProcessRunner(stderr="temporary backend error", returncode=2)
     adapter = AcpxAdapter(command="acpx", process_runner=runner)

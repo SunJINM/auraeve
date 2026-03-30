@@ -107,6 +107,7 @@ def build_tool_registry(
             CodingAgentTool(
                 service=external_agent_service,
                 origin_session_key_getter=origin_session_key_getter,
+                allowed_dir=allowed_dir,
             )
         )
 

@@ -25,8 +25,26 @@ class ExternalAgentService:
         self._registry = registry
         self._store = store
 
+    def _require_registered_target(self, target: str) -> None:
+        if not self._registry.has(target):
+            raise ValueError(f"unknown external agent target: {target}")
+
+    def _get_owned_session(
+        self,
+        session_id: str,
+        *,
+        origin_session_key: str,
+    ) -> ExternalSessionHandle | None:
+        handle = self._store.get(session_id)
+        if handle is None:
+            return None
+        if handle.origin_session_key != origin_session_key:
+            return None
+        return handle
+
     def pick_target(self, *, task: str, requested_target: str) -> str:
         if requested_target != "auto":
+            self._require_registered_target(requested_target)
             return requested_target
         lower = task.lower()
         if any(
@@ -34,6 +52,7 @@ class ExternalAgentService:
             for keyword in ("review", "审查", "架构", "方案", "分析", "评估")
         ):
             return "claude"
+        self._require_registered_target("codex")
         return "codex"
 
     def resolve_reusable_session(
@@ -104,16 +123,32 @@ class ExternalAgentService:
         self._store.save(latest)
         return result
 
-    async def status(self, session_id: str) -> ExternalSessionHandle | None:
-        handle = self._store.get(session_id)
+    async def status(
+        self,
+        session_id: str,
+        *,
+        origin_session_key: str,
+    ) -> ExternalSessionHandle | None:
+        handle = self._get_owned_session(
+            session_id,
+            origin_session_key=origin_session_key,
+        )
         if handle is None:
             return None
         latest = await self._runtime.get_status(handle)
         self._store.save(latest)
         return latest
 
-    async def cancel(self, session_id: str) -> ExternalSessionHandle | None:
-        handle = self._store.get(session_id)
+    async def cancel(
+        self,
+        session_id: str,
+        *,
+        origin_session_key: str,
+    ) -> ExternalSessionHandle | None:
+        handle = self._get_owned_session(
+            session_id,
+            origin_session_key=origin_session_key,
+        )
         if handle is None:
             return None
         latest = await self._runtime.cancel(handle)
@@ -121,8 +156,16 @@ class ExternalAgentService:
         self._store.save(latest)
         return latest
 
-    async def close(self, session_id: str) -> ExternalSessionHandle | None:
-        handle = self._store.get(session_id)
+    async def close(
+        self,
+        session_id: str,
+        *,
+        origin_session_key: str,
+    ) -> ExternalSessionHandle | None:
+        handle = self._get_owned_session(
+            session_id,
+            origin_session_key=origin_session_key,
+        )
         if handle is None:
             return None
         latest = await self._runtime.close(handle)

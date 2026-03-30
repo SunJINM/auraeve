@@ -105,4 +105,31 @@ def test_service_status_returns_none_for_missing_session(tmp_path: Path):
         registry=build_default_external_agent_registry(),
         store=ExternalAgentSessionStore(tmp_path / "sessions.json"),
     )
-    assert asyncio.run(service.status("missing")) is None
+    assert asyncio.run(
+        service.status("missing", origin_session_key="terminal:chat")
+    ) is None
+
+
+def test_service_status_returns_none_for_foreign_session(tmp_path: Path):
+    service = ExternalAgentService(
+        runtime=FakeRuntime(),
+        registry=build_default_external_agent_registry(),
+        store=ExternalAgentSessionStore(tmp_path / "sessions.json"),
+    )
+    service._store.save(
+        ExternalSessionHandle(
+            session_id="sess-foreign",
+            target="codex",
+            mode="session",
+            cwd="D:/repo",
+            status="idle",
+            created_at=1.0,
+            updated_at=1.0,
+            origin_session_key="terminal:other",
+            execution_target="local",
+        )
+    )
+
+    assert asyncio.run(
+        service.status("sess-foreign", origin_session_key="terminal:chat")
+    ) is None

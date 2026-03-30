@@ -115,7 +115,10 @@ class AcpxAdapter(ExternalAgentRuntime):
             )
         error_type = "process_error"
         retryable = True
-        if returncode == 5 or "permission denied" in stderr.lower():
+        if returncode == 124 or "timed out" in stderr.lower():
+            error_type = "timeout"
+            retryable = False
+        elif returncode == 5 or "permission denied" in stderr.lower():
             error_type = "permission_denied_noninteractive"
             retryable = False
         return ExternalRunResult(

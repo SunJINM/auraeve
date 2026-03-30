@@ -101,6 +101,7 @@ class RuntimeKernel:
         self._execution_workspace = execution_workspace
         self.memory_lifecycle = memory_lifecycle
         self._external_agent_service = external_agent_service
+        self._current_origin_session_key = "internal:direct"
         self._running = False
         self._reload_lock = asyncio.Lock()
 
@@ -266,7 +267,7 @@ class RuntimeKernel:
             execution_workspace=self._execution_workspace,
             media_runtime=self._media_runtime,
             external_agent_service=self._external_agent_service,
-            origin_session_key_getter=lambda: self.sessions.current_session_key or "internal:direct",
+            origin_session_key_getter=lambda: self._current_origin_session_key,
         )
         self._runner._tools = self.tools
 
@@ -329,6 +330,7 @@ class RuntimeKernel:
         }
 
     def _set_tool_context(self, channel: str, chat_id: str, thread_id: str) -> None:
+        self._current_origin_session_key = thread_id
         message_tool = self.tools.get("message")
         if message_tool is not None and isinstance(message_tool, MessageTool):
             message_tool.set_context(channel, chat_id)
