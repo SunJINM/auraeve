@@ -31,6 +31,10 @@ from auraeve.stt import build_runtime_from_config, runtime_config_from_dict
 from auraeve.media_understanding import build_media_runtime_from_config
 from auraeve.runtime_bootstrap import bootstrap_workspace_from_template
 from auraeve.memory_lifecycle import MemoryLifecycleService
+from auraeve.external_agents.adapters.acpx_adapter import AcpxAdapter
+from auraeve.external_agents.registry import build_default_external_agent_registry
+from auraeve.external_agents.service import ExternalAgentService
+from auraeve.external_agents.store import ExternalAgentSessionStore
 
 
 class _OpenAIEmbedder:
@@ -120,6 +124,18 @@ async def main(terminal_mode: bool = False) -> None:
         llm_provider=provider,
     )
     execution_workspace = str(workspace.expanduser().resolve())
+    external_agent_store = ExternalAgentSessionStore(
+        workspace / "data" / "external_agent_sessions.json"
+    )
+    external_agent_registry = build_default_external_agent_registry()
+    external_agent_runtime = AcpxAdapter(
+        command=getattr(cfg, "ACPX_COMMAND", "acpx")
+    )
+    external_agent_service = ExternalAgentService(
+        runtime=external_agent_runtime,
+        registry=external_agent_registry,
+        store=external_agent_store,
+    )
 
     #  ?
     memory_file_change_notifier = None
@@ -261,6 +277,7 @@ async def main(terminal_mode: bool = False) -> None:
             timezone=os.getenv("AURAEVE_TIMEZONE") or os.getenv("TZ") or "Asia/Shanghai",
             on_memory_file_changed=memory_file_change_notifier,
         ),
+        external_agent_service=external_agent_service,
     )
 
     # ?Cron ?on_job ?agent

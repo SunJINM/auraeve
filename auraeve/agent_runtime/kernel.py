@@ -38,6 +38,7 @@ from .tool_policy.engine import ToolPolicyEngine
 
 if TYPE_CHECKING:
     from auraeve.cron.service import CronService
+    from auraeve.external_agents.service import ExternalAgentService
     from auraeve.identity.resolver import IdentityResolver
     from auraeve.media_understanding.runtime import MediaUnderstandingRuntime
     from auraeve.memory_lifecycle import MemoryLifecycleService
@@ -78,6 +79,7 @@ class RuntimeKernel:
         runtime_execution: dict | None = None,
         runtime_loop_guard: dict | None = None,
         memory_lifecycle: "MemoryLifecycleService | None" = None,
+        external_agent_service: "ExternalAgentService | None" = None,
     ) -> None:
         self.bus = bus
         self.provider = provider
@@ -98,6 +100,7 @@ class RuntimeKernel:
         self._identity_resolver = identity_resolver
         self._execution_workspace = execution_workspace
         self.memory_lifecycle = memory_lifecycle
+        self._external_agent_service = external_agent_service
         self._running = False
         self._reload_lock = asyncio.Lock()
 
@@ -262,6 +265,8 @@ class RuntimeKernel:
             engine=self.engine,
             execution_workspace=self._execution_workspace,
             media_runtime=self._media_runtime,
+            external_agent_service=self._external_agent_service,
+            origin_session_key_getter=lambda: self.sessions.current_session_key or "internal:direct",
         )
         self._runner._tools = self.tools
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from auraeve.agent.tools.browser import BrowserTool
+from auraeve.agent.tools.coding_agent import CodingAgentTool
 from auraeve.agent.tools.cron import CronTool
 from auraeve.agent.tools.filesystem import EditFileTool, ListDirTool, ReadFileTool, WriteFileTool
 from auraeve.agent.tools.message import MessageTool
@@ -38,6 +39,8 @@ def build_tool_registry(
     execution_workspace: str | None = None,
     execution_dispatcher: ExecutionDispatcher | None = None,
     media_runtime=None,
+    external_agent_service=None,
+    origin_session_key_getter=None,
 ) -> ToolRegistry:
     registry = ToolRegistry()
     tool_workspace = execution_workspace or str(workspace)
@@ -94,6 +97,18 @@ def build_tool_registry(
 
     registry.register(BrowserTool(screenshot_dir=Path(tool_workspace) / "artifacts" / "browser"))
     registry.register(PdfTool(provider=provider, model=model))
+
+    if (
+        profile == "main"
+        and external_agent_service is not None
+        and origin_session_key_getter is not None
+    ):
+        registry.register(
+            CodingAgentTool(
+                service=external_agent_service,
+                origin_session_key_getter=origin_session_key_getter,
+            )
+        )
 
     if engine is not None:
         from auraeve.agent.engines.vector.engine import VectorContextEngine
