@@ -118,9 +118,25 @@ class SubagentDB:
             self._local.conn = conn
         return self._local.conn
 
+    def close(self) -> None:
+        """关闭当前线程的数据库连接。"""
+        conn = getattr(self._local, "conn", None)
+        if conn is not None:
+            conn.close()
+            self._local.conn = None
+
     def _init_schema(self) -> None:
         conn = self._get_conn()
         conn.executescript(_SCHEMA_SQL)
+        # 为已有数据库补列（忽略"column already exists"错误）
+        for col_def in [
+            "ALTER TABLE tasks ADD COLUMN spawn_tool_call_id TEXT DEFAULT ''",
+            "ALTER TABLE tasks ADD COLUMN agent_name TEXT DEFAULT ''",
+        ]:
+            try:
+                conn.execute(col_def)
+            except Exception:
+                pass  # 列已存在，忽略
         conn.commit()
 
     # ── Task CRUD ───────────────────────────────────────────────────────────
@@ -225,8 +241,8 @@ class SubagentDB:
             origin_chat_id=row["origin_chat_id"] or "",
             created_at=row["created_at"],
             updated_at=row["updated_at"],
-            spawn_tool_call_id=row["spawn_tool_call_id"] if "spawn_tool_call_id" in row.keys() else "",
-            agent_name=row["agent_name"] if "agent_name" in row.keys() else "",
+            spawn_tool_call_id=row["spawn_tool_call_id"] or "",
+            agent_name=row["agent_name"] or "",
         )
 
     # ── TaskEvent ───────────────────────────────────────────────────────────
