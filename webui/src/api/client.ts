@@ -79,9 +79,85 @@ export interface ChatAbortResp {
   status: 'aborted' | 'not_found'
 }
 
+export interface ChatRuntimeToolCall {
+  toolCallId: string
+  toolName: string
+  arguments: unknown
+  status: 'running' | 'completed'
+  resultPreview: string
+}
+
+export interface ChatRuntimeTask {
+  taskId: string
+  goal: string
+  assignedNodeId: string
+  priority: number
+  status: string
+  traceId: string
+  originChannel: string
+  originChatId: string
+  agentName?: string
+  result?: string
+  createdAt: number
+  updatedAt: number
+}
+
+export interface ChatRuntimeApproval {
+  approvalId: string
+  taskId: string
+  actionDesc: string
+  riskLevel: string
+  status: string
+  decidedBy: string
+  decidedAt: number
+  createdAt: number
+}
+
+export interface ChatRuntimeNode {
+  nodeId: string
+  displayName: string
+  platform: string
+  isOnline: boolean
+  connectedAt: number
+  disconnectedAt: number
+  runningTasks: number
+}
+
+export interface ChatRuntimeTimelineItem {
+  taskId: string
+  seq: number
+  eventType: string
+  summary: string
+  payload: Record<string, unknown>
+  createdAt: number
+}
+
+export interface ChatRuntimeSnapshotResp {
+  run: {
+    runId?: string | null
+    status: 'idle' | 'running' | 'completed' | 'aborted'
+    done: boolean
+    aborted: boolean
+  }
+  toolCalls: ChatRuntimeToolCall[]
+  tasks: ChatRuntimeTask[]
+  approvals: ChatRuntimeApproval[]
+  nodes: ChatRuntimeNode[]
+  timeline: ChatRuntimeTimelineItem[]
+  summary: {
+    runningTasks: number
+    pendingApprovals: number
+    toolCalls: number
+    onlineNodes: number
+  }
+}
+
 export const chatApi = {
   history: (sessionKey: string, limit = 200) =>
     req<ChatHistoryResp>('GET', `/chat/history?sessionKey=${encodeURIComponent(sessionKey)}&limit=${limit}`),
+
+  runtime: (sessionKey: string, limit = 100) =>
+    req<ChatRuntimeSnapshotResp>('GET', `/chat/runtime?sessionKey=${encodeURIComponent(sessionKey)}&limit=${limit}`),
 
   send: (sessionKey: string, message: string, idempotencyKey: string) =>
     req<ChatSendResp>('POST', '/chat/send', {
@@ -370,7 +446,7 @@ export const logsApi = {
     }
     const blob = await res.blob()
     const cd = res.headers.get('Content-Disposition') || ''
-    const match = /filename=\"?([^\";]+)\"?/i.exec(cd)
+    const match = /filename="?([^";]+)"?/i.exec(cd)
     const filename = match?.[1] || `auraeve-logs.${body.format}`
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -772,7 +848,7 @@ export const profileApi = {
     }
     const blob = await res.blob()
     const cd = res.headers.get('Content-Disposition') || ''
-    const match = /filename=\"?([^\";]+)\"?/i.exec(cd)
+    const match = /filename="?([^";]+)"?/i.exec(cd)
     const filename = match?.[1] || 'auraeve-profile.auraeve'
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')

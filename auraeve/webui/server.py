@@ -16,6 +16,7 @@ from loguru import logger
 import auraeve.config as cfg
 from auraeve.webui.auth import verify_token
 from auraeve.webui.chat_service import ChatService
+from auraeve.webui.chat_console_service import ChatConsoleService
 from auraeve.webui.config_service import ConfigService
 from auraeve.webui.mcp_service import MCPWebService
 from auraeve.webui.node_service import NodeWebService
@@ -27,6 +28,7 @@ from auraeve.webui.profile_service import ProfileWebService
 from auraeve.webui.schemas import (
     ChatAbortRequest,
     ChatAbortResponse,
+    ChatConsoleSnapshotResponse,
     ChatHistoryResponse,
     ChatSendRequest,
     ChatSendResponse,
@@ -124,6 +126,7 @@ class WebUIServer:
             else None
         )
         self._nodes = NodeWebService(orchestrator) if orchestrator else None
+        self._chat_console = ChatConsoleService(chat_service, getattr(orchestrator, "_db", None))
         self._server: uvicorn.Server | None = None
         self._restart_callback = restart_callback
         self._upload = UploadWebService()
@@ -173,6 +176,13 @@ class WebUIServer:
         ) -> ChatHistoryResponse:
             msgs = self._chat.get_history(sessionKey, limit)
             return ChatHistoryResponse(sessionKey=sessionKey, messages=msgs)
+
+        @app.get("/api/webui/chat/runtime", response_model=ChatConsoleSnapshotResponse, dependencies=[auth])
+        async def chat_runtime(
+            sessionKey: str = Query(min_length=1, max_length=200),
+            limit: int = Query(default=100, ge=1, le=500),
+        ) -> ChatConsoleSnapshotResponse:
+            return ChatConsoleSnapshotResponse(**self._chat_console.get_snapshot(sessionKey, limit=limit))
 
         @app.post("/api/webui/chat/send", response_model=ChatSendResponse, dependencies=[auth])
         async def chat_send(req: ChatSendRequest) -> ChatSendResponse:

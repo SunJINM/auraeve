@@ -34,6 +34,16 @@ class ChatAbortResponse(BaseModel):
     status: Literal["aborted", "not_found"]
 
 
+class ChatConsoleSnapshotResponse(BaseModel):
+    run: dict[str, Any] = Field(default_factory=dict)
+    toolCalls: list[dict[str, Any]] = Field(default_factory=list)
+    tasks: list[dict[str, Any]] = Field(default_factory=list)
+    approvals: list[dict[str, Any]] = Field(default_factory=list)
+    nodes: list[dict[str, Any]] = Field(default_factory=list)
+    timeline: list[dict[str, Any]] = Field(default_factory=list)
+    summary: dict[str, Any] = Field(default_factory=dict)
+
+
 class ConfigGetResponse(BaseModel):
     config: dict[str, Any]
     baseHash: str

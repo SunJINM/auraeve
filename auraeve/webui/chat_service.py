@@ -181,3 +181,22 @@ class ChatService:
                 q.put_nowait(event)
             except asyncio.QueueFull:
                 logger.warning(f"WebUI SSE 队列满，丢弃事件：{event.get('type')}")
+
+    def get_runtime_status(self, session_key: str) -> dict[str, Any]:
+        """返回指定会话最近一次运行的状态摘要。"""
+        for state in reversed(list(self._runs.values())):
+            if state.session_key != session_key:
+                continue
+            if state.aborted:
+                status = "aborted"
+            elif state.done:
+                status = "completed"
+            else:
+                status = "running"
+            return {
+                "runId": state.run_id,
+                "status": status,
+                "done": state.done,
+                "aborted": state.aborted,
+            }
+        return {"runId": None, "status": "idle", "done": True, "aborted": False}

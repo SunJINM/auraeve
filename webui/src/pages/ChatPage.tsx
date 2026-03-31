@@ -1,41 +1,66 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { v4 as uuid } from 'uuid'
-import { chatApi, type ChatMessage, type ChatEvent } from '../api/client'
+import { chatApi, type ChatEvent, type ChatMessage, type ChatRuntimeSnapshotResp } from '../api/client'
 import { useAppStore } from '../store/app'
-import { motion } from 'framer-motion'
-import clsx from 'clsx'
+import { ChatComposer } from '../components/chat/ChatComposer'
+import { ChatMessageBubble } from '../components/chat/ChatMessageBubble'
+import { RunPanel } from '../components/chat/RunPanel'
 
 export function ChatPage() {
   const { sessionKey, setSessionKey } = useAppStore()
   const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [runtime, setRuntime] = useState<ChatRuntimeSnapshotResp | null>(null)
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
   const [runId, setRunId] = useState<string | null>(null)
   const [status, setStatus] = useState<'idle' | 'waiting' | 'error'>('idle')
   const [errorMsg, setErrorMsg] = useState('')
+  const [loadingRuntime, setLoadingRuntime] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const unsubRef = useRef<(() => void) | null>(null)
 
-  const scrollToBottom = () =>
+  const scrollToBottom = () => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }
 
-  // 加载历史
   const loadHistory = useCallback(async () => {
     try {
       const resp = await chatApi.history(sessionKey, 200)
       setMessages(resp.messages)
-      setTimeout(scrollToBottom, 100)
+      window.setTimeout(scrollToBottom, 100)
     } catch {
       setStatus('error')
       setErrorMsg('加载历史失败，请检查连接或 Token')
     }
   }, [sessionKey])
 
-  // SSE 订阅
+  const loadRuntime = useCallback(async () => {
+    try {
+      setLoadingRuntime(true)
+      const resp = await chatApi.runtime(sessionKey, 100)
+      setRuntime(resp)
+      if (resp.run.runId) setRunId(resp.run.runId)
+      if (resp.run.status === 'running') setSending(true)
+      else if (resp.run.status === 'completed' || resp.run.status === 'aborted' || resp.run.status === 'idle') setSending(false)
+    } catch {
+      // 控制台面板失败不阻断主聊天流
+    } finally {
+      setLoadingRuntime(false)
+    }
+  }, [sessionKey])
+
+  const syncAll = useCallback(async () => {
+    await Promise.all([loadHistory(), loadRuntime()])
+  }, [loadHistory, loadRuntime])
+
   const subscribe = useCallback(() => {
     unsubRef.current?.()
     unsubRef.current = chatApi.events(sessionKey, (e: ChatEvent) => {
-      if (e.type === 'chat.final') {
+      if (e.type === 'chat.started') {
+        setStatus('waiting')
+        if (e.runId) setRunId(e.runId)
+        void loadRuntime()
+      } else if (e.type === 'chat.final') {
         setMessages((prev) => [
           ...prev,
           { role: 'assistant', content: e.content || '', timestamp: new Date().toISOString() },
@@ -43,29 +68,36 @@ export function ChatPage() {
         setSending(false)
         setRunId(null)
         setStatus('idle')
-        setTimeout(scrollToBottom, 80)
+        void loadRuntime()
+        window.setTimeout(scrollToBottom, 80)
       } else if (e.type === 'chat.error') {
         setStatus('error')
         setErrorMsg(e.error || '处理出错')
         setSending(false)
+        void loadRuntime()
       } else if (e.type === 'chat.aborted') {
         setSending(false)
         setStatus('idle')
         setRunId(null)
+        void loadRuntime()
       }
     })
-  }, [sessionKey])
+  }, [loadRuntime, sessionKey])
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      void loadHistory()
+      void syncAll()
     }, 0)
     subscribe()
+    const poll = window.setInterval(() => {
+      void loadRuntime()
+    }, 4000)
     return () => {
       window.clearTimeout(timer)
+      window.clearInterval(poll)
       unsubRef.current?.()
     }
-  }, [loadHistory, subscribe])
+  }, [subscribe, syncAll, loadRuntime])
 
   const send = async () => {
     const text = input.trim()
@@ -77,10 +109,11 @@ export function ChatPage() {
     setSending(true)
     setStatus('waiting')
     setErrorMsg('')
-    setTimeout(scrollToBottom, 80)
+    window.setTimeout(scrollToBottom, 80)
     try {
       const resp = await chatApi.send(sessionKey, text, ikey)
       setRunId(resp.runId)
+      void loadRuntime()
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err)
       setStatus('error')
@@ -92,103 +125,101 @@ export function ChatPage() {
   const abort = async () => {
     if (!runId) return
     await chatApi.abort(sessionKey, runId)
+    void loadRuntime()
   }
 
-  const onKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      send()
-    }
-  }
+  const statusLine = buildStatusLine(status, errorMsg, runtime)
 
   return (
-    <div className="flex flex-col h-full">
-      {/* 会话栏 */}
-      <div className="flex items-center gap-2 px-4 py-2 border-b" style={{ borderColor: 'var(--glass-border)' }}>
-        <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>会话：</span>
-        <input
-          className="text-sm px-2 py-1 rounded-lg border focus:outline-none"
-          style={{ background: 'var(--input-bg)', color: 'var(--text-primary)', borderColor: 'var(--glass-border)' }}
-          value={sessionKey}
-          onChange={(e) => setSessionKey(e.target.value)}
-          onBlur={loadHistory}
-          placeholder="会话 key"
-        />
-        <div className="ml-auto flex items-center gap-1 text-xs" style={{ color: 'var(--text-secondary)' }}>
-          {status === 'waiting' && <><span className="cursor-blink">●</span> 处理中</>}
-          {status === 'error' && <span style={{ color: 'var(--danger)' }}>⚠ {errorMsg}</span>}
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="border-b px-4 py-3" style={{ borderColor: 'var(--glass-border)' }}>
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
+          <div className="min-w-0 flex-1">
+            <div className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Agent Console</div>
+            <div className="mt-1 text-xs" style={{ color: 'var(--text-secondary)' }}>
+              把最终回复、子体协作、审批与节点状态放在一个界面里。
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>会话</span>
+            <input
+              className="rounded-xl border px-3 py-2 text-sm focus:outline-none"
+              style={{ background: 'var(--input-bg)', color: 'var(--text-primary)', borderColor: 'var(--glass-border)' }}
+              value={sessionKey}
+              onChange={(e) => setSessionKey(e.target.value)}
+              onBlur={() => void syncAll()}
+              placeholder="会话 key"
+            />
+          </div>
+        </div>
+
+        <div className="mt-3 flex flex-wrap gap-2 text-xs">
+          {statusLine.map((item) => (
+            <span
+              key={item.text}
+              className="rounded-full border px-3 py-1"
+              style={{ borderColor: 'var(--glass-border)', color: item.color || 'var(--text-secondary)' }}
+            >
+              {item.text}
+            </span>
+          ))}
         </div>
       </div>
 
-      {/* 消息列表 */}
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
-        {messages.map((msg, i) => (
-          <motion.div
-            key={i}
-            className={clsx('flex', msg.role === 'user' ? 'justify-end' : 'justify-start')}
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.2 }}
-          >
-            <div
-              className="max-w-[75%] px-4 py-3 rounded-2xl text-sm whitespace-pre-wrap leading-relaxed"
-              style={{
-                background: msg.role === 'user' ? 'var(--msg-user)' : 'var(--msg-agent)',
-                color: 'var(--text-primary)',
-                border: '1px solid var(--glass-border)',
-              }}
-            >
-              {msg.content}
-            </div>
-          </motion.div>
-        ))}
-        {sending && (
-          <div className="flex justify-start">
-            <div
-              className="px-4 py-3 rounded-2xl text-sm"
-              style={{ background: 'var(--msg-agent)', color: 'var(--text-secondary)', border: '1px solid var(--glass-border)' }}
-            >
-              <span className="cursor-blink">▍</span>
+      <div className="flex min-h-0 flex-1 flex-col gap-3 p-3 xl:flex-row">
+        <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[22px] border" style={{ borderColor: 'var(--glass-border)', background: 'color-mix(in srgb, var(--surface-1) 92%, transparent)' }}>
+          <div className="border-b px-4 py-3" style={{ borderColor: 'var(--glass-border)' }}>
+            <div className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>聊天主线</div>
+            <div className="mt-1 text-xs" style={{ color: 'var(--text-secondary)' }}>
+              结果面向用户，过程沉淀到右侧运行面板。
             </div>
           </div>
-        )}
-        <div ref={bottomRef} />
-      </div>
 
-      {/* 输入区 */}
-      <div
-        className="p-4 border-t flex gap-2 items-end"
-        style={{ borderColor: 'var(--glass-border)', background: 'var(--glass-bg)', backdropFilter: 'blur(12px)' }}
-      >
-        <textarea
-          className="flex-1 resize-none rounded-xl px-4 py-3 text-sm focus:outline-none"
-          style={{ background: 'var(--input-bg)', color: 'var(--text-primary)', border: '1px solid var(--glass-border)', minHeight: '44px', maxHeight: '140px' }}
-          placeholder="输入消息，Enter 发送，Shift+Enter 换行..."
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={onKeyDown}
-          rows={1}
-          disabled={sending}
-        />
-        {sending ? (
-          <button
-            onClick={abort}
-            className="px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200"
-            style={{ background: 'var(--danger)', color: '#fff' }}
-          >
-            停止
-          </button>
-        ) : (
-          <button
-            onClick={send}
-            disabled={!input.trim()}
-            className="px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200 disabled:opacity-40"
-            style={{ background: 'var(--accent)', color: '#fff' }}
-          >
-            发送
-          </button>
-        )}
+          <div className="flex-1 overflow-y-auto px-4 py-4">
+            {messages.length === 0 ? (
+              <div className="mx-auto mt-10 max-w-2xl rounded-[28px] border px-6 py-6" style={{ borderColor: 'var(--glass-border)', background: 'rgba(255,255,255,0.22)' }}>
+                <div className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>欢迎来到 AuraEve Agent Console</div>
+                <div className="mt-2 text-sm leading-7" style={{ color: 'var(--text-secondary)' }}>
+                  这里不只是聊天窗口。你会同时看到子体分工、审批请求、节点状态和执行轨迹，方便理解 AuraEve 如何完成任务。
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {messages.map((msg, index) => (
+                  <ChatMessageBubble key={`${msg.timestamp || 'msg'}-${index}`} message={msg} index={index} />
+                ))}
+                {sending && (
+                  <div className="flex justify-start">
+                    <div className="rounded-[22px] border px-4 py-3 text-sm" style={{ background: 'var(--msg-agent)', color: 'var(--text-secondary)', borderColor: 'var(--glass-border)' }}>
+                      <span className="cursor-blink">▍</span> 正在等待模型和子体结果...
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+            <div ref={bottomRef} />
+          </div>
+
+          <ChatComposer value={input} sending={sending} onChange={setInput} onSubmit={() => void send()} onAbort={() => void abort()} />
+        </section>
+
+        <RunPanel snapshot={runtime} loading={loadingRuntime} onRefresh={() => void loadRuntime()} />
       </div>
     </div>
   )
+}
+
+function buildStatusLine(
+  status: 'idle' | 'waiting' | 'error',
+  errorMsg: string,
+  runtime: ChatRuntimeSnapshotResp | null,
+): Array<{ text: string; color?: string }> {
+  const items: Array<{ text: string; color?: string }> = []
+  if (status === 'waiting') items.push({ text: '处理中', color: 'var(--accent)' })
+  if (status === 'error' && errorMsg) items.push({ text: `错误: ${errorMsg}`, color: 'var(--danger)' })
+  if (runtime?.summary.runningTasks) items.push({ text: `${runtime.summary.runningTasks} 个子体任务运行中` })
+  if (runtime?.summary.pendingApprovals) items.push({ text: `${runtime.summary.pendingApprovals} 个审批等待处理`, color: '#d97706' })
+  if (runtime?.toolCalls.length) items.push({ text: `${runtime.toolCalls.length} 次工具调用` })
+  if (items.length === 0) items.push({ text: '当前空闲，可直接开始新一轮任务' })
+  return items
 }
