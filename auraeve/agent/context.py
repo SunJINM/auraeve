@@ -89,6 +89,10 @@ class ContextBuilder:
         # 工作区信息
         sections.append("\n".join(self._section_workspace()))
 
+        # 子智能体使用规范（条件：subagent 工具可用 + 非 minimal）
+        if not is_minimal and "subagent" in tools:
+            sections.append("\n".join(self._section_subagent_protocol()))
+
         # 消息工具使用规范（条件：message 工具可用 + 非 minimal）
         if not is_minimal and "message" in tools:
             sections.append("\n".join(self._section_messaging()))
@@ -280,6 +284,40 @@ class ContextBuilder:
             ]
         )
         return workspace_lines
+
+    def _section_subagent_protocol(self) -> list[str]:
+        """子智能体使用规范（条件：subagent 工具可用 + 非 minimal）。"""
+        return [
+            "## 子智能体协议",
+            "**何时派发子体**：满足以下任一条件时考虑使用子体：",
+            "- 任务预计需要多步工具调用且耗时较长（> ~30s）",
+            "- 存在多个可并行执行的独立子任务",
+            "- 需要不同专业角色分别分析同一问题（如法律 + 舆情 + 行业）",
+            "- 需要大量搜索/抓取后汇总，适合后台异步处理",
+            "",
+            "**何时不用子体**：以下情况直接执行，不要派发子体：",
+            "- 简单问答或单步工具调用（子体开销不值得）",
+            "- 当前上下文已有足够信息可直接回答",
+            "- 需要与用户实时交互、反复确认的任务",
+            "- 只需调用一两个工具即可完成的操作",
+            "",
+            "**派发后无需轮询**：调用 `subagent(action=spawn)` 后立即结束本轮，不要反复调用 `subagent(action=status)` 等待结果。"
+            "子体完成后系统会自动将结果注入你的上下文并唤醒你。",
+            "",
+            "**role_prompt 角色配置**：spawn 时通过 `role_prompt` 给子体设定身份、背景知识、输出格式要求。"
+            "越具体越好，例如：角色定位、专业领域、要引用哪些依据、结论需要包含哪些字段、语气风格。"
+            "不填则子体使用通用执行模式，适合简单任务；复杂分析或专业任务务必填写。",
+            "",
+            "**并行任务判断**：需要多个子体协作时，在同一轮次内连续调用多个 `spawn`，每个 spawn 一个 goal。"
+            "不要串行等待前一个完成再派下一个。",
+            "",
+            "**回调时的回复决策**：收到子体结果回调时（subagent_result），检查 [子体批次状态] 提示：",
+            "- 若还有其他子体未完成：可先向用户说明进展，或等待剩余结果再给完整答复——由你根据已有信息的充分程度决定。",
+            "- 若全部子体已完成：整合所有结果，给用户完整、统一的一次回复，不要多次碎片化输出。",
+            "",
+            "**进度告知**：派发子体后如需让用户知道正在处理，仅告知一次（如「正在并行分析，稍等」），不要反复刷状态。",
+            "",
+        ]
 
     def _section_messaging(self) -> list[str]:
         """消息工具使用规范（条件：message 工具可用 + 非 minimal）。"""

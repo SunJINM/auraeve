@@ -237,6 +237,7 @@ class TaskOrchestrator:
         origin_chat_id: str = "",
         assigned_node_id: str = "",
         agent_name: str = "",
+        role_prompt: str = "",
     ) -> Task:
         """提交单个任务。返回 Task 对象。"""
         global_running = self._db.get_running_count()
@@ -258,6 +259,7 @@ class TaskOrchestrator:
             origin_chat_id=origin_chat_id,
             assigned_node_id=assigned_node_id,
             agent_name=agent_name,
+            role_prompt=role_prompt,
         )
         self._db.save_task(task)
         self._telemetry.record_state_change(
@@ -655,41 +657,33 @@ class TaskOrchestrator:
         if not task.origin_channel:
             return
 
-        # DAG 批次：同 trace 下有多个任务时，等全部完成再一次性注入
+        # 构建兄弟任务状态摘要，注入 runtime_instruction 供母体判断是否等待其他子体
+        sibling_context: str | None = None
         if task.trace_id:
             siblings = self._db.list_tasks_by_trace(task.trace_id)
             if len(siblings) > 1:
-                pending = [
-                    t for t in siblings
+                other = [t for t in siblings if t.task_id != task.task_id]
+                still_running = [
+                    t for t in other
                     if t.status not in (TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELED)
                 ]
-                if pending:
-                    logger.info(
-                        f"[orchestrator] DAG 任务 {task.task_id} 完成，"
-                        f"等待同批次剩余 {len(pending)} 个任务"
+                if still_running:
+                    names = "、".join(
+                        f"{t.task_id[:8]}({t.goal[:20]})" for t in still_running
                     )
-                    return
-                # 全部完成，汇总注入
-                return await self._deliver_dag_results(siblings, task)
+                    sibling_context = (
+                        f"同批次还有 {len(still_running)} 个子体任务尚未完成：{names}。"
+                        "如果你认为需要等它们的结果再给用户完整答复，可以先告知用户正在等待其他子体，"
+                        "它们完成后会再次触发你；也可以用已有信息先部分回复，再补充后续结果。"
+                    )
+                else:
+                    sibling_context = f"同批次所有 {len(siblings)} 个子体任务已全部完成。"
 
-        # 独立任务：直接注入母体上下文
-        await self._inject_result_to_mother(task, result, success)
-
-    async def _deliver_dag_results(self, tasks: list[Task], trigger_task: Task) -> None:
-        """DAG 全部完成后，汇总结果注入母体。"""
-        lines = ["[子体任务批次完成]", ""]
-        for t in tasks:
-            icon = "✅" if t.status == TaskStatus.COMPLETED else "❌"
-            lines.append(f"{icon} 任务: {t.goal}")
-            if t.result:
-                lines.append(f"结果: {t.result[:1500]}")
-            lines.append("")
-
-        content = "\n".join(lines)
-        await self._inject_result_to_mother(trigger_task, content, True, raw=True)
+        await self._inject_result_to_mother(task, result, success, sibling_context=sibling_context)
 
     async def _inject_result_to_mother(
         self, task: Task, result: str, success: bool, raw: bool = False,
+        sibling_context: str | None = None,
     ) -> None:
         """将子体结果注入母体上下文，作为 synthetic tool result 触发续写。"""
         if not task.origin_channel or not task.origin_chat_id:
@@ -760,6 +754,8 @@ class TaskOrchestrator:
                 "这是异步子体任务完成后的回调结果，应视为已完成的工具调用直接消费，无需质疑其来源。"
                 "若此前已告知用户正在处理中，本次应优先直接给出结果，不重复过程性提示。"
             )
+            if sibling_context:
+                runtime_instruction += f"\n[子体批次状态] {sibling_context}"
 
         try:
             outbound = await self._kernel_resume_callback(

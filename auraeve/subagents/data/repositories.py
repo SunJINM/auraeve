@@ -33,7 +33,8 @@ CREATE TABLE IF NOT EXISTS tasks (
     created_at REAL NOT NULL,
     updated_at REAL NOT NULL,
     spawn_tool_call_id TEXT DEFAULT '',
-    agent_name TEXT DEFAULT ''
+    agent_name TEXT DEFAULT '',
+    role_prompt TEXT DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS task_events (
@@ -132,6 +133,7 @@ class SubagentDB:
         for col_def in [
             "ALTER TABLE tasks ADD COLUMN spawn_tool_call_id TEXT DEFAULT ''",
             "ALTER TABLE tasks ADD COLUMN agent_name TEXT DEFAULT ''",
+            "ALTER TABLE tasks ADD COLUMN role_prompt TEXT DEFAULT ''",
         ]:
             try:
                 conn.execute(col_def)
@@ -148,8 +150,8 @@ class SubagentDB:
                (task_id, goal, assigned_node_id, priority, status, depends_on,
                 budget, policy_profile, result, compensate_action, trace_id,
                 origin_channel, origin_chat_id, created_at, updated_at,
-                spawn_tool_call_id, agent_name)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                spawn_tool_call_id, agent_name, role_prompt)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 task.task_id, task.goal, task.assigned_node_id, task.priority,
                 task.status.value, json.dumps(task.depends_on),
@@ -157,7 +159,7 @@ class SubagentDB:
                 task.result, task.compensate_action, task.trace_id,
                 task.origin_channel, task.origin_chat_id,
                 task.created_at, task.updated_at,
-                task.spawn_tool_call_id, task.agent_name,
+                task.spawn_tool_call_id, task.agent_name, task.role_prompt,
             ),
         )
         conn.commit()
@@ -243,6 +245,7 @@ class SubagentDB:
             updated_at=row["updated_at"],
             spawn_tool_call_id=row["spawn_tool_call_id"] or "",
             agent_name=row["agent_name"] or "",
+            role_prompt=row["role_prompt"] or "",
         )
 
     # ── TaskEvent ───────────────────────────────────────────────────────────

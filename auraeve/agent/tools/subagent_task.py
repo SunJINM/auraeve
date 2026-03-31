@@ -44,8 +44,22 @@ class SubAgentTaskTool(Tool):
     def description(self) -> str:
         return (
             "子体任务全生命周期管理，支持本地与远程节点调度。\n"
+            "\n"
+            "【适合用子体的场景】\n"
+            "- 预计需要多步工具调用、耗时较长（>30s）的任务\n"
+            "- 多个独立子任务可以并行执行（如同时从多个角度分析同一问题）\n"
+            "- 需要不同专业角色视角的分析（法律、舆情、技术等分工明确）\n"
+            "- 需要大量搜索、抓取、处理后再汇总的信息收集任务\n"
+            "- 需要在独立上下文中执行、避免污染当前会话的操作\n"
+            "\n"
+            "【不适合用子体的场景】\n"
+            "- 简单问答或单步工具调用（直接执行即可，子体开销不值得）\n"
+            "- 需要与用户实时交互、反复确认的任务\n"
+            "- 当前上下文已有足够信息可以直接回答的请求\n"
+            "- 极短任务（<10s）或只需调用一两个工具的操作\n"
+            "\n"
             "action=spawn：派生子体在后台执行任务（可通过 assigned_node_id 指定远程节点）。\n"
-            "action=dag：提交 DAG 任务组（tasks 为任务列表）。\n"
+            "action=dag：提交 DAG 任务组（tasks 为任务列表，支持依赖关系）。\n"
             "action=list：查询任务列表。\n"
             "action=status：查询任务详情（需 task_id）。\n"
             "action=steer：推送引导消息（需 task_id + message）。\n"
@@ -103,6 +117,14 @@ class SubAgentTaskTool(Tool):
                     "type": "string",
                     "description": "（spawn/dag）指定执行节点 ID（如 'work-pc'）；留空则由调度器自动选择最优节点",
                 },
+                "role_prompt": {
+                    "type": "string",
+                    "description": (
+                        "（spawn）子体角色配置。在此描述子体的身份定位、背景知识、工具使用偏好、输出格式要求等。"
+                        "例如：'你是一名资深法律分析师，专注于中国著作权法领域。分析时引用具体法条，"
+                        "结论部分给出明确的风险等级（高/中/低）和建议行动。'"
+                    ),
+                },
             },
             "required": ["action"],
         }
@@ -119,10 +141,11 @@ class SubAgentTaskTool(Tool):
         decision: str | None = None,
         limit: int = 20,
         assigned_node_id: str = "",
+        role_prompt: str = "",
         **kwargs: Any,
     ) -> str:
         if action == "spawn":
-            return await self._spawn(goal, priority, assigned_node_id, kwargs.get("agent_name", ""))
+            return await self._spawn(goal, priority, assigned_node_id, kwargs.get("agent_name", ""), role_prompt)
         elif action == "dag":
             return await self._dag(tasks)
         elif action == "list":
@@ -147,6 +170,7 @@ class SubAgentTaskTool(Tool):
         priority: int,
         assigned_node_id: str = "",
         agent_name: str = "",
+        role_prompt: str = "",
     ) -> str:
         if not goal:
             return "错误：spawn 需要 goal 参数"
@@ -157,6 +181,7 @@ class SubAgentTaskTool(Tool):
             origin_chat_id=self._origin_chat_id,
             assigned_node_id=assigned_node_id,
             agent_name=agent_name,
+            role_prompt=role_prompt,
         )
         return f"任务已创建: {task.task_id}\n目标: {task.goal}\n状态: {STATUS_ICON.get(task.status, '')} {task.status.value}"
 

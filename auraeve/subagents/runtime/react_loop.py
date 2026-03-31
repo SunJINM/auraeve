@@ -196,6 +196,8 @@ class ReActLoop:
         else:
             node_section = ""
 
+        role_section = f"\n\n## 角色配置\n{task.role_prompt.strip()}" if task.role_prompt.strip() else ""
+
         return (
             f"# 子体执行环境\n\n"
             f"## 当前时间\n{now}\n\n"
@@ -206,6 +208,7 @@ class ReActLoop:
             f"若收到 [引导消息]，立即调整执行方向。\n"
             f"高风险操作会触发审批流程，请等待审批结果。\n"
             f"{node_section}"
+            f"{role_section}"
             f"{memory_section}"
         )
 
