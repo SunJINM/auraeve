@@ -210,10 +210,11 @@ class ContextBuilder:
             return []
         return [
             "## 技能（必须遵守）",
-            "回复前扫描 <available_skills> 中的 <description> 条目：",
-            "- 恰好一个技能明确适用：用 read_file 读取其 SKILL.md，然后遵照执行。",
-            "- 多个可能适用：选择最具体的一个，读取并遵照执行。",
+            "回复前扫描技能列表中的 <description> 条目：",
+            "- 恰好一个技能明确适用：用 read_file 读取该技能的 <location> 字段所指定的完整路径，然后严格遵照执行。",
+            "- 多个可能适用：选择最具体的一个，读取其 <location> 路径并遵照执行。",
             "- 没有明确适用：不读任何 SKILL.md。",
+            "重要：必须使用 <location> 字段中的原始路径调用 read_file，不得自行猜测或拼接路径。",
             "限制：一次最多读一个技能；只在选定后才读取。",
             "当技能涉及外部 API 写入时，优先进行少量大批量写操作，避免单项紧密循环，遇到 429/Retry-After 时串行化请求。",
             skills_prompt,

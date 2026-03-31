@@ -238,6 +238,7 @@ class TaskOrchestrator:
         assigned_node_id: str = "",
         agent_name: str = "",
         role_prompt: str = "",
+        trace_id: str = "",
     ) -> Task:
         """提交单个任务。返回 Task 对象。"""
         global_running = self._db.get_running_count()
@@ -254,7 +255,7 @@ class TaskOrchestrator:
             budget=budget or TaskBudget(),
             policy_profile=policy_profile,
             compensate_action=compensate_action,
-            trace_id=Task.new_trace_id(),
+            trace_id=trace_id or Task.new_trace_id(),
             origin_channel=origin_channel,
             origin_chat_id=origin_chat_id,
             assigned_node_id=assigned_node_id,

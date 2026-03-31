@@ -72,13 +72,24 @@ class ReActLoop:
         await self._paused.wait()
 
         hooks = PluginRegistry().build_hook_runner()
+        effective_max_steps = min(self._max_iterations, budget.max_steps)
+        # 将 budget.max_tool_calls 映射到 RuntimeExecutionConfig
+        # max_tool_calls_per_turn 设为总量的 1/4（至少4），避免单轮并发过多耗尽 turns
+        max_tc = budget.max_tool_calls
+        per_turn = max(4, max_tc // 4)
+        runtime_execution = {
+            "maxTurns": effective_max_steps,
+            "maxToolCallsTotal": max_tc,
+            "maxToolCallsPerTurn": per_turn,
+        }
         runner = SessionAttemptRunner(
             provider=self._provider,
             tools=self._tools,
             policy=self._policy,
             hooks=hooks,
-            max_iterations=min(self._max_iterations, budget.max_steps),
+            max_iterations=effective_max_steps,
             thinking_budget_tokens=self._thinking_budget_tokens,
+            runtime_execution=runtime_execution,
         )
         orchestrator = RunOrchestrator(
             runner=runner,

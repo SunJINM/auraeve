@@ -19,3 +19,4 @@
 | `summarize` | 摘要 URL、文件和 YouTube 视频 |
 | `tmux` | 远程操控 tmux 会话（仅限 Linux/macOS） |
 | `weather` | 使用 wttr.in 和 Open-Meteo 获取天气信息 |
+| `research` | 多子体并行信息收集，系统性研究任意话题并生成分析报告 |

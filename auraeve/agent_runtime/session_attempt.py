@@ -145,12 +145,46 @@ class SessionAttemptRunner:
         while True:
             can_start, reason = budget.check_turn_budget()
             if not can_start:
-                final_content = (
-                    "任务已停止：执行预算耗尽。"
-                    f" reason={reason} turns={budget.turns_used} tools={budget.tool_calls_used}"
-                )
                 trace.stop_reason = reason
                 trace.add("budget_exhausted", reason=reason, snapshot=budget.snapshot())
+                # 子体预算耗尽时，用已有上下文做一次汇总而非直接返回错误
+                if is_subagent:
+                    try:
+                        msgs.append({
+                            "role": "user",
+                            "content": (
+                                "[系统提示] 执行预算已耗尽，无法继续工具调用。"
+                                "请根据你到目前为止已收集到的所有信息，"
+                                "立即给出一份尽可能完整的汇总结果。"
+                                "如有信息缺口，在结尾注明哪些内容未能收集到。"
+                                "不要提及预算或系统限制，直接输出内容。"
+                            ),
+                        })
+                        summary_response = await self._provider.chat(
+                            messages=msgs,
+                            model=model,
+                            temperature=temperature,
+                            max_tokens=max_tokens,
+                            tools=[],
+                        )
+                        final_content = (
+                            summary_response.get("content")
+                            or summary_response.get("text")
+                            or ""
+                        )
+                        if not final_content:
+                            # fallback: 尝试从 choices 结构取
+                            choices = summary_response.get("choices") or []
+                            if choices:
+                                final_content = (choices[0].get("message") or {}).get("content") or ""
+                    except Exception as exc:
+                        logger.warning(f"[session_attempt] 子体预算耗尽汇总失败: {exc}")
+                        final_content = None
+                if not final_content:
+                    final_content = (
+                        f"[预算耗尽] 已完成 {budget.tool_calls_used} 次工具调用，"
+                        "但未能在预算内完成全部搜集。请参考其他子体的结果。"
+                    )
                 break
 
             budget.mark_turn_started()
@@ -230,9 +264,44 @@ class SessionAttemptRunner:
             tool_calls = list(response.tool_calls)
             admitted = budget.admit_tool_calls(len(tool_calls))
             if admitted <= 0:
-                final_content = "任务已停止：工具调用预算耗尽。"
                 trace.stop_reason = "max_tool_calls_exhausted"
                 trace.add("budget_exhausted", reason="max_tool_calls_exhausted", snapshot=budget.snapshot())
+                if is_subagent:
+                    try:
+                        msgs.append({
+                            "role": "user",
+                            "content": (
+                                "[系统提示] 执行预算已耗尽，无法继续工具调用。"
+                                "请根据你到目前为止已收集到的所有信息，"
+                                "立即给出一份尽可能完整的汇总结果。"
+                                "如有信息缺口，在结尾注明哪些内容未能收集到。"
+                                "不要提及预算或系统限制，直接输出内容。"
+                            ),
+                        })
+                        summary_response = await self._provider.chat(
+                            messages=msgs,
+                            model=model,
+                            temperature=temperature,
+                            max_tokens=max_tokens,
+                            tools=[],
+                        )
+                        final_content = (
+                            summary_response.get("content")
+                            or summary_response.get("text")
+                            or ""
+                        )
+                        if not final_content:
+                            choices = summary_response.get("choices") or []
+                            if choices:
+                                final_content = (choices[0].get("message") or {}).get("content") or ""
+                    except Exception as exc:
+                        logger.warning(f"[session_attempt] 子体预算耗尽汇总失败: {exc}")
+                        final_content = None
+                if not final_content:
+                    final_content = (
+                        f"[预算耗尽] 已完成 {budget.tool_calls_used} 次工具调用，"
+                        "但未能在预算内完成全部搜集。请参考其他子体的结果。"
+                    )
                 break
             if admitted < len(tool_calls):
                 trace.add("tool_calls_truncated", requested=len(tool_calls), admitted=admitted)

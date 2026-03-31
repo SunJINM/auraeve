@@ -125,6 +125,23 @@ class SubAgentTaskTool(Tool):
                         "结论部分给出明确的风险等级（高/中/低）和建议行动。'"
                     ),
                 },
+                "max_tool_calls": {
+                    "type": "integer",
+                    "description": "（spawn）子体工具调用总次数上限，默认 100。搜索类子体建议设为 10-20 防止失控。",
+                },
+                "max_steps": {
+                    "type": "integer",
+                    "description": "（spawn）子体最大执行步数，默认 50。",
+                },
+                "batch_id": {
+                    "type": "string",
+                    "description": (
+                        "（spawn）批次 ID。同一轮派发的多个子体应传入相同的 batch_id，"
+                        "系统用此将它们归为同一批次，子体完成时母体可感知同批次其他子体的状态。"
+                        "建议格式：batch-{话题关键词}-{时间戳}，例如 'batch-agui-research-001'。"
+                        "若不填则每个子体独立，母体无法感知兄弟任务状态。"
+                    ),
+                },
             },
             "required": ["action"],
         }
@@ -142,10 +159,13 @@ class SubAgentTaskTool(Tool):
         limit: int = 20,
         assigned_node_id: str = "",
         role_prompt: str = "",
+        max_tool_calls: int | None = None,
+        max_steps: int | None = None,
+        batch_id: str = "",
         **kwargs: Any,
     ) -> str:
         if action == "spawn":
-            return await self._spawn(goal, priority, assigned_node_id, kwargs.get("agent_name", ""), role_prompt)
+            return await self._spawn(goal, priority, assigned_node_id, kwargs.get("agent_name", ""), role_prompt, max_tool_calls, max_steps, batch_id)
         elif action == "dag":
             return await self._dag(tasks)
         elif action == "list":
@@ -171,9 +191,19 @@ class SubAgentTaskTool(Tool):
         assigned_node_id: str = "",
         agent_name: str = "",
         role_prompt: str = "",
+        max_tool_calls: int | None = None,
+        max_steps: int | None = None,
+        batch_id: str = "",
     ) -> str:
         if not goal:
             return "错误：spawn 需要 goal 参数"
+        from auraeve.subagents.data.models import TaskBudget
+        budget = None
+        if max_tool_calls is not None or max_steps is not None:
+            budget = TaskBudget(
+                max_tool_calls=max_tool_calls if max_tool_calls is not None else 100,
+                max_steps=max_steps if max_steps is not None else 50,
+            )
         task = await self._orch.submit_task(
             goal=goal,
             priority=priority,
@@ -182,6 +212,8 @@ class SubAgentTaskTool(Tool):
             assigned_node_id=assigned_node_id,
             agent_name=agent_name,
             role_prompt=role_prompt,
+            budget=budget,
+            trace_id=batch_id,
         )
         return f"任务已创建: {task.task_id}\n目标: {task.goal}\n状态: {STATUS_ICON.get(task.status, '')} {task.status.value}"
 
