@@ -183,7 +183,7 @@ def build_defaults() -> dict[str, Any]:
         "HEARTBEAT_ENABLED": True,
         "HEARTBEAT_INTERVAL_S": 1800,
         "MAX_GLOBAL_SUBAGENT_CONCURRENT": 10,
-        "MAX_SESSION_SUBAGENT_CONCURRENT": 3,
+        "MAX_SESSION_SUBAGENT_CONCURRENT": 8,
         "OWNER_QQ": "",
     }
 

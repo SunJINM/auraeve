@@ -72,7 +72,7 @@ class RuntimeKernel:
         global_deny_tools: set[str] | None = None,
         session_tool_policy: dict | None = None,
         max_global_subagent_concurrent: int = 10,
-        max_session_subagent_concurrent: int = 3,
+        max_session_subagent_concurrent: int = 8,
         identity_resolver: "IdentityResolver | None" = None,
         execution_workspace: str | None = None,
         runtime_execution: dict | None = None,

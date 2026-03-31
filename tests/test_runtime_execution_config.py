@@ -12,6 +12,9 @@ from auraeve.config.schema import normalize_config_object, validate_config_objec
 
 
 class RuntimeExecutionConfigTests(unittest.TestCase):
+    def test_default_session_subagent_concurrency_is_eight(self) -> None:
+        self.assertEqual(DEFAULTS["MAX_SESSION_SUBAGENT_CONCURRENT"], 8)
+
     def test_validate_runtime_execution_shape(self) -> None:
         payload = dict(DEFAULTS)
         payload["RUNTIME_EXECUTION"] = {"maxTurns": "64"}
@@ -60,4 +63,3 @@ class RuntimeExecutionConfigTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
