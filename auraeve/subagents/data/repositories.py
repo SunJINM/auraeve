@@ -1,552 +1,155 @@
-"""SQLite 持久化仓库。"""
+"""子智能体数据存储。
 
+线程安全的 SQLite 持久化，只保留 Task 的 CRUD。
+"""
 from __future__ import annotations
 
 import json
 import sqlite3
 import threading
-import time
 from pathlib import Path
-from typing import Any
 
-from .models import (
-    Approval, ApprovalStatus, CapabilityScore, DeltaType, MemoryDelta,
-    MergeStatus, NodeSession, RiskLevel, Task, TaskArtifact, TaskBudget,
-    TaskEvent, TaskStatus,
-)
-
-_SCHEMA_SQL = """
-CREATE TABLE IF NOT EXISTS tasks (
-    task_id TEXT PRIMARY KEY,
-    goal TEXT NOT NULL,
-    assigned_node_id TEXT DEFAULT '',
-    priority INTEGER DEFAULT 5,
-    status TEXT NOT NULL,
-    depends_on TEXT DEFAULT '[]',
-    budget TEXT DEFAULT '{}',
-    policy_profile TEXT DEFAULT 'default',
-    result TEXT DEFAULT '',
-    compensate_action TEXT,
-    trace_id TEXT NOT NULL,
-    origin_channel TEXT DEFAULT '',
-    origin_chat_id TEXT DEFAULT '',
-    created_at REAL NOT NULL,
-    updated_at REAL NOT NULL,
-    spawn_tool_call_id TEXT DEFAULT '',
-    agent_name TEXT DEFAULT '',
-    role_prompt TEXT DEFAULT ''
-);
-
-CREATE TABLE IF NOT EXISTS task_events (
-    task_id TEXT NOT NULL,
-    seq INTEGER NOT NULL,
-    event_type TEXT NOT NULL,
-    payload TEXT DEFAULT '{}',
-    trace_id TEXT DEFAULT '',
-    span_id TEXT DEFAULT '',
-    parent_span_id TEXT DEFAULT '',
-    created_at REAL NOT NULL,
-    PRIMARY KEY (task_id, seq)
-);
-
-CREATE TABLE IF NOT EXISTS approvals (
-    approval_id TEXT PRIMARY KEY,
-    task_id TEXT NOT NULL,
-    action_desc TEXT NOT NULL,
-    risk_level TEXT NOT NULL,
-    status TEXT NOT NULL,
-    decided_by TEXT DEFAULT '',
-    decided_at REAL DEFAULT 0,
-    created_at REAL NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS task_artifacts (
-    artifact_id TEXT PRIMARY KEY,
-    task_id TEXT NOT NULL,
-    name TEXT NOT NULL,
-    content_type TEXT DEFAULT 'text/plain',
-    data BLOB,
-    created_at REAL NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS node_sessions (
-    node_id TEXT PRIMARY KEY,
-    display_name TEXT DEFAULT '',
-    platform TEXT DEFAULT '',
-    capabilities TEXT DEFAULT '[]',
-    connected_at REAL DEFAULT 0,
-    disconnected_at REAL DEFAULT 0,
-    is_online INTEGER DEFAULT 0
-);
-
-CREATE TABLE IF NOT EXISTS memory_deltas (
-    delta_id TEXT PRIMARY KEY,
-    task_id TEXT NOT NULL,
-    node_id TEXT NOT NULL,
-    delta_type TEXT NOT NULL,
-    content TEXT NOT NULL,
-    confidence REAL DEFAULT 1.0,
-    merge_status TEXT DEFAULT 'pending',
-    created_at REAL NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS node_capability_scores (
-    node_id TEXT NOT NULL,
-    capability_domain TEXT NOT NULL,
-    success_count INTEGER DEFAULT 0,
-    fail_count INTEGER DEFAULT 0,
-    avg_duration_s REAL DEFAULT 0,
-    last_updated REAL,
-    PRIMARY KEY (node_id, capability_domain)
-);
-"""
+from .models import Task, TaskBudget, TaskStatus
 
 
-class SubagentDB:
-    """线程安全的 SQLite 子体数据仓库。"""
+class SubagentStore:
+    """子智能体任务存储。"""
 
-    def __init__(self, db_path: str | Path) -> None:
-        self._db_path = str(db_path)
+    def __init__(self, db_path: str) -> None:
+        self._db_path = db_path
         self._local = threading.local()
         self._init_schema()
 
     def _get_conn(self) -> sqlite3.Connection:
         if not hasattr(self._local, "conn") or self._local.conn is None:
-            conn = sqlite3.connect(self._db_path, check_same_thread=False)
-            conn.row_factory = sqlite3.Row
-            conn.execute("PRAGMA journal_mode=WAL")
-            conn.execute("PRAGMA foreign_keys=ON")
-            self._local.conn = conn
+            self._local.conn = sqlite3.connect(self._db_path)
+            self._local.conn.row_factory = sqlite3.Row
         return self._local.conn
-
-    def close(self) -> None:
-        """关闭当前线程的数据库连接。"""
-        conn = getattr(self._local, "conn", None)
-        if conn is not None:
-            conn.close()
-            self._local.conn = None
 
     def _init_schema(self) -> None:
         conn = self._get_conn()
-        conn.executescript(_SCHEMA_SQL)
-        # 为已有数据库补列（忽略"column already exists"错误）
-        for col_def in [
-            "ALTER TABLE tasks ADD COLUMN spawn_tool_call_id TEXT DEFAULT ''",
-            "ALTER TABLE tasks ADD COLUMN agent_name TEXT DEFAULT ''",
-            "ALTER TABLE tasks ADD COLUMN role_prompt TEXT DEFAULT ''",
-        ]:
-            try:
-                conn.execute(col_def)
-            except Exception:
-                pass  # 列已存在，忽略
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS tasks (
+                task_id          TEXT PRIMARY KEY,
+                goal             TEXT NOT NULL,
+                agent_type       TEXT NOT NULL DEFAULT 'general-purpose',
+                status           TEXT NOT NULL DEFAULT 'queued',
+                priority         INTEGER NOT NULL DEFAULT 5,
+                budget_json      TEXT NOT NULL DEFAULT '{}',
+                role_prompt      TEXT NOT NULL DEFAULT '',
+                result           TEXT NOT NULL DEFAULT '',
+                origin_channel   TEXT NOT NULL DEFAULT '',
+                origin_chat_id   TEXT NOT NULL DEFAULT '',
+                spawn_tool_call_id TEXT NOT NULL DEFAULT '',
+                run_in_background INTEGER NOT NULL DEFAULT 1,
+                worktree_path    TEXT NOT NULL DEFAULT '',
+                worktree_branch  TEXT NOT NULL DEFAULT '',
+                created_at       REAL NOT NULL,
+                completed_at     REAL NOT NULL DEFAULT 0.0
+            )
+        """)
         conn.commit()
-
-    # ── Task CRUD ───────────────────────────────────────────────────────────
 
     def save_task(self, task: Task) -> None:
         conn = self._get_conn()
+        budget_json = json.dumps({
+            "max_steps": task.budget.max_steps,
+            "max_duration_s": task.budget.max_duration_s,
+            "max_tool_calls": task.budget.max_tool_calls,
+        })
         conn.execute(
             """INSERT OR REPLACE INTO tasks
-               (task_id, goal, assigned_node_id, priority, status, depends_on,
-                budget, policy_profile, result, compensate_action, trace_id,
-                origin_channel, origin_chat_id, created_at, updated_at,
-                spawn_tool_call_id, agent_name, role_prompt)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+               (task_id, goal, agent_type, status, priority, budget_json,
+                role_prompt, result, origin_channel, origin_chat_id,
+                spawn_tool_call_id, run_in_background, worktree_path,
+                worktree_branch, created_at, completed_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
-                task.task_id, task.goal, task.assigned_node_id, task.priority,
-                task.status.value, json.dumps(task.depends_on),
-                json.dumps(task.budget.to_dict()), task.policy_profile,
-                task.result, task.compensate_action, task.trace_id,
+                task.task_id, task.goal, task.agent_type, task.status.value,
+                task.priority, budget_json, task.role_prompt, task.result,
                 task.origin_channel, task.origin_chat_id,
-                task.created_at, task.updated_at,
-                task.spawn_tool_call_id, task.agent_name, task.role_prompt,
+                task.spawn_tool_call_id, int(task.run_in_background),
+                task.worktree_path, task.worktree_branch,
+                task.created_at, task.completed_at,
             ),
         )
         conn.commit()
 
     def get_task(self, task_id: str) -> Task | None:
         row = self._get_conn().execute(
-            "SELECT * FROM tasks WHERE task_id=?", (task_id,)
+            "SELECT * FROM tasks WHERE task_id = ?", (task_id,)
         ).fetchone()
-        return self._row_to_task(row) if row else None
+        if row is None:
+            return None
+        return self._row_to_task(row)
 
     def list_tasks(
         self,
         status: TaskStatus | None = None,
-        node_id: str | None = None,
         limit: int = 100,
     ) -> list[Task]:
-        sql = "SELECT * FROM tasks WHERE 1=1"
-        params: list[Any] = []
-        if status:
-            sql += " AND status=?"
-            params.append(status.value)
-        if node_id:
-            sql += " AND assigned_node_id=?"
-            params.append(node_id)
-        sql += " ORDER BY priority DESC, created_at ASC LIMIT ?"
-        params.append(limit)
-        rows = self._get_conn().execute(sql, params).fetchall()
-        return [self._row_to_task(r) for r in rows]
-
-    def list_tasks_by_trace(self, trace_id: str) -> list[Task]:
-        """查询同一 trace_id 下的所有任务（DAG 批次）。"""
-        rows = self._get_conn().execute(
-            "SELECT * FROM tasks WHERE trace_id=? ORDER BY created_at ASC",
-            (trace_id,),
-        ).fetchall()
+        if status is not None:
+            rows = self._get_conn().execute(
+                "SELECT * FROM tasks WHERE status = ? ORDER BY created_at DESC LIMIT ?",
+                (status.value, limit),
+            ).fetchall()
+        else:
+            rows = self._get_conn().execute(
+                "SELECT * FROM tasks ORDER BY created_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
         return [self._row_to_task(r) for r in rows]
 
     def update_task_status(self, task_id: str, status: TaskStatus) -> None:
-        now = time.time()
-        self._get_conn().execute(
-            "UPDATE tasks SET status=?, updated_at=? WHERE task_id=?",
-            (status.value, now, task_id),
-        )
-        self._get_conn().commit()
-
-    def assign_task(self, task_id: str, node_id: str) -> None:
-        now = time.time()
         conn = self._get_conn()
         conn.execute(
-            "UPDATE tasks SET assigned_node_id=?, status=?, updated_at=? WHERE task_id=?",
-            (node_id, TaskStatus.DISPATCHED.value, now, task_id),
+            "UPDATE tasks SET status = ? WHERE task_id = ?",
+            (status.value, task_id),
         )
         conn.commit()
 
-    def get_running_count(self, node_id: str | None = None) -> int:
-        if node_id:
-            row = self._get_conn().execute(
-                "SELECT COUNT(*) FROM tasks WHERE status IN ('dispatched','running','input_required') AND assigned_node_id=?",
-                (node_id,),
-            ).fetchone()
-        else:
-            row = self._get_conn().execute(
-                "SELECT COUNT(*) FROM tasks WHERE status IN ('dispatched','running','input_required')",
-            ).fetchone()
-        return row[0] if row else 0
+    def complete_task(
+        self,
+        task_id: str,
+        result: str = "",
+        completed_at: float = 0.0,
+    ) -> None:
+        conn = self._get_conn()
+        conn.execute(
+            "UPDATE tasks SET status = ?, result = ?, completed_at = ? WHERE task_id = ?",
+            (TaskStatus.COMPLETED.value, result, completed_at, task_id),
+        )
+        conn.commit()
+
+    def get_running_count(self) -> int:
+        row = self._get_conn().execute(
+            "SELECT COUNT(*) as cnt FROM tasks WHERE status = ?",
+            (TaskStatus.RUNNING.value,),
+        ).fetchone()
+        return row["cnt"] if row else 0
 
     def _row_to_task(self, row: sqlite3.Row) -> Task:
+        budget_data = json.loads(row["budget_json"]) if row["budget_json"] else {}
+        budget = TaskBudget(
+            max_steps=budget_data.get("max_steps", 50),
+            max_duration_s=budget_data.get("max_duration_s", 600),
+            max_tool_calls=budget_data.get("max_tool_calls", 100),
+        )
         return Task(
             task_id=row["task_id"],
             goal=row["goal"],
-            assigned_node_id=row["assigned_node_id"] or "",
-            priority=row["priority"],
+            agent_type=row["agent_type"],
             status=TaskStatus(row["status"]),
-            depends_on=json.loads(row["depends_on"] or "[]"),
-            budget=TaskBudget.from_dict(json.loads(row["budget"] or "{}")),
-            policy_profile=row["policy_profile"] or "default",
-            result=row["result"] or "",
-            compensate_action=row["compensate_action"],
-            trace_id=row["trace_id"],
-            origin_channel=row["origin_channel"] or "",
-            origin_chat_id=row["origin_chat_id"] or "",
+            priority=row["priority"],
+            budget=budget,
+            role_prompt=row["role_prompt"],
+            result=row["result"],
+            origin_channel=row["origin_channel"],
+            origin_chat_id=row["origin_chat_id"],
+            spawn_tool_call_id=row["spawn_tool_call_id"],
+            run_in_background=bool(row["run_in_background"]),
+            worktree_path=row["worktree_path"],
+            worktree_branch=row["worktree_branch"],
             created_at=row["created_at"],
-            updated_at=row["updated_at"],
-            spawn_tool_call_id=row["spawn_tool_call_id"] or "",
-            agent_name=row["agent_name"] or "",
-            role_prompt=row["role_prompt"] or "",
+            completed_at=row["completed_at"],
         )
-
-    # ── TaskEvent ───────────────────────────────────────────────────────────
-
-    def append_event(self, event: TaskEvent) -> None:
-        conn = self._get_conn()
-        conn.execute(
-            """INSERT OR IGNORE INTO task_events
-               (task_id, seq, event_type, payload, trace_id, span_id, parent_span_id, created_at)
-               VALUES (?,?,?,?,?,?,?,?)""",
-            (
-                event.task_id, event.seq, event.event_type,
-                json.dumps(event.payload), event.trace_id,
-                event.span_id, event.parent_span_id, event.created_at,
-            ),
-        )
-        conn.commit()
-
-    def get_next_seq(self, task_id: str) -> int:
-        row = self._get_conn().execute(
-            "SELECT COALESCE(MAX(seq), 0) + 1 FROM task_events WHERE task_id=?",
-            (task_id,),
-        ).fetchone()
-        return row[0] if row else 1
-
-    def get_events(self, task_id: str) -> list[TaskEvent]:
-        rows = self._get_conn().execute(
-            "SELECT * FROM task_events WHERE task_id=? ORDER BY seq", (task_id,)
-        ).fetchall()
-        return [
-            TaskEvent(
-                task_id=r["task_id"], seq=r["seq"], event_type=r["event_type"],
-                payload=json.loads(r["payload"] or "{}"),
-                trace_id=r["trace_id"] or "", span_id=r["span_id"] or "",
-                parent_span_id=r["parent_span_id"] or "",
-                created_at=r["created_at"],
-            )
-            for r in rows
-        ]
-
-    # ── Approval ────────────────────────────────────────────────────────────
-
-    def save_approval(self, approval: Approval) -> None:
-        conn = self._get_conn()
-        conn.execute(
-            """INSERT OR REPLACE INTO approvals
-               (approval_id, task_id, action_desc, risk_level, status, decided_by, decided_at, created_at)
-               VALUES (?,?,?,?,?,?,?,?)""",
-            (
-                approval.approval_id, approval.task_id, approval.action_desc,
-                approval.risk_level.value, approval.status.value,
-                approval.decided_by, approval.decided_at, approval.created_at,
-            ),
-        )
-        conn.commit()
-
-    def get_pending_approval(self, task_id: str) -> Approval | None:
-        row = self._get_conn().execute(
-            "SELECT * FROM approvals WHERE task_id=? AND status='pending' ORDER BY created_at DESC LIMIT 1",
-            (task_id,),
-        ).fetchone()
-        if not row:
-            return None
-        return Approval(
-            approval_id=row["approval_id"], task_id=row["task_id"],
-            action_desc=row["action_desc"],
-            risk_level=RiskLevel(row["risk_level"]),
-            status=ApprovalStatus(row["status"]),
-            decided_by=row["decided_by"] or "",
-            decided_at=row["decided_at"],
-            created_at=row["created_at"],
-        )
-
-    def decide_approval(self, approval_id: str, status: ApprovalStatus, decided_by: str = "") -> None:
-        conn = self._get_conn()
-        conn.execute(
-            "UPDATE approvals SET status=?, decided_by=?, decided_at=? WHERE approval_id=?",
-            (status.value, decided_by, time.time(), approval_id),
-        )
-        conn.commit()
-
-    def list_approvals(
-        self,
-        status: ApprovalStatus | None = None,
-        limit: int = 100,
-    ) -> list[Approval]:
-        sql = "SELECT * FROM approvals WHERE 1=1"
-        params: list[Any] = []
-        if status:
-            sql += " AND status=?"
-            params.append(status.value)
-        sql += " ORDER BY created_at DESC LIMIT ?"
-        params.append(limit)
-        rows = self._get_conn().execute(sql, params).fetchall()
-        return [
-            Approval(
-                approval_id=r["approval_id"], task_id=r["task_id"],
-                action_desc=r["action_desc"],
-                risk_level=RiskLevel(r["risk_level"]),
-                status=ApprovalStatus(r["status"]),
-                decided_by=r["decided_by"] or "",
-                decided_at=r["decided_at"],
-                created_at=r["created_at"],
-            )
-            for r in rows
-        ]
-
-    # ── Artifact ────────────────────────────────────────────────────────────
-
-    def save_artifact(self, artifact: TaskArtifact) -> None:
-        conn = self._get_conn()
-        conn.execute(
-            """INSERT OR REPLACE INTO task_artifacts
-               (artifact_id, task_id, name, content_type, data, created_at)
-               VALUES (?,?,?,?,?,?)""",
-            (artifact.artifact_id, artifact.task_id, artifact.name,
-             artifact.content_type, artifact.data, artifact.created_at),
-        )
-        conn.commit()
-
-    # ── NodeSession ─────────────────────────────────────────────────────────
-
-    def upsert_node(self, node: NodeSession) -> None:
-        conn = self._get_conn()
-        conn.execute(
-            """INSERT OR REPLACE INTO node_sessions
-               (node_id, display_name, platform, capabilities, connected_at, disconnected_at, is_online)
-               VALUES (?,?,?,?,?,?,?)""",
-            (
-                node.node_id, node.display_name, node.platform,
-                json.dumps([c if isinstance(c, dict) else c for c in node.capabilities]),
-                node.connected_at, node.disconnected_at,
-                1 if node.is_online else 0,
-            ),
-        )
-        conn.commit()
-
-    def set_node_online(self, node_id: str, online: bool) -> None:
-        conn = self._get_conn()
-        now = time.time()
-        if online:
-            conn.execute(
-                "UPDATE node_sessions SET is_online=1, connected_at=? WHERE node_id=?",
-                (now, node_id),
-            )
-        else:
-            conn.execute(
-                "UPDATE node_sessions SET is_online=0, disconnected_at=? WHERE node_id=?",
-                (now, node_id),
-            )
-        conn.commit()
-
-    def get_all_nodes(self) -> list[NodeSession]:
-        rows = self._get_conn().execute(
-            "SELECT * FROM node_sessions ORDER BY is_online DESC, connected_at DESC"
-        ).fetchall()
-        return [self._row_to_node(r) for r in rows]
-
-    def get_online_nodes(self) -> list[NodeSession]:
-        rows = self._get_conn().execute(
-            "SELECT * FROM node_sessions WHERE is_online=1"
-        ).fetchall()
-        return [self._row_to_node(r) for r in rows]
-
-    def get_node(self, node_id: str) -> NodeSession | None:
-        row = self._get_conn().execute(
-            "SELECT * FROM node_sessions WHERE node_id=?", (node_id,)
-        ).fetchone()
-        return self._row_to_node(row) if row else None
-
-    def _row_to_node(self, row: sqlite3.Row) -> NodeSession:
-        return NodeSession(
-            node_id=row["node_id"],
-            display_name=row["display_name"] or "",
-            platform=row["platform"] or "",
-            capabilities=json.loads(row["capabilities"] or "[]"),
-            connected_at=row["connected_at"],
-            disconnected_at=row["disconnected_at"],
-            is_online=bool(row["is_online"]),
-        )
-
-    # ── MemoryDelta ─────────────────────────────────────────────────────────
-
-    def save_memory_delta(self, delta: MemoryDelta) -> None:
-        conn = self._get_conn()
-        conn.execute(
-            """INSERT OR REPLACE INTO memory_deltas
-               (delta_id, task_id, node_id, delta_type, content, confidence, merge_status, created_at)
-               VALUES (?,?,?,?,?,?,?,?)""",
-            (
-                delta.delta_id, delta.task_id, delta.node_id,
-                delta.delta_type.value, delta.content, delta.confidence,
-                delta.merge_status.value, delta.created_at,
-            ),
-        )
-        conn.commit()
-
-    def get_pending_deltas(self, limit: int = 50) -> list[MemoryDelta]:
-        rows = self._get_conn().execute(
-            "SELECT * FROM memory_deltas WHERE merge_status='pending' ORDER BY created_at LIMIT ?",
-            (limit,),
-        ).fetchall()
-        return [
-            MemoryDelta(
-                delta_id=r["delta_id"], task_id=r["task_id"], node_id=r["node_id"],
-                delta_type=DeltaType(r["delta_type"]), content=r["content"],
-                confidence=r["confidence"], merge_status=MergeStatus(r["merge_status"]),
-                created_at=r["created_at"],
-            )
-            for r in rows
-        ]
-
-    def update_delta_status(self, delta_id: str, status: MergeStatus) -> None:
-        conn = self._get_conn()
-        conn.execute(
-            "UPDATE memory_deltas SET merge_status=? WHERE delta_id=?",
-            (status.value, delta_id),
-        )
-        conn.commit()
-
-    def list_deltas(
-        self,
-        merge_status: MergeStatus | None = None,
-        node_id: str | None = None,
-        limit: int = 100,
-    ) -> list[MemoryDelta]:
-        sql = "SELECT * FROM memory_deltas WHERE 1=1"
-        params: list[Any] = []
-        if merge_status:
-            sql += " AND merge_status=?"
-            params.append(merge_status.value)
-        if node_id:
-            sql += " AND node_id=?"
-            params.append(node_id)
-        sql += " ORDER BY created_at DESC LIMIT ?"
-        params.append(limit)
-        rows = self._get_conn().execute(sql, params).fetchall()
-        return [
-            MemoryDelta(
-                delta_id=r["delta_id"], task_id=r["task_id"], node_id=r["node_id"],
-                delta_type=DeltaType(r["delta_type"]), content=r["content"],
-                confidence=r["confidence"], merge_status=MergeStatus(r["merge_status"]),
-                created_at=r["created_at"],
-            )
-            for r in rows
-        ]
-
-    # ── CapabilityScore ─────────────────────────────────────────────────────
-
-    def upsert_capability_score(self, score: CapabilityScore) -> None:
-        conn = self._get_conn()
-        conn.execute(
-            """INSERT OR REPLACE INTO node_capability_scores
-               (node_id, capability_domain, success_count, fail_count, avg_duration_s, last_updated)
-               VALUES (?,?,?,?,?,?)""",
-            (
-                score.node_id, score.capability_domain,
-                score.success_count, score.fail_count,
-                score.avg_duration_s, score.last_updated,
-            ),
-        )
-        conn.commit()
-
-    def get_capability_scores(self, node_id: str) -> list[CapabilityScore]:
-        rows = self._get_conn().execute(
-            "SELECT * FROM node_capability_scores WHERE node_id=?", (node_id,)
-        ).fetchall()
-        return [
-            CapabilityScore(
-                node_id=r["node_id"], capability_domain=r["capability_domain"],
-                success_count=r["success_count"], fail_count=r["fail_count"],
-                avg_duration_s=r["avg_duration_s"], last_updated=r["last_updated"] or 0,
-            )
-            for r in rows
-        ]
-
-    def record_task_outcome(
-        self, node_id: str, domain: str, success: bool, duration_s: float
-    ) -> None:
-        existing = self._get_conn().execute(
-            "SELECT * FROM node_capability_scores WHERE node_id=? AND capability_domain=?",
-            (node_id, domain),
-        ).fetchone()
-        now = time.time()
-        if existing:
-            sc = existing["success_count"] + (1 if success else 0)
-            fc = existing["fail_count"] + (0 if success else 1)
-            total = sc + fc
-            old_avg = existing["avg_duration_s"] or 0
-            new_avg = ((old_avg * (total - 1)) + duration_s) / total if total > 0 else duration_s
-            self._get_conn().execute(
-                """UPDATE node_capability_scores
-                   SET success_count=?, fail_count=?, avg_duration_s=?, last_updated=?
-                   WHERE node_id=? AND capability_domain=?""",
-                (sc, fc, new_avg, now, node_id, domain),
-            )
-        else:
-            self._get_conn().execute(
-                """INSERT INTO node_capability_scores
-                   (node_id, capability_domain, success_count, fail_count, avg_duration_s, last_updated)
-                   VALUES (?,?,?,?,?,?)""",
-                (node_id, domain, 1 if success else 0, 0 if success else 1, duration_s, now),
-            )
-        self._get_conn().commit()
