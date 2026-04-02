@@ -14,8 +14,8 @@ from typing import Any
 
 from loguru import logger
 
+from auraeve.agent_runtime.command_queue import RuntimeCommandQueue
 from auraeve.bus.events import FileAttachment, OutboundMessage
-from auraeve.bus.queue import MessageBus
 from auraeve.channels.base import BaseChannel
 
 try:
@@ -90,8 +90,8 @@ class NapCatChannel(BaseChannel):
         "212": "点赞",
     }
 
-    def __init__(self, config: NapCatConfig, bus: MessageBus):
-        super().__init__(config, bus)
+    def __init__(self, config: NapCatConfig, command_queue: RuntimeCommandQueue):
+        super().__init__(config, command_queue)
         self.config: NapCatConfig = config
         self._ws = None
         self._task: asyncio.Task | None = None

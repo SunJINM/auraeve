@@ -1,14 +1,15 @@
 """子智能体异步生命周期管理。"""
 from __future__ import annotations
 
-import asyncio
 import logging
 import time
-from typing import Callable
+
+from auraeve.agent_runtime.command_queue import RuntimeCommandQueue
+from auraeve.agent_runtime.command_types import QueuedCommand
 
 from .data.models import Task, TaskStatus
 from .data.repositories import SubagentStore
-from .notification import NotificationQueue, TaskNotification
+from .notification import TaskNotification
 
 logger = logging.getLogger(__name__)
 
@@ -20,17 +21,10 @@ class SubagentLifecycle:
         self,
         *,
         store: SubagentStore,
-        notification_queue: NotificationQueue,
-        kernel_resume_callback: Callable | None = None,
+        command_queue: RuntimeCommandQueue,
     ) -> None:
         self._store = store
-        self._notification_queue = notification_queue
-        self._kernel_resume_callback = kernel_resume_callback
-        self._injected_ids: set[str] = set()
-        self._inject_lock = asyncio.Lock()
-
-    def set_kernel_resume_callback(self, callback: Callable | None) -> None:
-        self._kernel_resume_callback = callback
+        self._command_queue = command_queue
 
     async def mark_completed(self, task: Task, result: str) -> TaskNotification:
         self._store.complete_task(
@@ -46,8 +40,7 @@ class SubagentLifecycle:
             result=result,
             spawn_tool_call_id=task.spawn_tool_call_id,
         )
-        self._notification_queue.enqueue(notification)
-        await self._try_inject_result(task, notification)
+        self._enqueue_notification(task, notification)
         return notification
 
     async def mark_failed(self, task: Task, error_msg: str) -> TaskNotification:
@@ -60,8 +53,7 @@ class SubagentLifecycle:
             result=error_msg,
             spawn_tool_call_id=task.spawn_tool_call_id,
         )
-        self._notification_queue.enqueue(notification)
-        await self._try_inject_result(task, notification)
+        self._enqueue_notification(task, notification)
         return notification
 
     async def mark_cancelled(self, task: Task) -> TaskNotification:
@@ -74,30 +66,22 @@ class SubagentLifecycle:
             result="任务被取消",
             spawn_tool_call_id=task.spawn_tool_call_id,
         )
-        self._notification_queue.enqueue(notification)
+        self._enqueue_notification(task, notification)
         return notification
 
-    async def _try_inject_result(
+    def _enqueue_notification(
         self,
         task: Task,
         notification: TaskNotification,
     ) -> None:
-        if not self._kernel_resume_callback:
-            return
-        if not task.spawn_tool_call_id:
-            return
-
-        async with self._inject_lock:
-            if task.task_id in self._injected_ids:
-                return
-            self._injected_ids.add(task.task_id)
-
-        synthetic = self._notification_queue.build_synthetic_messages(notification)
-        try:
-            await self._kernel_resume_callback(
-                channel=task.origin_channel,
-                chat_id=task.origin_chat_id,
-                synthetic_messages=synthetic,
+        session_key = f"{task.origin_channel}:{task.origin_chat_id}".strip(":")
+        self._command_queue.enqueue_command(
+            QueuedCommand(
+                session_key=session_key or task.task_id,
+                source="subagent",
+                mode="task-notification",
+                priority="later",
+                payload=notification.to_payload(),
+                origin={"kind": "task-notification", "is_system_generated": True},
             )
-        except Exception:
-            logger.exception("注入子智能体结果到母体失败: %s", task.task_id)
+        )

@@ -11,8 +11,8 @@ from typing import Any
 from loguru import logger
 import httpx
 
+from auraeve.agent_runtime.command_queue import RuntimeCommandQueue
 from auraeve.bus.events import FileAttachment, OutboundMessage
-from auraeve.bus.queue import MessageBus
 from auraeve.channels.base import BaseChannel
 
 try:
@@ -87,10 +87,10 @@ class DingTalkChannel(BaseChannel):
     def __init__(
         self,
         config: DingTalkConfig,
-        bus: MessageBus,
+        command_queue: RuntimeCommandQueue,
         workspace: Path | None = None,
     ):
-        super().__init__(config, bus)
+        super().__init__(config, command_queue)
         self.config: DingTalkConfig = config
         self._client: Any = None
         self._http: httpx.AsyncClient | None = None

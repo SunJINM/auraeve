@@ -1,9 +1,9 @@
 """子智能体执行器测试。"""
 import pytest
 from unittest.mock import MagicMock
+from auraeve.agent_runtime.command_queue import RuntimeCommandQueue
 from auraeve.subagents.data.models import Task, TaskBudget, TaskStatus
 from auraeve.subagents.executor import SubagentExecutor
-from auraeve.subagents.notification import NotificationQueue
 
 
 @pytest.fixture
@@ -13,15 +13,15 @@ def store(tmp_path):
 
 
 @pytest.fixture
-def notification_queue():
-    return NotificationQueue()
+def command_queue():
+    return RuntimeCommandQueue()
 
 
 @pytest.fixture
-def executor(store, notification_queue):
+def executor(store, command_queue):
     return SubagentExecutor(
         store=store,
-        notification_queue=notification_queue,
+        command_queue=command_queue,
         provider=MagicMock(),
         tool_builder=MagicMock(return_value=MagicMock()),
         policy=MagicMock(),

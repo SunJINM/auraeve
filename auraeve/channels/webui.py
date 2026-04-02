@@ -1,10 +1,10 @@
-"""WebUI 渠道：将 WebUI 聊天请求接入 MessageBus，将 Agent 回复推送到 ChatService。"""
+"""WebUI 渠道：将 Agent 回复推送到 ChatService。"""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from auraeve.agent_runtime.command_queue import RuntimeCommandQueue
 from auraeve.bus.events import OutboundMessage
-from auraeve.bus.queue import MessageBus
 from auraeve.channels.base import BaseChannel
 
 
@@ -17,14 +17,19 @@ class WebUIChannel(BaseChannel):
     """
     WebUI 渠道。
 
-    入站：ChatService.send() 通过 MessageBus.publish_inbound() 注入消息。
+    入站：ChatService.send() 通过 RuntimeCommandQueue.enqueue_command() 注入消息。
     出站：Bus 分发 OutboundMessage 给本渠道 -> 转发给 ChatService.on_outbound()。
     """
 
     name = "webui"
 
-    def __init__(self, config: WebUIChannelConfig, bus: MessageBus, chat_service) -> None:
-        super().__init__(config, bus)
+    def __init__(
+        self,
+        config: WebUIChannelConfig,
+        command_queue: RuntimeCommandQueue,
+        chat_service,
+    ) -> None:
+        super().__init__(config, command_queue)
         self._chat_service = chat_service
 
     async def start(self) -> None:

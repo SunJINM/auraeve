@@ -5,8 +5,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from auraeve.observability import close_observability
-
 from .defaults import DEFAULTS
 from .io import read_config_snapshot, write_config
 from .paths import resolve_config_path
@@ -243,4 +241,6 @@ def run_config_doctor(*, fix: bool = False) -> dict[str, Any]:
             "requiresRestart": requires_restart,
         }
     finally:
+        from auraeve.observability.manager import close_observability
+
         close_observability()

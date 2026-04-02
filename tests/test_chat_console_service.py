@@ -2,17 +2,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
+from auraeve.agent_runtime.command_queue import RuntimeCommandQueue
 from auraeve.subagents.data.models import Task, TaskBudget, TaskStatus
 from auraeve.subagents.data.repositories import SubagentStore
 from auraeve.session.manager import SessionManager
 from auraeve.webui.chat_console_service import ChatConsoleService
 from auraeve.webui.chat_service import ChatService, RunState
-
-
-class _FakeBus:
-    async def publish_inbound(self, msg) -> None:  # pragma: no cover - 测试中不需要动作
-        return None
-
 
 def test_chat_console_snapshot_filters_session_tasks_and_extracts_tools(tmp_path: Path) -> None:
     sessions_dir = tmp_path / "sessions"
@@ -60,7 +57,7 @@ def test_chat_console_snapshot_filters_session_tasks_and_extracts_tools(tmp_path
         )
     )
 
-    chat = ChatService(sm, _FakeBus())
+    chat = ChatService(sm, RuntimeCommandQueue())
     chat._runs["run-1"] = RunState(run_id="run-1", session_key=session_key, idempotency_key="ik-1", done=False)
 
     service = ChatConsoleService(chat_service=chat, store=store)
@@ -78,3 +75,28 @@ def test_chat_console_snapshot_filters_session_tasks_and_extracts_tools(tmp_path
     assert snapshot["approvals"] == []
     assert snapshot["nodes"] == []
     assert snapshot["timeline"] == []
+
+
+@pytest.mark.asyncio
+async def test_chat_service_enqueues_prompt_command(tmp_path: Path) -> None:
+    queue = RuntimeCommandQueue()
+    sessions_dir = tmp_path / "sessions"
+    session_manager = SessionManager(sessions_dir)
+    service = ChatService(session_manager=session_manager, command_queue=queue)
+
+    _, status = await service.send(
+        session_key="webui:s1",
+        message="hello",
+        idempotency_key="idem-1",
+        user_id="u1",
+    )
+
+    assert status == "started"
+    commands = queue.snapshot_for_scope(
+        max_priority="later",
+        agent_id=None,
+        is_main_thread=True,
+    )
+    assert len(commands) == 1
+    assert commands[0].mode == "prompt"
+    assert commands[0].payload["content"] == "hello"

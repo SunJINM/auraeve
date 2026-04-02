@@ -1,11 +1,6 @@
-"""子智能体通知队列。
-
-对标 Claude Code 的 messageQueueManager.ts + enqueueAgentNotification。
-子智能体完成后生成 TaskNotification，母体在检查点消费并注入对话上下文。
-"""
+"""子智能体通知模型与兼容队列。"""
 from __future__ import annotations
 
-import json
 import threading
 from dataclasses import dataclass
 
@@ -22,6 +17,19 @@ class TaskNotification:
     duration_ms: int = 0
     tool_use_count: int = 0
     total_tokens: int = 0
+
+    def to_payload(self) -> dict[str, object]:
+        return {
+            "task_id": self.task_id,
+            "agent_type": self.agent_type,
+            "goal": self.goal,
+            "status": self.status,
+            "result": self.result,
+            "spawn_tool_call_id": self.spawn_tool_call_id,
+            "duration_ms": self.duration_ms,
+            "tool_use_count": self.tool_use_count,
+            "total_tokens": self.total_tokens,
+        }
 
 
 class NotificationQueue:
@@ -51,38 +59,3 @@ class NotificationQueue:
     def has_pending(self) -> bool:
         with self._lock:
             return len(self._queue) > 0
-
-    @staticmethod
-    def build_synthetic_messages(notification: TaskNotification) -> list[dict]:
-        """将通知转为 synthetic tool_use + tool_result 消息对。"""
-        tool_use_msg = {
-            "role": "assistant",
-            "content": None,
-            "tool_calls": [{
-                "id": notification.spawn_tool_call_id,
-                "type": "function",
-                "function": {
-                    "name": "subagent_result",
-                    "arguments": json.dumps({
-                        "task_id": notification.task_id,
-                        "agent_type": notification.agent_type,
-                        "goal": notification.goal,
-                    }, ensure_ascii=False),
-                },
-            }],
-        }
-
-        tool_result_msg = {
-            "role": "tool",
-            "tool_call_id": notification.spawn_tool_call_id,
-            "name": "subagent_result",
-            "content": json.dumps({
-                "status": notification.status,
-                "result": notification.result,
-                "source": "async_subagent_callback",
-                "agent_type": notification.agent_type,
-                "task_id": notification.task_id,
-            }, ensure_ascii=False),
-        }
-
-        return [tool_use_msg, tool_result_msg]

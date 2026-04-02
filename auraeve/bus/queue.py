@@ -5,7 +5,7 @@ from typing import Callable, Awaitable
 
 from loguru import logger
 
-from auraeve.bus.events import InboundMessage, OutboundMessage
+from auraeve.bus.events import OutboundMessage
 
 
 class MessageBus:
@@ -16,16 +16,9 @@ class MessageBus:
     """
 
     def __init__(self):
-        self.inbound: asyncio.Queue[InboundMessage] = asyncio.Queue()
         self.outbound: asyncio.Queue[OutboundMessage] = asyncio.Queue()
         self._outbound_subscribers: dict[str, list[Callable[[OutboundMessage], Awaitable[None]]]] = {}
         self._running = False
-
-    async def publish_inbound(self, msg: InboundMessage) -> None:
-        await self.inbound.put(msg)
-
-    async def consume_inbound(self) -> InboundMessage:
-        return await self.inbound.get()
 
     async def publish_outbound(self, msg: OutboundMessage) -> None:
         await self.outbound.put(msg)

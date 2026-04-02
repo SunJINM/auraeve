@@ -1,29 +1,20 @@
-from unittest.mock import AsyncMock, MagicMock
-
-from auraeve.agent.tools.agent_tool import AgentTool
-from auraeve.agent.tools.registry import ToolRegistry
+from auraeve.agent_runtime.command_queue import RuntimeCommandQueue
 from auraeve.agent_runtime.kernel import RuntimeKernel
+from auraeve.agent_runtime.runtime_scheduler import RuntimeScheduler
 
 
-def test_kernel_registers_resume_callback_on_init():
+def test_kernel_initialize_command_runtime_exposes_queue_and_scheduler() -> None:
     kernel = object.__new__(RuntimeKernel)
-    kernel._resume_with_subagent_result = AsyncMock()
-    kernel._subagent_executor = MagicMock()
-    kernel._subagent_executor._kernel_resume_callback = None
 
-    kernel._register_subagent_resume()
+    RuntimeKernel._initialize_command_runtime(kernel)
 
-    assert kernel._subagent_executor._kernel_resume_callback == kernel._resume_with_subagent_result
+    assert isinstance(kernel.command_queue, RuntimeCommandQueue)
+    assert isinstance(kernel.scheduler, RuntimeScheduler)
 
 
-def test_set_tool_context_updates_agent_tool_context():
+def test_kernel_initialize_command_runtime_uses_execute_command_callback() -> None:
     kernel = object.__new__(RuntimeKernel)
-    registry = ToolRegistry()
-    tool = AgentTool(executor=MagicMock())
-    registry.register(tool)
-    kernel.tools = registry
 
-    kernel._set_tool_context("webui", "chat-1", "thread-1")
+    RuntimeKernel._initialize_command_runtime(kernel)
 
-    assert tool._channel == "webui"
-    assert tool._chat_id == "chat-1"
+    assert kernel.scheduler._run_command == kernel.execute_command

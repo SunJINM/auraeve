@@ -7,8 +7,8 @@ from typing import Any
 
 from loguru import logger
 
+from auraeve.agent_runtime.command_queue import RuntimeCommandQueue
 from auraeve.bus.events import OutboundMessage
-from auraeve.bus.queue import MessageBus
 from auraeve.channels.base import BaseChannel
 
 
@@ -24,8 +24,8 @@ class TerminalChannel(BaseChannel):
 
     name = "terminal"
 
-    def __init__(self, config: TerminalConfig, bus: MessageBus):
-        super().__init__(config, bus)
+    def __init__(self, config: TerminalConfig, command_queue: RuntimeCommandQueue):
+        super().__init__(config, command_queue)
         self._task: asyncio.Task | None = None
         # Agent 回复完毕后置位，_read_loop 等待后再读下一条输入
         self._reply_ready = asyncio.Event()

@@ -13,6 +13,10 @@ from typing import TYPE_CHECKING
 
 from loguru import logger
 
+from auraeve.agent_runtime.command_projection import project_command_to_messages
+from auraeve.agent_runtime.command_queue import RuntimeCommandQueue
+from auraeve.agent_runtime.command_types import QueuedCommand
+from auraeve.agent_runtime.runtime_scheduler import RuntimeScheduler
 from auraeve.bus.events import InboundMessage, OutboundMessage
 from auraeve.bus.queue import MessageBus
 from auraeve.providers.base import LLMProvider
@@ -125,19 +129,18 @@ class RuntimeKernel:
             hooks=self.hooks,
             token_budget=token_budget,
         )
+        self._initialize_command_runtime()
 
         # 子体执行系统
         from auraeve.subagents.data.repositories import SubagentStore
-        from auraeve.subagents.notification import NotificationQueue
         from auraeve.subagents.executor import SubagentExecutor
 
         subagent_db_path = sessions_dir / "subagents.db" if sessions_dir else workspace / "subagents.db"
         subagent_db_path.parent.mkdir(parents=True, exist_ok=True)
         self._subagent_store = SubagentStore(str(subagent_db_path))
-        self._notification_queue = NotificationQueue()
         self._subagent_executor = SubagentExecutor(
             store=self._subagent_store,
-            notification_queue=self._notification_queue,
+            command_queue=self.command_queue,
             provider=provider,
             tool_builder=lambda task: build_tool_registry(
                 profile="subagent",
@@ -176,6 +179,7 @@ class RuntimeKernel:
             tools=self.tools,
             policy=self.policy,
             hooks=self.hooks,
+            checkpoint_drain=self._drain_checkpoint_messages,
             max_iterations=max_iterations,
             thinking_budget_tokens=thinking_budget_tokens,
             runtime_execution=runtime_execution,
@@ -187,7 +191,6 @@ class RuntimeKernel:
             max_retries=8,
             is_subagent=False,
         )
-        self._register_subagent_resume()
 
         self._register_default_tools()
         self._mcp_runtime = MCPRuntimeManager(self.tools, mcp_config or {})
@@ -202,10 +205,12 @@ class RuntimeKernel:
         if message_tool is not None and isinstance(message_tool, MessageTool):
             message_tool.register_direct_sender(channel, sender)
 
-    def _register_subagent_resume(self) -> None:
-        """向子体执行器注册母体续写回调。"""
-        if hasattr(self, "_subagent_executor") and self._subagent_executor is not None:
-            self._subagent_executor._kernel_resume_callback = self._resume_with_subagent_result
+    def _initialize_command_runtime(self) -> None:
+        self.command_queue = RuntimeCommandQueue()
+        self.scheduler = RuntimeScheduler(
+            queue=self.command_queue,
+            run_command=self.execute_command,
+        )
 
     async def run(self) -> None:
         self._running = True
@@ -213,23 +218,7 @@ class RuntimeKernel:
         logger.info("[kernel] RuntimeKernel started")
 
         while self._running:
-            try:
-                msg = await asyncio.wait_for(self.bus.consume_inbound(), timeout=1.0)
-                try:
-                    response = await self._process_message(msg)
-                    if response:
-                        await self.bus.publish_outbound(response)
-                except Exception as e:
-                    logger.error(f"[kernel] failed to process message: {e}")
-                    await self.bus.publish_outbound(
-                        OutboundMessage(
-                            channel=msg.channel,
-                            chat_id=msg.chat_id,
-                            content=f"抱歉，处理消息时出现错误：{str(e)}",
-                        )
-                    )
-            except asyncio.TimeoutError:
-                continue
+            await asyncio.sleep(1.0)
 
     def stop(self) -> None:
         self._running = False
@@ -247,22 +236,96 @@ class RuntimeKernel:
     async def reconnect_mcp_server(self, server_id: str) -> dict:
         return await self._mcp_runtime.reconnect(server_id)
 
-    async def process_direct(
+    def command_factory(self, **kwargs) -> QueuedCommand:
+        return QueuedCommand(**kwargs)
+
+    async def execute_command(
         self,
-        content: str,
-        session_key: str = "internal:direct",
-        channel: str = "internal",
-        chat_id: str = "direct",
-    ) -> str:
+        command: QueuedCommand,
+    ):
         await self._mcp_runtime.start()
-        msg = InboundMessage(
+        projected_messages = project_command_to_messages(command)
+        response = await self._process_projected_command(command, projected_messages)
+        if isinstance(response, OutboundMessage) and hasattr(self, "bus") and self.bus is not None:
+            await self._publish_command_response(command, response)
+        return response
+
+    async def _process_projected_command(
+        self,
+        command: QueuedCommand,
+        projected_messages: list[dict],
+    ):
+        payload = command.payload
+        channel, chat_id = self._derive_channel_and_chat_id(command)
+        content = "\n\n".join(
+            str(msg.get("content", ""))
+            for msg in projected_messages
+            if str(msg.get("content", ""))
+        )
+        inbound = InboundMessage(
             channel=channel,
-            sender_id="system",
+            sender_id=str(payload.get("sender_id", command.source or "system")),
             chat_id=chat_id,
             content=content,
+            media=list(payload.get("media") or []),
+            attachments=list(payload.get("attachments") or []),
+            metadata=dict(payload.get("metadata") or {}),
         )
-        response = await self._process_message(msg, session_key=session_key)
-        return response.content if response else ""
+        inbound.metadata.setdefault("command_mode", command.mode)
+        inbound.metadata.setdefault("command_origin", command.origin)
+        return await self._process_message(inbound, session_key=command.session_key)
+
+    @staticmethod
+    def _derive_channel_and_chat_id(command: QueuedCommand) -> tuple[str, str]:
+        payload = command.payload
+        channel = str(payload.get("channel") or command.source or "system")
+        chat_id = str(payload.get("chat_id") or "")
+        if chat_id:
+            return channel, chat_id
+        if ":" in command.session_key:
+            prefix, suffix = command.session_key.split(":", 1)
+            return channel or prefix, suffix
+        return channel, command.session_key
+
+    async def _publish_command_response(
+        self,
+        command: QueuedCommand,
+        response: OutboundMessage,
+    ) -> None:
+        if command.mode == "cron":
+            deliver_channel = str(command.payload.get("deliver_channel") or "")
+            deliver_to = str(command.payload.get("deliver_to") or "")
+            if deliver_channel and deliver_to:
+                await self.bus.publish_outbound(
+                    OutboundMessage(
+                        channel=deliver_channel,
+                        chat_id=deliver_to,
+                        content=response.content,
+                    )
+                )
+                return
+        if response.channel:
+            await self.bus.publish_outbound(response)
+
+    def _drain_checkpoint_messages(
+        self,
+        *,
+        thread_id: str,
+        is_subagent: bool,
+    ) -> list[dict]:
+        commands = self.scheduler.snapshot_for_checkpoint(
+            agent_id=thread_id if is_subagent else None,
+            is_main_thread=not is_subagent,
+            max_priority="next",
+            session_key=thread_id,
+        )
+        if not commands:
+            return []
+        messages: list[dict] = []
+        for command in commands:
+            messages.extend(project_command_to_messages(command))
+        self.command_queue.remove_commands(commands)
+        return messages
 
     # Tool initialization
 

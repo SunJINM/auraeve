@@ -87,6 +87,7 @@ class SessionAttemptRunner:
         tools: "ToolRegistry",
         policy: "ToolPolicyEngine",
         hooks: "HookRunner",
+        checkpoint_drain=None,
         max_iterations: int = 100,
         thinking_budget_tokens: int | None = None,
         runtime_execution: dict[str, Any] | None = None,
@@ -96,6 +97,7 @@ class SessionAttemptRunner:
         self._tools = tools
         self._policy = policy
         self._hooks = hooks
+        self._checkpoint_drain = checkpoint_drain
         self._max_iterations = max_iterations
         self._thinking_budget_tokens = thinking_budget_tokens
         self._execution_cfg = normalize_runtime_execution_config(
@@ -209,6 +211,13 @@ class SessionAttemptRunner:
                 )
             )
             effective_model = model_override or model
+            if self._checkpoint_drain is not None:
+                drained_messages = self._checkpoint_drain(
+                    thread_id=thread_id,
+                    is_subagent=is_subagent,
+                )
+                if drained_messages:
+                    msgs.extend(drained_messages)
 
             response = await self._provider.chat(
                 messages=msgs,

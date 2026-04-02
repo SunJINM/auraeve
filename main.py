@@ -20,7 +20,7 @@ from auraeve.agent_runtime.kernel import RuntimeKernel
 from auraeve.cron.service import CronService
 from auraeve.plugins import PluginRegistry
 from auraeve.plugins.state import merge_plugin_settings_from_config
-from auraeve.heartbeat.service import HeartbeatService
+from auraeve.heartbeat.service import HEARTBEAT_OK_TOKEN, HeartbeatService
 from auraeve.utils.helpers import ensure_dir
 from auraeve.channels.webui import WebUIChannel, WebUIChannelConfig
 from auraeve.webui.chat_service import ChatService
@@ -265,32 +265,42 @@ async def main(terminal_mode: bool = False) -> None:
 
     # ?Cron ?on_job ?agent
     async def _on_cron_job(job):
-        from auraeve.bus.events import OutboundMessage
-        response = await agent.process_direct(
-            content=job.payload.message,
-            session_key=f"cron:{job.id}",
-            channel="cron",
-            chat_id=job.id,
+        agent.command_queue.enqueue_command(
+            agent.command_factory(
+                session_key=f"cron:{job.id}",
+                source="cron",
+                mode="cron",
+                priority="later",
+                payload={
+                    "content": job.payload.message,
+                    "job_id": job.id,
+                    "deliver_channel": job.payload.channel,
+                    "deliver_to": job.payload.to,
+                },
+                origin={"kind": "cron", "is_system_generated": True},
+            )
         )
-        if job.payload.deliver and job.payload.channel and job.payload.to and response:
-            await bus.publish_outbound(OutboundMessage(
-                channel=job.payload.channel,
-                chat_id=job.payload.to,
-                content=response,
-            ))
-        return response
+        return None
+
+    async def _enqueue_heartbeat(agent_runtime: RuntimeKernel, prompt: str) -> str:
+        agent_runtime.command_queue.enqueue_command(
+            agent_runtime.command_factory(
+                session_key="heartbeat:main",
+                source="heartbeat",
+                mode="heartbeat",
+                priority="later",
+                payload={"content": prompt},
+                origin={"kind": "heartbeat", "is_system_generated": True},
+            )
+        )
+        return HEARTBEAT_OK_TOKEN
 
     cron_service.on_job = _on_cron_job
 
     #  Heartbeat  
     heartbeat = HeartbeatService(
         workspace=workspace,
-        on_heartbeat=lambda prompt: agent.process_direct(
-            content=prompt,
-            session_key="heartbeat:main",
-            channel="heartbeat",
-            chat_id="main",
-        ),
+        on_heartbeat=lambda prompt: _enqueue_heartbeat(agent, prompt),
         interval_s=cfg.HEARTBEAT_INTERVAL_S,
         enabled=cfg.HEARTBEAT_ENABLED,
     )
@@ -337,7 +347,7 @@ async def main(terminal_mode: bool = False) -> None:
         )
         ch = DingTalkChannel(
             dingtalk_cfg,
-            bus,
+            agent.command_queue,
             workspace=workspace,
         )
         dingtalk_channel = ch
@@ -376,7 +386,7 @@ async def main(terminal_mode: bool = False) -> None:
             allow_from=getattr(cfg, "NAPCAT_ALLOW_FROM", []),
             allow_groups=getattr(cfg, "NAPCAT_ALLOW_GROUPS", []),
         )
-        ch = NapCatChannel(napcat_cfg, bus)
+        ch = NapCatChannel(napcat_cfg, agent.command_queue)
         napcat_channel = ch
         bus.subscribe_outbound("napcat", ch.send)
         agent.register_channel_sender("napcat", ch.send)
@@ -412,7 +422,7 @@ async def main(terminal_mode: bool = False) -> None:
         return await _start_napcat_channel()
 
     if terminal_mode:
-        terminal_channel = TerminalChannel(TerminalConfig(), bus)
+        terminal_channel = TerminalChannel(TerminalConfig(), agent.command_queue)
         bus.subscribe_outbound("terminal", terminal_channel.send)
         channels.append(terminal_channel)
         logger.info(": ")
@@ -425,7 +435,7 @@ async def main(terminal_mode: bool = False) -> None:
 
     if not channels:
         logger.warning("")
-        terminal_channel = TerminalChannel(TerminalConfig(), bus)
+        terminal_channel = TerminalChannel(TerminalConfig(), agent.command_queue)
         bus.subscribe_outbound("terminal", terminal_channel.send)
         channels.append(terminal_channel)
 
@@ -437,7 +447,7 @@ async def main(terminal_mode: bool = False) -> None:
         webui_bind_port = int(webui_bind_port_raw) if webui_bind_port_raw else int(getattr(cfg, "WEBUI_PORT", 8080))
         chat_svc = ChatService(
             session_manager=agent.sessions,
-            bus=bus,
+            command_queue=agent.command_queue,
         )
 
         async def _on_runtime_apply(new_config: dict, hot_keys: list[str]) -> dict:
@@ -752,7 +762,7 @@ async def main(terminal_mode: bool = False) -> None:
             restart_callback=lambda: _shutdown(restart=True),
             subagent_executor=agent._subagent_executor,
         )
-        webui_channel = WebUIChannel(WebUIChannelConfig(), bus, chat_svc)
+        webui_channel = WebUIChannel(WebUIChannelConfig(), agent.command_queue, chat_svc)
         bus.subscribe_outbound("webui", webui_channel.send)
         logger.info(f"WebUIttp://{getattr(cfg, 'WEBUI_HOST', '0.0.0.0')}:{webui_bind_port}")
 
@@ -819,6 +829,7 @@ async def main(terminal_mode: bool = False) -> None:
     #  cron ?heartbeat?
     await cron_service.start()
     await heartbeat.start()
+    await agent.scheduler.start()
     if agent.memory_lifecycle is not None:
         await agent.memory_lifecycle.start()
 
@@ -830,7 +841,6 @@ async def main(terminal_mode: bool = False) -> None:
             channel_tasks[ch.name] = asyncio.create_task(ch.start())
 
         tasks = [
-            agent.run(),
             bus.dispatch_outbound(),
             *channel_tasks.values(),
         ]
@@ -849,6 +859,7 @@ async def main(terminal_mode: bool = False) -> None:
         heartbeat.stop()
         if agent.memory_lifecycle is not None:
             await agent.memory_lifecycle.stop()
+        await agent.scheduler.stop()
         if engine_type == "vector" and hasattr(engine, "memory_manager"):
             await engine.memory_manager.close()
         await agent.close_mcp()

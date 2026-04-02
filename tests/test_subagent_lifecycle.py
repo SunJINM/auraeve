@@ -1,21 +1,19 @@
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import pytest
 
+from auraeve.agent_runtime.command_queue import RuntimeCommandQueue
 from auraeve.subagents.data.models import Task, TaskStatus
 from auraeve.subagents.lifecycle import SubagentLifecycle
-from auraeve.subagents.notification import NotificationQueue
 
 
 @pytest.mark.asyncio
-async def test_lifecycle_marks_completed_and_injects_result():
+async def test_lifecycle_marks_completed_and_enqueues_notification():
     store = MagicMock()
-    queue = NotificationQueue()
-    callback = AsyncMock()
+    queue = RuntimeCommandQueue()
     lifecycle = SubagentLifecycle(
         store=store,
-        notification_queue=queue,
-        kernel_resume_callback=callback,
+        command_queue=queue,
     )
     task = Task(
         task_id="task-1",
@@ -28,23 +26,20 @@ async def test_lifecycle_marks_completed_and_injects_result():
     await lifecycle.mark_completed(task, "done")
 
     store.complete_task.assert_called_once()
-    assert queue.pending_count == 1
-    callback.assert_awaited_once()
-    kwargs = callback.await_args.kwargs
-    assert kwargs["channel"] == "webui"
-    assert kwargs["chat_id"] == "chat-1"
-    assert len(kwargs["synthetic_messages"]) == 2
+    commands = queue.snapshot_all()
+    assert len(commands) == 1
+    assert commands[0].mode == "task-notification"
+    assert commands[0].priority == "later"
+    assert commands[0].payload["status"] == "completed"
 
 
 @pytest.mark.asyncio
 async def test_lifecycle_marks_failed_and_enqueues_failure_notification():
     store = MagicMock()
-    queue = NotificationQueue()
-    callback = AsyncMock()
+    queue = RuntimeCommandQueue()
     lifecycle = SubagentLifecycle(
         store=store,
-        notification_queue=queue,
-        kernel_resume_callback=callback,
+        command_queue=queue,
     )
     task = Task(
         task_id="task-2",
@@ -57,5 +52,6 @@ async def test_lifecycle_marks_failed_and_enqueues_failure_notification():
     await lifecycle.mark_failed(task, "boom")
 
     store.update_task_status.assert_called_once_with("task-2", TaskStatus.FAILED)
-    assert queue.pending_count == 1
-    callback.assert_awaited_once()
+    commands = queue.snapshot_all()
+    assert len(commands) == 1
+    assert commands[0].payload["status"] == "failed"

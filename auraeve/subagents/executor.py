@@ -12,11 +12,12 @@ import asyncio
 import logging
 from typing import Callable
 
+from auraeve.agent_runtime.command_queue import RuntimeCommandQueue
+
 from .context_isolation import generate_agent_id
 from .data.models import Task, TaskBudget, TaskStatus
 from .data.repositories import SubagentStore
 from .lifecycle import SubagentLifecycle
-from .notification import NotificationQueue
 from .runtime.react_loop import ReActLoop
 from .runtime.reporter import TaskReporter
 
@@ -55,7 +56,7 @@ class SubagentExecutor:
         self,
         *,
         store: SubagentStore,
-        notification_queue: NotificationQueue,
+        command_queue: RuntimeCommandQueue,
         provider,
         tool_builder: Callable,
         policy,
@@ -69,7 +70,7 @@ class SubagentExecutor:
         kernel_resume_callback: Callable | None = None,
     ) -> None:
         self._store = store
-        self._notification_queue = notification_queue
+        self._command_queue = command_queue
         self._provider = provider
         self._tool_builder = tool_builder
         self._policy = policy
@@ -83,8 +84,7 @@ class SubagentExecutor:
         self._kernel_resume_callback = kernel_resume_callback
         self._lifecycle = SubagentLifecycle(
             store=store,
-            notification_queue=notification_queue,
-            kernel_resume_callback=kernel_resume_callback,
+            command_queue=command_queue,
         )
 
         self._running: dict[str, asyncio.Task] = {}
@@ -160,7 +160,6 @@ class SubagentExecutor:
 
     async def _run_lifecycle(self, task: Task) -> None:
         """异步生命周期：执行 → 完成通知 → 结果注入。"""
-        self._lifecycle.set_kernel_resume_callback(self._kernel_resume_callback)
         try:
             result = await self._run_task(task)
             await self._lifecycle.mark_completed(task, result)

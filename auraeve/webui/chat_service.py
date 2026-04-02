@@ -8,6 +8,8 @@ from typing import Any, AsyncIterator
 
 from loguru import logger
 
+from auraeve.agent_runtime.command_queue import RuntimeCommandQueue
+from auraeve.agent_runtime.command_types import QueuedCommand
 from auraeve.bus.events import OutboundMessage
 from auraeve.session.manager import SessionManager
 
@@ -32,9 +34,13 @@ class ChatService:
     - SSE 事件队列管理（每个 sessionKey 对应一个广播队列）
     """
 
-    def __init__(self, session_manager: SessionManager, bus: Any) -> None:
+    def __init__(
+        self,
+        session_manager: SessionManager,
+        command_queue: RuntimeCommandQueue,
+    ) -> None:
         self._sm = session_manager
-        self._bus = bus
+        self._command_queue = command_queue
         # run_id -> RunState
         self._runs: dict[str, RunState] = {}
         # idempotency_key -> run_id （防重入）
@@ -67,7 +73,7 @@ class ChatService:
         display_name: str | None = None,
     ) -> tuple[str, str]:
         """
-        发布入站消息，返回 (run_id, status)。
+        发布入站命令，返回 (run_id, status)。
         status = "in_flight" 表示幂等重入（相同 idempotencyKey 的请求）。
         """
         if idempotency_key in self._idem:
@@ -83,21 +89,27 @@ class ChatService:
         self._runs[run_id] = state
         self._idem[idempotency_key] = run_id
 
-        from auraeve.bus.events import InboundMessage
-
         metadata: dict = {"run_id": run_id, "idempotency_key": idempotency_key}
         metadata["webui_user_id"] = user_id
         if display_name:
             metadata["webui_display_name"] = display_name
 
-        msg = InboundMessage(
-            channel="webui",
-            sender_id=user_id,
-            chat_id=session_key,
-            content=message,
-            metadata=metadata,
+        self._command_queue.enqueue_command(
+            QueuedCommand(
+                session_key=session_key,
+                source="webui",
+                mode="prompt",
+                priority="next",
+                payload={
+                    "content": message,
+                    "channel": "webui",
+                    "sender_id": user_id,
+                    "chat_id": session_key,
+                    "metadata": metadata,
+                },
+                origin={"kind": "user"},
+            )
         )
-        await self._bus.publish_inbound(msg)
 
         await self._broadcast(session_key, {
             "type": "chat.started",
