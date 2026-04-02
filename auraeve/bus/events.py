@@ -29,16 +29,7 @@ class InboundMessage:
 
     @property
     def session_key(self) -> str:
-        """
-        用于会话识别的唯一键。策略：身份优先 → channel:chat_id → sender_id。
-
-        1. 优先 metadata.canonical_user_id（IdentityResolver 已写入时）
-        2. 回退 channel:chat_id（渠道级别隔离）
-        3. 最终回退 sender_id
-        """
-        canonical = self.metadata.get("canonical_user_id")
-        if canonical:
-            return canonical
+        """用于会话识别的唯一键。优先 channel:chat_id，再回退 sender_id。"""
         if self.chat_id:
             return f"{self.channel}:{self.chat_id}"
         return self.sender_id or "global"

@@ -28,7 +28,7 @@ class ContextBuilder:
     """构建 Agent 的上下文（系统提示词 + 消息列表）。"""
 
     # 工作区启动配置文件（按顺序加载，注入到 Project Context）
-    BOOTSTRAP_FILES = ["AGENTS.md", "SOUL.md", "USER.md", "TOOLS.md", "IDENTITY.md"]
+    BOOTSTRAP_FILES = ["AGENTS.md", "SOUL.md", "USER.md", "TOOLS.md"]
 
     def __init__(self, workspace: Path, execution_workspace: str | None = None):
         self.workspace = workspace
@@ -62,8 +62,7 @@ class ContextBuilder:
 
         sections: list[str] = []
 
-        # 身份行
-        sections.append(self._identity_line())
+        sections.append(self._assistant_line())
 
         # 规则优先级声明（系统规则 > Project Context）
         sections.append("\n".join(self._section_protocol_priority()))
@@ -124,14 +123,14 @@ class ContextBuilder:
     # Section 构建函数（每个返回 list[str]，空列表 = 跳过）
     # =========================================================================
 
-    def _identity_line(self) -> str:
+    def _assistant_line(self) -> str:
         return "你是 Eve，运行在聊天渠道中的个人助手。默认以自然口语交流，避免生硬的 AI 说明式表达。"
 
     def _section_protocol_priority(self) -> list[str]:
         """规则优先级声明，避免系统规则与 Project Context 冲突。"""
         return [
             "## 规则优先级",
-            "当系统规则与 Project Context（AGENTS.md / SOUL.md / USER.md / TOOLS.md / IDENTITY.md）冲突时，优先遵循系统规则。",
+            "当系统规则与 Project Context（AGENTS.md / SOUL.md / USER.md / TOOLS.md）冲突时，优先遵循系统规则。",
             "Project Context 用于补充风格与业务偏好，不得覆盖安全、工具策略与输出协议。",
             "",
         ]

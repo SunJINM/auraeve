@@ -101,3 +101,54 @@ def test_kernel_no_longer_rewraps_commands_as_inbound_messages() -> None:
     )
 
     assert result.returncode == 1
+
+
+@pytest.mark.asyncio
+async def test_process_message_no_longer_builds_identity_context() -> None:
+    kernel = object.__new__(RuntimeKernel)
+    kernel._media_runtime = None
+    kernel._plan = MagicMock()
+    kernel._plan.clear_plan = MagicMock()
+    kernel._plan.format_for_prompt = MagicMock(return_value="")
+    kernel._set_tool_context = MagicMock()
+    kernel._set_media_understand_context = MagicMock()
+    kernel._extract_attachments_legacy = AsyncMock(return_value=None)
+    kernel._inject_plan_into_messages = MagicMock(side_effect=lambda messages, _: messages)
+    kernel._sanitize_assistant_output = RuntimeKernel._sanitize_assistant_output
+    kernel.sessions = MagicMock()
+    session = MagicMock()
+    session.key = "webui:chat-1"
+    session.get_history.return_value = []
+    kernel.sessions.get_or_create.return_value = session
+    kernel.assembler = MagicMock()
+    kernel.assembler.assemble = AsyncMock(
+        return_value=MagicMock(messages=[], compacted_messages=None, estimated_tokens=0)
+    )
+    kernel._orchestrator = MagicMock()
+    kernel._orchestrator.run = AsyncMock(
+        return_value=MagicMock(final_content="ok", tools_used=[], recovery_actions=[])
+    )
+    kernel.hooks = MagicMock(
+        run_session_start=AsyncMock(),
+        run_session_end=AsyncMock(),
+        run_message_sending=AsyncMock(return_value=MagicMock(cancel=False, content="ok")),
+    )
+    kernel.engine = MagicMock(after_turn=AsyncMock())
+    kernel.memory_lifecycle = None
+    kernel.tools = MagicMock(tool_names=[])
+    kernel.model = "model"
+    kernel.temperature = 0.0
+    kernel.max_tokens = 1000
+
+    await RuntimeKernel._process_message(
+        kernel,
+        session_key="webui:chat-1",
+        channel="webui",
+        sender_id="user-1",
+        chat_id="chat-1",
+        content="hello",
+        metadata={},
+    )
+
+    assemble_kwargs = kernel.assembler.assemble.await_args.kwargs
+    assert "identity_context" not in assemble_kwargs

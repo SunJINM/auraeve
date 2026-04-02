@@ -91,8 +91,6 @@ class ChatService:
 
         metadata: dict = {"run_id": run_id, "idempotency_key": idempotency_key}
         metadata["webui_user_id"] = user_id
-        if display_name:
-            metadata["webui_display_name"] = display_name
 
         self._command_queue.enqueue_command(
             QueuedCommand(

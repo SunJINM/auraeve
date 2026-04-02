@@ -62,7 +62,6 @@ def _build_provider():
 
 async def main(terminal_mode: bool = False) -> None:
     init_observability(cfg.export_config(mask_sensitive=False))
-    #   
     logger.remove()
     logger.add(
         sys.stderr,
@@ -73,7 +72,7 @@ async def main(terminal_mode: bool = False) -> None:
 
     logger.info(" Eve ...")
 
-    #   
+    # 工作区与模板区
     workspace = cfg.resolve_workspace_dir("default")
     template_workspace = (Path(__file__).resolve().parent / "workspace").resolve()
     if workspace.resolve() == template_workspace:
@@ -91,7 +90,7 @@ async def main(terminal_mode: bool = False) -> None:
     data_dir = ensure_dir(cfg.resolve_state_dir())
     ensure_dir(workspace / "memory")
 
-    #  
+
     pid_file = data_dir / "auraeve.pid"
     if pid_file.exists():
         old_pid = pid_file.read_text().strip()
@@ -102,7 +101,7 @@ async def main(terminal_mode: bool = False) -> None:
                 pass
             else:
                 try:
-                    os.kill(int(old_pid), 0)  # ?0 ?
+                    os.kill(int(old_pid), 0)
                     logger.error(
                         f"Detected running auraeve process (PID {old_pid}); refusing to start. "
                         f"Kill it first: kill {old_pid}"
@@ -111,7 +110,7 @@ async def main(terminal_mode: bool = False) -> None:
                 except (OSError, ProcessLookupError):
                     pass  # PID 
 
-    #   
+    # 消息分发
     bus = OutboundDispatcher()
     provider = _build_provider()
     stt_runtime = build_runtime_from_config(cfg.export_config(mask_sensitive=False))
@@ -123,7 +122,7 @@ async def main(terminal_mode: bool = False) -> None:
     )
     execution_workspace = str(workspace.expanduser().resolve())
 
-    #  ?
+    # memory
     memory_file_change_notifier = None
     engine_type = getattr(cfg, "CONTEXT_ENGINE", "vector")
     if engine_type == "vector":
@@ -160,12 +159,12 @@ async def main(terminal_mode: bool = False) -> None:
             execution_workspace=execution_workspace,
         )
 
-    #  Cron  
+    # Cron
     cron_store_path = cfg.resolve_cron_store_path()
     ensure_dir(cron_store_path.parent)
     cron_service = CronService(store_path=cron_store_path)
 
-    #  ?
+    # plugin
     plugin_settings = merge_plugin_settings_from_config(
         {
             "PLUGINS_ENABLED": getattr(cfg, "PLUGINS_ENABLED", True),
@@ -185,46 +184,6 @@ async def main(terminal_mode: bool = False) -> None:
         load_paths=plugin_settings.load_paths,
         entries=plugin_settings.entries,
     )
-    # ?
-    # from myapp.plugins import MyPlugin
-    # plugin_registry.register(MyPlugin())
-
-    #  IdentityService + Resolver
-    from auraeve.identity.store import IdentityStore
-    from auraeve.identity.service import IdentityService
-    from auraeve.identity.resolver import IdentityResolver
-
-    identity_db = data_dir / "identity.db"
-    identity_store = IdentityStore(identity_db)
-    identity_service = IdentityService(identity_store)
-    identity_resolver = IdentityResolver(identity_service)
-
-    #  owner ?canonical ?
-    owner_qq = getattr(cfg, "NAPCAT_OWNER_QQ", None) or getattr(cfg, "OWNER_QQ", None)
-    owner_canonical_id: str | None = None
-    if owner_qq:
-        owner_binding = identity_service.resolve_or_create("napcat", str(owner_qq))
-        owner_canonical_id = owner_binding.canonical_user_id
-        existing_rel = identity_service.get_relationship(owner_binding.canonical_user_id)
-        if not existing_rel:
-            identity_service.set_relationship(
-                canonical_user_id=owner_binding.canonical_user_id,
-                relationship="brother",
-                source="config",
-            )
-            logger.info(f"[identity] ?owner QQ {owner_qq} ??{owner_binding.canonical_user_id}")
-
-    webui_owner_user_id = getattr(cfg, "WEBUI_OWNER_USER_ID", "").strip()
-    if owner_canonical_id and webui_owner_user_id:
-        identity_service.bind(
-            channel="webui",
-            external_user_id=webui_owner_user_id,
-            canonical_user_id=owner_canonical_id,
-            confidence=1.0,
-        )
-        logger.info(
-            f"[identity] ?WebUI  {webui_owner_user_id} ?owner canonical {owner_canonical_id}"
-        )
 
     #  RuntimeKernel 
     agent = RuntimeKernel(
@@ -254,7 +213,6 @@ async def main(terminal_mode: bool = False) -> None:
         session_tool_policy=getattr(cfg, "SESSION_TOOL_POLICY", {}) or {},
         max_global_subagent_concurrent=getattr(cfg, "MAX_GLOBAL_SUBAGENT_CONCURRENT", 10),
         max_session_subagent_concurrent=getattr(cfg, "MAX_SESSION_SUBAGENT_CONCURRENT", 8),
-        identity_resolver=identity_resolver,
         execution_workspace=execution_workspace,
         memory_lifecycle=MemoryLifecycleService(
             workspace=workspace,
@@ -366,7 +324,7 @@ async def main(terminal_mode: bool = False) -> None:
     if getattr(cfg, "NODE_ENABLED", False):
         logger.warning("NODE_ENABLED 已废弃，远程子体传输层已在本次重构中移除，忽略该配置。")
 
-    #   PID
+    # PID
     pid_file.write_text(str(os.getpid()))
 
     runtime_runner = AppRuntimeRunner(
@@ -422,7 +380,7 @@ async def main(terminal_mode: bool = False) -> None:
     logger.info(f"?{len(channel_runtime.channels)} ?..")
     await runtime_runner.run()
 
-    # SIGUSR1 ?
+    # SIGUSR1
     if runtime_runner.restart_requested:
         logger.info("...")
         os.execv(sys.executable, [sys.executable] + sys.argv)

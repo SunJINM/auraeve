@@ -125,7 +125,6 @@ class ChannelRuntimeManager:
         channel_config = NapCatConfig(
             ws_url=getattr(self.config, "NAPCAT_WS_URL", "ws://127.0.0.1:3001"),
             access_token=getattr(self.config, "NAPCAT_ACCESS_TOKEN", ""),
-            owner_qq=getattr(self.config, "NAPCAT_OWNER_QQ", ""),
             allow_from=getattr(self.config, "NAPCAT_ALLOW_FROM", []),
             allow_groups=getattr(self.config, "NAPCAT_ALLOW_GROUPS", []),
         )

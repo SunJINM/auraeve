@@ -42,7 +42,6 @@ from .tool_policy.engine import ToolPolicyEngine
 
 if TYPE_CHECKING:
     from auraeve.cron.service import CronService
-    from auraeve.identity.resolver import IdentityResolver
     from auraeve.media_understanding.runtime import MediaUnderstandingRuntime
     from auraeve.memory_lifecycle import MemoryLifecycleService
 
@@ -77,7 +76,6 @@ class RuntimeKernel:
         session_tool_policy: dict | None = None,
         max_global_subagent_concurrent: int = 10,
         max_session_subagent_concurrent: int = 8,
-        identity_resolver: "IdentityResolver | None" = None,
         execution_workspace: str | None = None,
         runtime_execution: dict | None = None,
         runtime_loop_guard: dict | None = None,
@@ -99,7 +97,6 @@ class RuntimeKernel:
         self.cron_service = cron_service
         self._channel_users = channel_users or {}
         self._notify_channel = notify_channel
-        self._identity_resolver = identity_resolver
         self._execution_workspace = execution_workspace
         self.memory_lifecycle = memory_lifecycle
         self._reload_lock = asyncio.Lock()
@@ -461,57 +458,6 @@ class RuntimeKernel:
             result.append(msg)
         return result
 
-    def _resolve_identity_metadata(
-        self,
-        *,
-        channel: str,
-        sender_id: str,
-        metadata: dict,
-    ) -> None:
-        """Ensure message metadata contains normalized identity fields."""
-        if "display_name" not in metadata:
-            metadata["display_name"] = metadata.get("webui_display_name") or sender_id
-        if self._identity_resolver and "canonical_user_id" not in metadata:
-            resolved = self._identity_resolver.resolve(
-                channel=channel,
-                external_user_id=sender_id,
-                display_name=metadata.get("display_name", ""),
-            )
-            self._identity_resolver.inject_metadata(metadata, resolved)
-
-    @staticmethod
-    def _build_identity_context(
-        *,
-        channel: str,
-        sender_id: str,
-        chat_id: str,
-        metadata: dict,
-    ) -> str | None:
-        canonical_id = str(metadata.get("canonical_user_id") or "").strip()
-        if not canonical_id:
-            return None
-
-        lines = [
-            "## Identity Context",
-            f"- canonical_user_id: {canonical_id}",
-            f"- display_name: {metadata.get('display_name', sender_id)}",
-            f"- channel: {channel}",
-            f"- sender_id: {sender_id}",
-            f"- chat_id: {chat_id}",
-        ]
-        relationship = str(metadata.get("relationship_to_assistant") or "").strip()
-        if relationship:
-            lines.append(f"- relationship_to_assistant: {relationship}")
-        confidence = metadata.get("identity_confidence")
-        if confidence is not None:
-            lines.append(f"- identity_confidence: {confidence}")
-        source = str(metadata.get("identity_source") or "").strip()
-        if source:
-            lines.append(f"- identity_source: {source}")
-        if relationship == "brother":
-            lines.append("- privilege: owner")
-        return "\n".join(lines)
-
     @staticmethod
     def _sanitize_assistant_output(content: str | None) -> str | None:
         """Sanitize control tokens from assistant output.
@@ -558,11 +504,6 @@ class RuntimeKernel:
             f"[kernel] processing {channel}:{sender_id}: {preview}"
         )
 
-        self._resolve_identity_metadata(
-            channel=channel,
-            sender_id=sender_id,
-            metadata=metadata,
-        )
         key = session_key
         session = self.sessions.get_or_create(key)
         thread_id = key
@@ -592,15 +533,7 @@ class RuntimeKernel:
             HookSessionEvent(session_id=session.key, channel=channel, chat_id=chat_id)
         ))
 
-        identity_context = self._build_identity_context(
-            channel=channel,
-            sender_id=sender_id,
-            chat_id=chat_id,
-            metadata=metadata,
-        )
         current_message = content
-        if bool(metadata.get("is_owner")):
-            current_message = f"*★owner:* {current_message}"
 
         extracted_attachments = None
         if self._media_runtime is not None:
@@ -632,7 +565,6 @@ class RuntimeKernel:
             session_id=session.key,
             messages=session.get_history(),
             current_query=current_message,
-            identity_context=identity_context,
             channel=channel,
             chat_id=chat_id,
             media=media if media else None,
@@ -668,25 +600,12 @@ class RuntimeKernel:
         sanitized_content = self._sanitize_assistant_output(final_content)
         persist_content = sanitized_content if sanitized_content is not None else SILENT_REPLY_TOKEN
 
-        # Persist session (with identity snapshot).
-        identity_snapshot = {
-            k: metadata[k]
-            for k in (
-                "canonical_user_id",
-                "display_name",
-                "relationship_to_assistant",
-                "identity_confidence",
-                "identity_source",
-            )
-            if k in metadata
-        }
         session.add_message(
             "user",
             content,
             channel=channel,
             chat_id=chat_id,
             sender_id=sender_id,
-            **({"identity": identity_snapshot} if identity_snapshot else {}),
         )
         session.add_message("assistant", persist_content,
                             tools_used=tools_used if tools_used else None)

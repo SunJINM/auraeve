@@ -12,7 +12,7 @@ from auraeve.runtime_channels import ChannelRuntimeManager
 class _FakeChannel:
     def __init__(self, name: str) -> None:
         self.name = name
-        self.config = SimpleNamespace(allow_from=[], allow_groups=[], owner_qq="")
+        self.config = SimpleNamespace(allow_from=[], allow_groups=[])
         self.send = MagicMock()
         self._call_action = MagicMock()
         self._friend_flags = {}
@@ -120,7 +120,6 @@ async def test_manager_starts_and_stops_napcat_and_cleans_tools() -> None:
             NAPCAT_ENABLED=True,
             NAPCAT_WS_URL="ws://127.0.0.1:3001",
             NAPCAT_ACCESS_TOKEN="",
-            NAPCAT_OWNER_QQ="",
             NAPCAT_ALLOW_FROM=[],
             NAPCAT_ALLOW_GROUPS=[],
         ),

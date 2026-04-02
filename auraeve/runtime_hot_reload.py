@@ -29,7 +29,6 @@ CHANNEL_KEYS = {
     "NAPCAT_ACCESS_TOKEN",
     "NAPCAT_ALLOW_FROM",
     "NAPCAT_ALLOW_GROUPS",
-    "NAPCAT_OWNER_QQ",
     "CHANNEL_USERS",
     "NOTIFY_CHANNEL",
 }
@@ -282,14 +281,6 @@ class RuntimeHotApplyService:
                     issues.append({"code": "channel_not_running", "message": "napcat channel is not running"})
                 else:
                     channel.config.allow_groups = list(new_config.get(key) or [])
-                    applied.add(key)
-            elif key == "NAPCAT_OWNER_QQ":
-                channel = self.channel_runtime.get_napcat_channel()
-                if channel is None:
-                    restart.add(key)
-                    issues.append({"code": "channel_not_running", "message": "napcat channel is not running"})
-                else:
-                    channel.config.owner_qq = str(new_config.get(key) or "")
                     applied.add(key)
             elif key == "CHANNEL_USERS":
                 channel_users = dict(new_config.get(key) or {})

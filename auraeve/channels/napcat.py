@@ -32,7 +32,6 @@ class NapCatConfig:
     access_token: str = ""
     allow_from: list[str] = field(default_factory=list)
     allow_groups: list[str] = field(default_factory=list)
-    owner_qq: str = ""
     reconnect_interval: int = 5
     action_timeout_s: float = 10.0
     media_action_timeout_s: float = 30.0
@@ -306,9 +305,8 @@ class NapCatChannel(BaseChannel):
         metadata: dict[str, Any] = {
             "message_type": "private",
             "qq": user_id,
-            "is_owner": bool(user_id == self.config.owner_qq),
         }
-        if user_id == self.config.owner_qq and self._friend_flags:
+        if self._friend_flags:
             metadata["pending_friend_requests"] = [
                 {"qq": qq, "flag": flag} for qq, flag in self._friend_flags.items()
             ]
@@ -329,7 +327,6 @@ class NapCatChannel(BaseChannel):
         group_id = str(data.get("group_id", ""))
         if self.config.allow_groups and group_id not in self.config.allow_groups:
             return
-        is_owner = user_id == self.config.owner_qq
         segments = data.get("message") or []
         at_me = any(
             isinstance(seg, dict)
@@ -337,9 +334,9 @@ class NapCatChannel(BaseChannel):
             and str(seg.get("data", {}).get("qq")) == str(data.get("self_id", ""))
             for seg in segments
         )
-        if not is_owner and not at_me:
+        if not at_me:
             return
-        parsed = self._parse_message_segments(segments, skip_at=not is_owner)
+        parsed = self._parse_message_segments(segments, skip_at=True)
         attachments = await self._resolve_media_refs(parsed.refs)
         content = self._build_content(parsed.text.strip(), parsed.image_urls, attachments)
         if not content and not parsed.image_urls and not attachments:
