@@ -19,7 +19,6 @@ from auraeve.webui.chat_service import ChatService
 from auraeve.webui.chat_console_service import ChatConsoleService
 from auraeve.webui.config_service import ConfigService
 from auraeve.webui.mcp_service import MCPWebService
-from auraeve.webui.node_service import NodeWebService
 from auraeve.webui.plugin_service import PluginWebService
 from auraeve.webui.log_service import LogWebService
 from auraeve.webui.skill_service import SkillWebService
@@ -104,7 +103,7 @@ class WebUIServer:
         mcp_events_provider: Callable[[], list[dict[str, Any]]] | None = None,
         mcp_reconnect_provider: Callable[[str], Awaitable[dict[str, Any]]] | None = None,
         restart_callback: Callable[[], Awaitable[None]] | None = None,
-        orchestrator: Any | None = None,
+        subagent_executor: Any | None = None,
     ) -> None:
         self._chat = chat_service
         self._config = config_service
@@ -125,8 +124,8 @@ class WebUIServer:
             if mcp_status_provider and mcp_events_provider and mcp_reconnect_provider
             else None
         )
-        self._nodes = NodeWebService(orchestrator) if orchestrator else None
-        self._chat_console = ChatConsoleService(chat_service, getattr(orchestrator, "_db", None))
+        self._nodes = None
+        self._chat_console = ChatConsoleService(chat_service, getattr(subagent_executor, "_store", None))
         self._server: uvicorn.Server | None = None
         self._restart_callback = restart_callback
         self._upload = UploadWebService()

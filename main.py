@@ -750,7 +750,7 @@ async def main(terminal_mode: bool = False) -> None:
             mcp_events_provider=agent.get_mcp_events,
             mcp_reconnect_provider=agent.reconnect_mcp_server,
             restart_callback=lambda: _shutdown(restart=True),
-            orchestrator=agent._task_orchestrator,
+            subagent_executor=agent._subagent_executor,
         )
         webui_channel = WebUIChannel(WebUIChannelConfig(), bus, chat_svc)
         bus.subscribe_outbound("webui", webui_channel.send)
@@ -759,22 +759,7 @@ async def main(terminal_mode: bool = False) -> None:
     # 子体 WebSocket 服务
     subagent_ws_server = None
     if getattr(cfg, "NODE_ENABLED", False):
-        from auraeve.subagents.transport.auth import TokenAuth
-        from auraeve.subagents.transport.ws_server import SubAgentWSServer
-
-        subagent_auth = TokenAuth()
-        node_tokens_v2: dict = getattr(cfg, "NODE_TOKENS", {})
-        for nid, info in node_tokens_v2.items():
-            subagent_auth.add_token(nid, info["token"])
-
-        subagent_ws_port = getattr(cfg, "SUBAGENT_WS_PORT", 9800)
-        subagent_ws_server = SubAgentWSServer(
-            orchestrator=agent._task_orchestrator,
-            auth=subagent_auth,
-            host=getattr(cfg, "NODE_HOST", "0.0.0.0"),
-            port=subagent_ws_port,
-        )
-        logger.info(f"SubAgent WS service: ws://0.0.0.0:{subagent_ws_port}")
+        logger.warning("NODE_ENABLED 已废弃，远程子体传输层已在本次重构中移除，忽略该配置。")
 
     #   PID
     pid_file.write_text(str(os.getpid()))

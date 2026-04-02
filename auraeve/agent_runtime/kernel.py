@@ -3,7 +3,7 @@
 - PromptAssembler 负责提示词组装（支持 `before_prompt_build` 钩子）
 - SessionAttemptRunner + RunOrchestrator 共享执行内核
 - ToolPolicyEngine 负责分层工具策略判定
-- TaskOrchestrator 负责子体编排与生命周期管理
+- SubagentExecutor 负责子体执行与生命周期管理
 """
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ from auraeve.agent.engines.base import ContextEngine
 from auraeve.agent.tools.registry import ToolRegistry
 from auraeve.agent.tools.message import MessageTool
 from auraeve.agent.tools.media_understand import MediaUnderstandTool
-from auraeve.agent.tools.subagent_task import SubAgentTaskTool
+from auraeve.agent.tools.agent_tool import AgentTool
 from auraeve.agent.tools.cron import CronTool
 from auraeve.agent.tools.plan import TodoTool
 from auraeve.agent.tools.assembler import build_tool_registry
@@ -126,26 +126,48 @@ class RuntimeKernel:
             token_budget=token_budget,
         )
 
-        # 子体编排系统
-        from auraeve.subagents.data.repositories import SubagentDB
-        from auraeve.subagents.control_plane.orchestrator import TaskOrchestrator as _TaskOrchestrator
+        # 子体执行系统
+        from auraeve.subagents.data.repositories import SubagentStore
+        from auraeve.subagents.notification import NotificationQueue
+        from auraeve.subagents.executor import SubagentExecutor
 
-        subagent_db_path = workspace / "data" / "subagent.db"
+        subagent_db_path = sessions_dir / "subagents.db" if sessions_dir else workspace / "subagents.db"
         subagent_db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._subagent_db = SubagentDB(subagent_db_path)
-        self._task_orchestrator = _TaskOrchestrator(
-            db=self._subagent_db,
+        self._subagent_store = SubagentStore(str(subagent_db_path))
+        self._notification_queue = NotificationQueue()
+        self._subagent_executor = SubagentExecutor(
+            store=self._subagent_store,
+            notification_queue=self._notification_queue,
             provider=provider,
-            bus=bus,
-            workspace=workspace,
+            tool_builder=lambda task: build_tool_registry(
+                profile="subagent",
+                workspace=self.workspace,
+                restrict_to_workspace=self.restrict_to_workspace,
+                exec_timeout=self.exec_timeout,
+                brave_api_key=self.brave_api_key,
+                bus_publish_outbound=self.bus.publish_outbound,
+                provider=self.provider,
+                model=self.model,
+                plan_manager=self._plan,
+                channel_users=self._channel_users,
+                notify_channel=self._notify_channel,
+                subagent_executor=self._subagent_executor,
+                cron_service=self.cron_service,
+                origin_channel=task.origin_channel or None,
+                origin_chat_id=task.origin_chat_id or None,
+                thread_id=f"sub:{task.task_id}",
+                engine=self.engine,
+                execution_workspace=task.worktree_path or self._execution_workspace,
+                media_runtime=self._media_runtime,
+            ),
             policy=self.policy,
             model=self.model,
             temperature=temperature,
             max_tokens=max_tokens,
             max_iterations=50,
-            thinking_budget_tokens=thinking_budget_tokens,
-            max_global_tasks=max_global_subagent_concurrent,
-            max_node_tasks=max_session_subagent_concurrent,
+            thinking_budget_tokens=thinking_budget_tokens or 0,
+            max_concurrent=max_global_subagent_concurrent,
+            workspace=str(workspace),
         )
 
         # 主执行器与统一运行编排器
@@ -181,9 +203,9 @@ class RuntimeKernel:
             message_tool.register_direct_sender(channel, sender)
 
     def _register_subagent_resume(self) -> None:
-        """向子体编排器注册母体续写回调。"""
-        if hasattr(self, "_task_orchestrator") and self._task_orchestrator is not None:
-            self._task_orchestrator.register_kernel_resume(self._resume_with_subagent_result)
+        """向子体执行器注册母体续写回调。"""
+        if hasattr(self, "_subagent_executor") and self._subagent_executor is not None:
+            self._subagent_executor._kernel_resume_callback = self._resume_with_subagent_result
 
     async def run(self) -> None:
         self._running = True
@@ -257,7 +279,7 @@ class RuntimeKernel:
             plan_manager=self._plan,
             channel_users=self._channel_users,
             notify_channel=self._notify_channel,
-            task_orchestrator=self._task_orchestrator,
+            subagent_executor=self._subagent_executor,
             cron_service=self.cron_service,
             engine=self.engine,
             execution_workspace=self._execution_workspace,
@@ -327,9 +349,9 @@ class RuntimeKernel:
         message_tool = self.tools.get("message")
         if message_tool is not None and isinstance(message_tool, MessageTool):
             message_tool.set_context(channel, chat_id)
-        subagent_tool = self.tools.get("subagent")
-        if subagent_tool is not None and isinstance(subagent_tool, SubAgentTaskTool):
-            subagent_tool.set_context(channel, chat_id)
+        agent_tool = self.tools.get("agent")
+        if agent_tool is not None and isinstance(agent_tool, AgentTool):
+            agent_tool.set_context(channel, chat_id)
         cron_tool = self.tools.get("cron")
         if cron_tool is not None and isinstance(cron_tool, CronTool):
             cron_tool.set_context(channel, chat_id)
@@ -682,13 +704,14 @@ class RuntimeKernel:
 
     async def _resume_with_subagent_result(
         self,
-        session_key: str,
-        channel: str,
-        chat_id: str,
-        synthetic_messages: list[dict],
+        session_key: str | None = None,
+        channel: str = "",
+        chat_id: str = "",
+        synthetic_messages: list[dict] | None = None,
         runtime_instruction: str = "",
     ) -> "OutboundMessage | None":
         """子体异步完成后，以 tool result 语义续写母体 LLM，不插入 user 消息。"""
+        session_key = session_key or (f"{channel}:{chat_id}" if channel and chat_id else chat_id)
         session = self.sessions.get_or_create(session_key)
         self._set_tool_context(channel, chat_id, session_key)
 
@@ -701,7 +724,7 @@ class RuntimeKernel:
             channel=channel,
             chat_id=chat_id,
             available_tools=set(self.tools.tool_names),
-            extra_suffix_messages=synthetic_messages,
+            extra_suffix_messages=synthetic_messages or [],
             runtime_instruction=runtime_instruction,
         )
         if assemble_result.compacted_messages is not None:

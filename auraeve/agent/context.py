@@ -89,8 +89,8 @@ class ContextBuilder:
         # 工作区信息
         sections.append("\n".join(self._section_workspace()))
 
-        # 子智能体使用规范（条件：subagent 工具可用 + 非 minimal）
-        if not is_minimal and "subagent" in tools:
+        # 子智能体使用规范（条件：agent 工具可用 + 非 minimal）
+        if not is_minimal and "agent" in tools:
             sections.append("\n".join(self._section_subagent_protocol()))
 
         # 消息工具使用规范（条件：message 工具可用 + 非 minimal）
@@ -153,14 +153,14 @@ class ContextBuilder:
             "memory_get":     "按路径读取记忆文件片段（行范围）",
             "memory_status":  "查看记忆索引状态与降级信息",
             "message":        "发送消息、文件、图片到渠道",
-            "subagent":       "子体任务全生命周期管理（spawn/dag/list/status/steer/pause/resume/cancel/approve），支持本地与远程节点调度",
+            "agent":          "启动子智能体执行复杂多步骤任务，支持查询和管理已创建的子智能体",
             "cron":           "管理定时任务和唤醒事件（用于提醒；设置提醒时，写入自然语言描述以便触发时读起来像提醒）",
             "todo":           "管理当前任务规划列表",
         }
         TOOL_ORDER = [
             "read_file", "write_file", "edit_file", "list_dir", "exec",
             "web_search", "web_fetch", "browser", "pdf",
-            "memory_search", "memory_get", "memory_status", "message", "subagent", "cron", "todo",
+            "memory_search", "memory_get", "memory_status", "message", "agent", "cron", "todo",
         ]
 
         enabled = [t for t in TOOL_ORDER if t in tools]
@@ -287,7 +287,7 @@ class ContextBuilder:
         return workspace_lines
 
     def _section_subagent_protocol(self) -> list[str]:
-        """子智能体使用规范（条件：subagent 工具可用 + 非 minimal）。"""
+        """子智能体使用规范（条件：agent 工具可用 + 非 minimal）。"""
         return [
             "## 子智能体协议",
             "**何时派发子体**：满足以下任一条件时考虑使用子体：",
@@ -302,14 +302,13 @@ class ContextBuilder:
             "- 需要与用户实时交互、反复确认的任务",
             "- 只需调用一两个工具即可完成的操作",
             "",
-            "**派发后无需轮询**：调用 `subagent(action=spawn)` 后立即结束本轮，不要反复调用 `subagent(action=status)` 等待结果。"
+            "**调用方式**：使用 `agent(prompt=\"具体任务描述\", subagent_type=\"explore\")` 派发子体。"
+            "prompt 应包含完整的任务目标和上下文信息，让子体能独立完成工作。",
+            "",
+            "**派发后无需轮询**：调用 agent 后立即结束本轮，不要反复轮询等待结果。"
             "子体完成后系统会自动将结果注入你的上下文并唤醒你。",
             "",
-            "**role_prompt 角色配置**：spawn 时通过 `role_prompt` 给子体设定身份、背景知识、输出格式要求。"
-            "越具体越好，例如：角色定位、专业领域、要引用哪些依据、结论需要包含哪些字段、语气风格。"
-            "不填则子体使用通用执行模式，适合简单任务；复杂分析或专业任务务必填写。",
-            "",
-            "**并行任务判断**：需要多个子体协作时，在同一轮次内连续调用多个 `spawn`，每个 spawn 一个 goal。"
+            "**并行任务判断**：需要多个子体协作时，在同一轮次内连续调用多个 agent，每个调用一个独立任务。"
             "不要串行等待前一个完成再派下一个。",
             "",
             "**回调时的回复决策**：收到子体结果回调时（subagent_result），检查 [子体批次状态] 提示：",

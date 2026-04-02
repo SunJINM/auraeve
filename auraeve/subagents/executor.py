@@ -1,25 +1,22 @@
 """子智能体执行器。
 
-合并了原来的 TaskOrchestrator + LocalSubAgentExecutor 的核心逻辑。
-去掉了 DAG/审批/远程调度/能力评分/遥测/记忆合并。
-
 职责:
 - 创建任务并持久化
 - 本地异步执行（asyncio.Task）
 - 并发控制
-- 完成后发送通知
+- 将生命周期事件委托给 SubagentLifecycle
 """
 from __future__ import annotations
 
 import asyncio
 import logging
-import time
 from typing import Callable
 
 from .context_isolation import generate_agent_id
 from .data.models import Task, TaskBudget, TaskStatus
 from .data.repositories import SubagentStore
-from .notification import NotificationQueue, TaskNotification
+from .lifecycle import SubagentLifecycle
+from .notification import NotificationQueue
 from .runtime.react_loop import ReActLoop
 from .runtime.reporter import TaskReporter
 
@@ -84,11 +81,14 @@ class SubagentExecutor:
         self._max_concurrent = max_concurrent
         self._workspace = workspace
         self._kernel_resume_callback = kernel_resume_callback
+        self._lifecycle = SubagentLifecycle(
+            store=store,
+            notification_queue=notification_queue,
+            kernel_resume_callback=kernel_resume_callback,
+        )
 
         self._running: dict[str, asyncio.Task] = {}
         self._loops: dict[str, ReActLoop] = {}
-        self._injected_ids: set[str] = set()
-        self._inject_lock = asyncio.Lock()
 
     # ── 任务管理 ──────────────────────────────────────────
 
@@ -160,41 +160,17 @@ class SubagentExecutor:
 
     async def _run_lifecycle(self, task: Task) -> None:
         """异步生命周期：执行 → 完成通知 → 结果注入。"""
+        self._lifecycle.set_kernel_resume_callback(self._kernel_resume_callback)
         try:
             result = await self._run_task(task)
-            self._store.complete_task(
-                task.task_id, result=result, completed_at=time.time()
-            )
-            notification = TaskNotification(
-                task_id=task.task_id,
-                agent_type=task.agent_type,
-                goal=task.goal,
-                status="completed",
-                result=result,
-                spawn_tool_call_id=task.spawn_tool_call_id,
-            )
-            self._notification_queue.enqueue(notification)
-            await self._try_inject_result(task, notification)
+            await self._lifecycle.mark_completed(task, result)
 
         except asyncio.CancelledError:
-            self._store.update_task_status(task.task_id, TaskStatus.KILLED)
-            self._notification_queue.enqueue(TaskNotification(
-                task_id=task.task_id, agent_type=task.agent_type,
-                goal=task.goal, status="killed", result="任务被取消",
-                spawn_tool_call_id=task.spawn_tool_call_id,
-            ))
+            await self._lifecycle.mark_cancelled(task)
 
         except Exception as e:
             logger.exception("子智能体执行失败: %s", task.task_id)
-            error_msg = str(e)
-            self._store.update_task_status(task.task_id, TaskStatus.FAILED)
-            notification = TaskNotification(
-                task_id=task.task_id, agent_type=task.agent_type,
-                goal=task.goal, status="failed", result=error_msg,
-                spawn_tool_call_id=task.spawn_tool_call_id,
-            )
-            self._notification_queue.enqueue(notification)
-            await self._try_inject_result(task, notification)
+            await self._lifecycle.mark_failed(task, str(e))
 
         finally:
             self._running.pop(task.task_id, None)
@@ -221,27 +197,3 @@ class SubagentExecutor:
         self._loops[task.task_id] = loop
 
         return await loop.run(task)
-
-    async def _try_inject_result(
-        self, task: Task, notification: TaskNotification
-    ) -> None:
-        """尝试将子智能体结果注入母体上下文。"""
-        if not self._kernel_resume_callback:
-            return
-        if not task.spawn_tool_call_id:
-            return
-
-        async with self._inject_lock:
-            if task.task_id in self._injected_ids:
-                return
-            self._injected_ids.add(task.task_id)
-
-        synthetic = self._notification_queue.build_synthetic_messages(notification)
-        try:
-            await self._kernel_resume_callback(
-                channel=task.origin_channel,
-                chat_id=task.origin_chat_id,
-                synthetic_messages=synthetic,
-            )
-        except Exception:
-            logger.exception("注入子智能体结果到母体失败: %s", task.task_id)

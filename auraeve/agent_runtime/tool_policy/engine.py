@@ -13,7 +13,7 @@ from loguru import logger
 from .contracts import PolicyContext, PolicyDecision, PolicyResult
 
 # 子代理禁止使用的工具（防止无限递归派生）
-_SUBAGENT_DENY: frozenset[str] = frozenset({"spawn"})
+_SUBAGENT_DENY: frozenset[str] = frozenset({"agent"})
 
 # 高副作用工具风险标签（用于 session 层策略参考）
 _HIGH_RISK_TOOLS: frozenset[str] = frozenset({
@@ -50,7 +50,7 @@ class ToolPolicyEngine:
             return "filesystem"
         if tool_name in {"web_search", "web_fetch", "browser"}:
             return "web"
-        if tool_name in {"spawn", "message", "todo", "cron"}:
+        if tool_name in {"agent", "message", "todo", "cron"}:
             return "agent"
         if tool_name in {"exec"}:
             return "shell"
@@ -217,7 +217,7 @@ class ToolPolicyEngine:
         if ctx.is_subagent and ctx.tool_name in _SUBAGENT_DENY:
             decision = PolicyDecision(
                 layer="subagent",
-                rule_id="subagent_deny_spawn",
+                rule_id="subagent_deny_agent",
                 allowed=False,
                 reason=f"子代理策略：禁止在子代理内使用 '{ctx.tool_name}'（防止无限递归）",
             )

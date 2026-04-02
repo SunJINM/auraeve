@@ -93,3 +93,30 @@ async def test_resume_with_compacted_messages_calls_replace_history():
     )
 
     session.replace_history.assert_called_once_with(compacted)
+
+
+@pytest.mark.asyncio
+async def test_resume_without_session_key_falls_back_to_channel_and_chat_id():
+    kernel = _make_kernel()
+
+    session = MagicMock()
+    session.get_history.return_value = [{"role": "user", "content": "hello"}]
+    kernel.sessions.get_or_create.return_value = session
+
+    assemble_result = MagicMock()
+    assemble_result.messages = session.get_history.return_value
+    assemble_result.compacted_messages = None
+    kernel.assembler.assemble = AsyncMock(return_value=assemble_result)
+
+    run_result = MagicMock()
+    run_result.final_content = "ok"
+    kernel._orchestrator.run = AsyncMock(return_value=run_result)
+    kernel.engine.after_turn = AsyncMock()
+
+    await kernel._resume_with_subagent_result(
+        channel="webui",
+        chat_id="chat1",
+        synthetic_messages=[],
+    )
+
+    kernel.sessions.get_or_create.assert_called_once_with("webui:chat1")

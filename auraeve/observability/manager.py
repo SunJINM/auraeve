@@ -683,3 +683,10 @@ def get_observability() -> ObservabilityManager:
     if _GLOBAL_MANAGER is None:
         _GLOBAL_MANAGER = ObservabilityManager(_settings_from_payload(None))
     return _GLOBAL_MANAGER
+
+
+def close_observability() -> None:
+    global _GLOBAL_MANAGER
+    if _GLOBAL_MANAGER is not None:
+        _GLOBAL_MANAGER.close()
+        _GLOBAL_MANAGER = None
