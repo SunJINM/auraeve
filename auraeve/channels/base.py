@@ -7,7 +7,7 @@ from loguru import logger
 
 from auraeve.agent_runtime.command_queue import RuntimeCommandQueue
 from auraeve.agent_runtime.command_types import QueuedCommand
-from auraeve.bus.events import FileAttachment, InboundMessage, OutboundMessage
+from auraeve.bus.events import FileAttachment, OutboundMessage
 
 
 class BaseChannel(ABC):

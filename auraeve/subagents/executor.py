@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Callable
 
 from auraeve.agent_runtime.command_queue import RuntimeCommandQueue
 
@@ -58,7 +57,7 @@ class SubagentExecutor:
         store: SubagentStore,
         command_queue: RuntimeCommandQueue,
         provider,
-        tool_builder: Callable,
+        tool_builder,
         policy,
         model: str,
         temperature: float = 0.0,
@@ -67,7 +66,6 @@ class SubagentExecutor:
         thinking_budget_tokens: int = 0,
         max_concurrent: int = 5,
         workspace: str = "",
-        kernel_resume_callback: Callable | None = None,
     ) -> None:
         self._store = store
         self._command_queue = command_queue
@@ -81,7 +79,6 @@ class SubagentExecutor:
         self._thinking_budget_tokens = thinking_budget_tokens
         self._max_concurrent = max_concurrent
         self._workspace = workspace
-        self._kernel_resume_callback = kernel_resume_callback
         self._lifecycle = SubagentLifecycle(
             store=store,
             command_queue=command_queue,
@@ -159,7 +156,7 @@ class SubagentExecutor:
         return await self._run_task(task)
 
     async def _run_lifecycle(self, task: Task) -> None:
-        """异步生命周期：执行 → 完成通知 → 结果注入。"""
+        """异步生命周期：执行并在结束后投递后台通知。"""
         try:
             result = await self._run_task(task)
             await self._lifecycle.mark_completed(task, result)

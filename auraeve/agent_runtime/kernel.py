@@ -17,8 +17,8 @@ from auraeve.agent_runtime.command_projection import project_command_to_messages
 from auraeve.agent_runtime.command_queue import RuntimeCommandQueue
 from auraeve.agent_runtime.command_types import QueuedCommand
 from auraeve.agent_runtime.runtime_scheduler import RuntimeScheduler
-from auraeve.bus.events import InboundMessage, OutboundMessage
-from auraeve.bus.queue import MessageBus
+from auraeve.bus.events import OutboundMessage
+from auraeve.bus.queue import OutboundDispatcher
 from auraeve.providers.base import LLMProvider
 from auraeve.agent.engines.base import ContextEngine
 from auraeve.agent.tools.registry import ToolRegistry
@@ -53,7 +53,7 @@ class RuntimeKernel:
 
     def __init__(
         self,
-        bus: MessageBus,
+        bus: OutboundDispatcher,
         provider: LLMProvider,
         media_runtime: "MediaUnderstandingRuntime | None",
         workspace: Path,
@@ -102,7 +102,6 @@ class RuntimeKernel:
         self._identity_resolver = identity_resolver
         self._execution_workspace = execution_workspace
         self.memory_lifecycle = memory_lifecycle
-        self._running = False
         self._reload_lock = asyncio.Lock()
 
         # 会话管理与任务计划管理
@@ -212,16 +211,7 @@ class RuntimeKernel:
             run_command=self.execute_command,
         )
 
-    async def run(self) -> None:
-        self._running = True
-        await self._mcp_runtime.start()
-        logger.info("[kernel] RuntimeKernel started")
-
-        while self._running:
-            await asyncio.sleep(1.0)
-
     def stop(self) -> None:
-        self._running = False
         logger.info("[kernel] RuntimeKernel stopping")
 
     async def close_mcp(self) -> None:
@@ -262,18 +252,19 @@ class RuntimeKernel:
             for msg in projected_messages
             if str(msg.get("content", ""))
         )
-        inbound = InboundMessage(
+        metadata = dict(payload.get("metadata") or {})
+        metadata.setdefault("command_mode", command.mode)
+        metadata.setdefault("command_origin", command.origin)
+        return await self._process_message(
+            session_key=command.session_key,
             channel=channel,
             sender_id=str(payload.get("sender_id", command.source or "system")),
             chat_id=chat_id,
             content=content,
             media=list(payload.get("media") or []),
             attachments=list(payload.get("attachments") or []),
-            metadata=dict(payload.get("metadata") or {}),
+            metadata=metadata,
         )
-        inbound.metadata.setdefault("command_mode", command.mode)
-        inbound.metadata.setdefault("command_origin", command.origin)
-        return await self._process_message(inbound, session_key=command.session_key)
 
     @staticmethod
     def _derive_channel_and_chat_id(command: QueuedCommand) -> tuple[str, str]:
@@ -470,39 +461,51 @@ class RuntimeKernel:
             result.append(msg)
         return result
 
-    def _resolve_identity_metadata(self, msg: InboundMessage) -> None:
+    def _resolve_identity_metadata(
+        self,
+        *,
+        channel: str,
+        sender_id: str,
+        metadata: dict,
+    ) -> None:
         """Ensure message metadata contains normalized identity fields."""
-        if "display_name" not in msg.metadata:
-            msg.metadata["display_name"] = msg.metadata.get("webui_display_name") or msg.sender_id
-        if self._identity_resolver and "canonical_user_id" not in msg.metadata:
+        if "display_name" not in metadata:
+            metadata["display_name"] = metadata.get("webui_display_name") or sender_id
+        if self._identity_resolver and "canonical_user_id" not in metadata:
             resolved = self._identity_resolver.resolve(
-                channel=msg.channel,
-                external_user_id=msg.sender_id,
-                display_name=msg.metadata.get("display_name", ""),
+                channel=channel,
+                external_user_id=sender_id,
+                display_name=metadata.get("display_name", ""),
             )
-            self._identity_resolver.inject_metadata(msg.metadata, resolved)
+            self._identity_resolver.inject_metadata(metadata, resolved)
 
     @staticmethod
-    def _build_identity_context(msg: InboundMessage) -> str | None:
-        canonical_id = str(msg.metadata.get("canonical_user_id") or "").strip()
+    def _build_identity_context(
+        *,
+        channel: str,
+        sender_id: str,
+        chat_id: str,
+        metadata: dict,
+    ) -> str | None:
+        canonical_id = str(metadata.get("canonical_user_id") or "").strip()
         if not canonical_id:
             return None
 
         lines = [
             "## Identity Context",
             f"- canonical_user_id: {canonical_id}",
-            f"- display_name: {msg.metadata.get('display_name', msg.sender_id)}",
-            f"- channel: {msg.channel}",
-            f"- sender_id: {msg.sender_id}",
-            f"- chat_id: {msg.chat_id}",
+            f"- display_name: {metadata.get('display_name', sender_id)}",
+            f"- channel: {channel}",
+            f"- sender_id: {sender_id}",
+            f"- chat_id: {chat_id}",
         ]
-        relationship = str(msg.metadata.get("relationship_to_assistant") or "").strip()
+        relationship = str(metadata.get("relationship_to_assistant") or "").strip()
         if relationship:
             lines.append(f"- relationship_to_assistant: {relationship}")
-        confidence = msg.metadata.get("identity_confidence")
+        confidence = metadata.get("identity_confidence")
         if confidence is not None:
             lines.append(f"- identity_confidence: {confidence}")
-        source = str(msg.metadata.get("identity_source") or "").strip()
+        source = str(metadata.get("identity_source") or "").strip()
         if source:
             lines.append(f"- identity_source: {source}")
         if relationship == "brother":
@@ -536,50 +539,67 @@ class RuntimeKernel:
 
     async def _process_message(
         self,
-        msg: InboundMessage,
-        session_key: str | None = None,
+        *,
+        session_key: str,
+        channel: str,
+        sender_id: str,
+        chat_id: str,
+        content: str,
+        media: list[str] | None = None,
+        attachments=None,
+        metadata: dict | None = None,
     ) -> OutboundMessage | None:
-        if msg.channel == "system":
-            return await self._process_system_message(msg)
+        metadata = dict(metadata or {})
+        media = list(media or [])
+        attachments = list(attachments or [])
 
-        preview = msg.content[:80] + "..." if len(msg.content) > 80 else msg.content
-        logger.bind(fullContent=msg.content).info(
-            f"[kernel] processing {msg.channel}:{msg.sender_id}: {preview}"
+        preview = content[:80] + "..." if len(content) > 80 else content
+        logger.bind(fullContent=content).info(
+            f"[kernel] processing {channel}:{sender_id}: {preview}"
         )
 
-        self._resolve_identity_metadata(msg)
-        key = session_key or msg.session_key
+        self._resolve_identity_metadata(
+            channel=channel,
+            sender_id=sender_id,
+            metadata=metadata,
+        )
+        key = session_key
         session = self.sessions.get_or_create(key)
         thread_id = key
 
-        cmd = msg.content.strip().lower()
+        cmd = content.strip().lower()
         if cmd == "/new":
             session.clear()
             self.sessions.save(session)
             self.sessions.invalidate(session.key)
             self._plan.clear_plan(thread_id)
             return OutboundMessage(
-                channel=msg.channel,
-                chat_id=msg.chat_id,
+                channel=channel,
+                chat_id=chat_id,
                 content="新会话已开始。",
             )
         if cmd == "/help":
             return OutboundMessage(
-                channel=msg.channel,
-                chat_id=msg.chat_id,
+                channel=channel,
+                chat_id=chat_id,
                 content="可用命令：\n/new - 开始新对话\n/help - 显示帮助",
             )
 
-        self._set_tool_context(msg.channel, msg.chat_id, thread_id)
+        self._set_tool_context(channel, chat_id, thread_id)
 
         # session_start hook (fire-and-forget)
         asyncio.create_task(self.hooks.run_session_start(
-            HookSessionEvent(session_id=session.key, channel=msg.channel, chat_id=msg.chat_id)
+            HookSessionEvent(session_id=session.key, channel=channel, chat_id=chat_id)
         ))
 
-        identity_context = self._build_identity_context(msg)
-        current_message = msg.content
-        if bool(msg.metadata.get("is_owner")):
+        identity_context = self._build_identity_context(
+            channel=channel,
+            sender_id=sender_id,
+            chat_id=chat_id,
+            metadata=metadata,
+        )
+        current_message = content
+        if bool(metadata.get("is_owner")):
             current_message = f"*★owner:* {current_message}"
 
         extracted_attachments = None
@@ -588,23 +608,23 @@ class RuntimeKernel:
                 media_result = await self._media_runtime.preprocess_inbound(
                     content=current_message,
                     model=self.model,
-                    media=msg.media if msg.media else None,
-                    attachments=msg.attachments if msg.attachments else None,
+                    media=media if media else None,
+                    attachments=attachments if attachments else None,
                 )
                 current_message = media_result.content
-                msg.media = list(media_result.media or [])
+                media = list(media_result.media or [])
                 if media_result.attachments is not None:
                     extracted_attachments = list(media_result.attachments)
             except Exception as exc:
                 logger.warning(f"[media] 预处理失败，已回退原始流程: {exc}")
-                extracted_attachments = await self._extract_attachments_legacy(msg.attachments)
+                extracted_attachments = await self._extract_attachments_legacy(attachments)
         else:
-            extracted_attachments = await self._extract_attachments_legacy(msg.attachments)
+            extracted_attachments = await self._extract_attachments_legacy(attachments)
 
         self._set_media_understand_context(
             content=current_message,
-            media=msg.media if msg.media else None,
-            attachments=msg.attachments if msg.attachments else None,
+            media=media if media else None,
+            attachments=attachments if attachments else None,
         )
 
         # PromptAssembler (includes before_prompt_build hook)
@@ -613,9 +633,9 @@ class RuntimeKernel:
             messages=session.get_history(),
             current_query=current_message,
             identity_context=identity_context,
-            channel=msg.channel,
-            chat_id=msg.chat_id,
-            media=msg.media if msg.media else None,
+            channel=channel,
+            chat_id=chat_id,
+            media=media if media else None,
             attachments=extracted_attachments,
             available_tools=set(self.tools.tool_names),
         )
@@ -635,8 +655,8 @@ class RuntimeKernel:
             temperature=self.temperature,
             max_tokens=self.max_tokens,
             thread_id=thread_id,
-            channel=msg.channel,
-            chat_id=msg.chat_id,
+            channel=channel,
+            chat_id=chat_id,
         )
 
         final_content = recovery_result.final_content
@@ -650,7 +670,7 @@ class RuntimeKernel:
 
         # Persist session (with identity snapshot).
         identity_snapshot = {
-            k: msg.metadata[k]
+            k: metadata[k]
             for k in (
                 "canonical_user_id",
                 "display_name",
@@ -658,14 +678,14 @@ class RuntimeKernel:
                 "identity_confidence",
                 "identity_source",
             )
-            if k in msg.metadata
+            if k in metadata
         }
         session.add_message(
             "user",
-            msg.content,
-            channel=msg.channel,
-            chat_id=msg.chat_id,
-            sender_id=msg.sender_id,
+            content,
+            channel=channel,
+            chat_id=chat_id,
+            sender_id=sender_id,
             **({"identity": identity_snapshot} if identity_snapshot else {}),
         )
         session.add_message("assistant", persist_content,
@@ -677,9 +697,9 @@ class RuntimeKernel:
             asyncio.create_task(
                 self.memory_lifecycle.record_turn(
                     session_key=session.key,
-                    channel=msg.channel,
-                    chat_id=msg.chat_id,
-                    user_content=msg.content,
+                    channel=channel,
+                    chat_id=chat_id,
+                    user_content=content,
                     assistant_content=sanitized_content or "",
                     tools_used=tools_used if tools_used else [],
                 )
@@ -687,7 +707,7 @@ class RuntimeKernel:
 
         # session_end hook (fire-and-forget)
         asyncio.create_task(self.hooks.run_session_end(
-            HookSessionEvent(session_id=session.key, channel=msg.channel, chat_id=msg.chat_id)
+            HookSessionEvent(session_id=session.key, channel=channel, chat_id=chat_id)
         ))
 
         # Silent token handling
@@ -699,10 +719,10 @@ class RuntimeKernel:
         # message_sending hook
         send_event = HookMessageSendingEvent(
             content=final_content,
-            channel=msg.channel,
-            chat_id=msg.chat_id,
+            channel=channel,
+            chat_id=chat_id,
             session_id=session.key,
-            metadata=msg.metadata or {},
+            metadata=metadata,
         )
         send_result = await self.hooks.run_message_sending(send_event)
         if send_result.cancel:
@@ -712,102 +732,14 @@ class RuntimeKernel:
 
         preview = final_content[:120] + "..." if len(final_content) > 120 else final_content
         logger.bind(fullContent=final_content).info(
-            f"[kernel] response {msg.channel}:{msg.sender_id}: {preview}"
+            f"[kernel] response {channel}:{sender_id}: {preview}"
         )
 
         return OutboundMessage(
-            channel=msg.channel,
-            chat_id=msg.chat_id,
+            channel=channel,
+            chat_id=chat_id,
             content=final_content,
-            metadata=msg.metadata or {},
+            metadata=metadata,
         )
-
-    async def _process_system_message(self, msg: InboundMessage) -> OutboundMessage | None:
-        logger.info(f"[kernel] processing system message from {msg.sender_id}")
-
-        if ":" in msg.chat_id:
-            parts = msg.chat_id.split(":", 1)
-            origin_channel, origin_chat_id = parts[0], parts[1]
-        else:
-            origin_channel, origin_chat_id = "dingtalk", msg.chat_id
-
-        session_key = f"{origin_channel}:{origin_chat_id}"
-        thread_id = session_key
-        session = self.sessions.get_or_create(session_key)
-        self._set_tool_context(origin_channel, origin_chat_id, thread_id)
-
-        assemble_result = await self.assembler.assemble(
-            session_id=session_key,
-            messages=session.get_history(),
-            current_query=msg.content,
-            channel=origin_channel,
-            chat_id=origin_chat_id,
-            available_tools=set(self.tools.tool_names),
-        )
-        if assemble_result.compacted_messages is not None:
-            session.replace_history(assemble_result.compacted_messages)
-
-        recovery_result = await self._orchestrator.run(
-            messages=assemble_result.messages,
-            model=self.model,
-            temperature=self.temperature,
-            max_tokens=self.max_tokens,
-            thread_id=thread_id,
-            channel=origin_channel,
-            chat_id=origin_chat_id,
-        )
-
-        final_content = self._sanitize_assistant_output(recovery_result.final_content) or "后台任务已完成。"
-        session.add_message("user", f"[系统:{msg.sender_id}] {msg.content}")
-        session.add_message("assistant", final_content)
-        self.sessions.save(session)
-        asyncio.create_task(self.engine.after_turn(session.key, session.get_history()))
-
-        return OutboundMessage(channel=origin_channel, chat_id=origin_chat_id, content=final_content)
-
-    async def _resume_with_subagent_result(
-        self,
-        session_key: str | None = None,
-        channel: str = "",
-        chat_id: str = "",
-        synthetic_messages: list[dict] | None = None,
-        runtime_instruction: str = "",
-    ) -> "OutboundMessage | None":
-        """子体异步完成后，以 tool result 语义续写母体 LLM，不插入 user 消息。"""
-        session_key = session_key or (f"{channel}:{chat_id}" if channel and chat_id else chat_id)
-        session = self.sessions.get_or_create(session_key)
-        self._set_tool_context(channel, chat_id, session_key)
-
-        history = session.get_history()
-
-        assemble_result = await self.assembler.assemble(
-            session_id=session_key,
-            messages=history,
-            current_query="",
-            channel=channel,
-            chat_id=chat_id,
-            available_tools=set(self.tools.tool_names),
-            extra_suffix_messages=synthetic_messages or [],
-            runtime_instruction=runtime_instruction,
-        )
-        if assemble_result.compacted_messages is not None:
-            session.replace_history(assemble_result.compacted_messages)
-
-        recovery_result = await self._orchestrator.run(
-            messages=assemble_result.messages,
-            model=self.model,
-            temperature=self.temperature,
-            max_tokens=self.max_tokens,
-            thread_id=session_key,
-            channel=channel,
-            chat_id=chat_id,
-        )
-
-        final_content = self._sanitize_assistant_output(recovery_result.final_content) or "任务已完成。"
-        session.add_message("assistant", final_content)
-        self.sessions.save(session)
-        asyncio.create_task(self.engine.after_turn(session_key, session.get_history()))
-
-        return OutboundMessage(channel=channel, chat_id=chat_id, content=final_content)
 
 

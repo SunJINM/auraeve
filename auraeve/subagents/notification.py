@@ -1,7 +1,6 @@
-"""子智能体通知模型与兼容队列。"""
+"""子智能体通知模型。"""
 from __future__ import annotations
 
-import threading
 from dataclasses import dataclass
 
 
@@ -30,32 +29,3 @@ class TaskNotification:
             "tool_use_count": self.tool_use_count,
             "total_tokens": self.total_tokens,
         }
-
-
-class NotificationQueue:
-    """线程安全的通知队列。"""
-
-    def __init__(self) -> None:
-        self._queue: list[TaskNotification] = []
-        self._lock = threading.Lock()
-
-    def enqueue(self, notification: TaskNotification) -> None:
-        with self._lock:
-            self._queue.append(notification)
-
-    def drain(self) -> list[TaskNotification]:
-        """取出所有待处理通知并清空队列。"""
-        with self._lock:
-            result = self._queue.copy()
-            self._queue.clear()
-            return result
-
-    @property
-    def pending_count(self) -> int:
-        with self._lock:
-            return len(self._queue)
-
-    @property
-    def has_pending(self) -> bool:
-        with self._lock:
-            return len(self._queue) > 0

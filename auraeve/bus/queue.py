@@ -1,4 +1,4 @@
-"""异步消息队列，解耦渠道与 Agent 核心的通信。"""
+"""出站消息分发器。"""
 
 import asyncio
 from typing import Callable, Awaitable
@@ -8,11 +8,12 @@ from loguru import logger
 from auraeve.bus.events import OutboundMessage
 
 
-class MessageBus:
+class OutboundDispatcher:
     """
-    异步消息总线，将聊天渠道与 Agent 核心解耦。
+    仅负责出站消息分发。
 
-    渠道将消息推入入站队列，Agent 处理后将响应推入出站队列。
+    运行时入站已经统一收敛到 RuntimeCommandQueue；这里保留渠道侧的
+    outbound 订阅与投递能力，避免把回复分发逻辑散落在各入口里。
     """
 
     def __init__(self):

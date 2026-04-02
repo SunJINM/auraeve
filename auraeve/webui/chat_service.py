@@ -29,7 +29,7 @@ class ChatService:
 
     职责：
     - 历史加载（复用 SessionManager）
-    - 发送消息（publish_inbound 交给 RuntimeKernel 处理）
+    - 发送消息（统一入 RuntimeCommandQueue）
     - 终止（软中止：标记 done/aborted）
     - SSE 事件队列管理（每个 sessionKey 对应一个广播队列）
     """
@@ -73,7 +73,7 @@ class ChatService:
         display_name: str | None = None,
     ) -> tuple[str, str]:
         """
-        发布入站命令，返回 (run_id, status)。
+        发布统一运行时命令，返回 (run_id, status)。
         status = "in_flight" 表示幂等重入（相同 idempotencyKey 的请求）。
         """
         if idempotency_key in self._idem:

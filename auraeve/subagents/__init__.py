@@ -4,13 +4,12 @@ from .context_isolation import SubagentContext, create_subagent_context
 from .data.models import ProgressTracker, Task, TaskBudget, TaskStatus
 from .executor import SubagentExecutor
 from .lifecycle import SubagentLifecycle
-from .notification import NotificationQueue, TaskNotification
+from .notification import TaskNotification
 
 __all__ = [
     "SubagentContext",
     "SubagentExecutor",
     "SubagentLifecycle",
-    "NotificationQueue",
     "ProgressTracker",
     "Task",
     "TaskBudget",
