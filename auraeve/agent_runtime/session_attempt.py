@@ -19,6 +19,7 @@ from auraeve.plugins.base import (
     HookBeforeModelResolveEvent,
     HookBeforeToolCallEvent,
 )
+from auraeve.providers.base import normalize_tool_call_requests
 
 from .budget import ExecutionBudget, normalize_runtime_execution_config
 from .trace import RunTrace
@@ -228,7 +229,8 @@ class SessionAttemptRunner:
                 trace.add("model_completed", finish_reason=response.finish_reason)
                 break
 
-            fp = _tool_fingerprint(response.tool_calls)
+            tool_calls = normalize_tool_call_requests(list(response.tool_calls))
+            fp = _tool_fingerprint(tool_calls)
             recent_fingerprints.append(fp)
             window = int(self._loop_guard_cfg["fingerprintWindow"])
             repeat_threshold = int(self._loop_guard_cfg["repeatBlockThreshold"])
@@ -245,11 +247,11 @@ class SessionAttemptRunner:
                 if mode == "slowdown":
                     await asyncio.sleep(int(self._loop_guard_cfg["slowdownBackoffMs"]) / 1000)
                 elif mode == "block_tools":
-                    tool_call_dicts = _make_tool_call_dicts(response.tool_calls)
+                    tool_call_dicts = _make_tool_call_dicts(tool_calls)
                     before_len = len(msgs)
                     msgs = _add_assistant_msg(msgs, response.content, tool_call_dicts, response.reasoning_content)
                     transcript_messages.extend(msgs[before_len:])
-                    for tc in response.tool_calls:
+                    for tc in tool_calls:
                         before_len = len(msgs)
                         msgs = _add_tool_result(msgs, tc.id, tc.name, "[工具调用被跳过：检测到重复循环]")
                         transcript_messages.extend(msgs[before_len:])
@@ -268,7 +270,6 @@ class SessionAttemptRunner:
                         }
                     )
 
-            tool_calls = list(response.tool_calls)
             admitted = budget.admit_tool_calls(len(tool_calls))
             if admitted <= 0:
                 trace.stop_reason = "max_tool_calls_exhausted"

@@ -75,8 +75,7 @@ class ChannelRuntimeManager:
         if self.is_napcat_enabled():
             await self.start_napcat()
         if not self.channels:
-            logger.warning("")
-            self.add_terminal_channel()
+            logger.warning("没有任何渠道启动，使用 --terminal 启动终端模式")
 
     def add_terminal_channel(self) -> Any:
         terminal_channel = self._terminal_factory(self.agent.command_queue)

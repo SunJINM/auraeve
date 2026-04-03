@@ -36,6 +36,17 @@ class TranscriptToolResultBlock(BaseModel):
     content: str = ""
 
 
+class TranscriptToolUseBlock(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: str = Field(min_length=1)
+    type: Literal["tool_use"] = "tool_use"
+    toolCallId: str = ""
+    toolName: str = ""
+    arguments: Any = None
+    result: str | None = None
+    status: Literal["running", "success", "error"] = "running"
+
+
 class TranscriptAssistantTextBlock(BaseModel):
     model_config = ConfigDict(extra="forbid")
     id: str = Field(min_length=1)
@@ -54,8 +65,8 @@ class TranscriptRunStatusBlock(BaseModel):
 
 
 TranscriptCollapsedActivityItem = Annotated[
-    TranscriptToolCallBlock | TranscriptToolResultBlock,
-    Field(discriminator="type"),
+    TranscriptToolUseBlock,
+    Field(),
 ]
 
 
@@ -65,13 +76,14 @@ class TranscriptCollapsedActivityBlock(BaseModel):
     type: Literal["collapsed_activity"] = "collapsed_activity"
     activityType: Literal["read"] = "read"
     count: int = Field(default=1, ge=1)
-    blocks: list[TranscriptCollapsedActivityItem] = Field(default_factory=list)
+    blocks: list[TranscriptToolUseBlock] = Field(default_factory=list)
 
 
 TranscriptBlock = Annotated[
     TranscriptUserBlock
     | TranscriptToolCallBlock
     | TranscriptToolResultBlock
+    | TranscriptToolUseBlock
     | TranscriptAssistantTextBlock
     | TranscriptRunStatusBlock
     | TranscriptCollapsedActivityBlock,

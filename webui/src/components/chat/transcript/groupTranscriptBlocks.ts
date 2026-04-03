@@ -1,35 +1,33 @@
 import type {
   TranscriptBlock,
   TranscriptCollapsedActivityBlock,
-  TranscriptToolCallBlock,
-  TranscriptToolResultBlock,
+  TranscriptToolUseBlock,
 } from './types'
 
 const COLLAPSIBLE_TOOL_NAMES = new Set(['read', 'read_file', 'grep', 'glob', 'bash'])
 
 function isCollapsibleToolBlock(
   block: TranscriptBlock,
-): block is TranscriptToolCallBlock | TranscriptToolResultBlock {
+): block is TranscriptToolUseBlock {
   return (
-    (block.type === 'tool_call' || block.type === 'tool_result') &&
+    block.type === 'tool_use' &&
     COLLAPSIBLE_TOOL_NAMES.has(block.toolName)
   )
 }
 
 export function groupTranscriptBlocks(blocks: TranscriptBlock[]): TranscriptBlock[] {
   const grouped: TranscriptBlock[] = []
-  let current: Array<TranscriptToolCallBlock | TranscriptToolResultBlock> = []
+  let current: TranscriptToolUseBlock[] = []
 
   const flush = () => {
     if (current.length === 0) return
 
-    const toolCallCount = current.filter((block) => block.type === 'tool_call').length
-    if (toolCallCount >= 2) {
+    if (current.length >= 2) {
       const collapsed: TranscriptCollapsedActivityBlock = {
         id: `collapsed:${current[0]!.id}`,
         type: 'collapsed_activity',
         activityType: 'read',
-        count: toolCallCount,
+        count: current.length,
         blocks: current,
       }
       grouped.push(collapsed)

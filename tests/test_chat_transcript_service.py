@@ -35,13 +35,17 @@ def test_project_history_into_transcript_blocks(tmp_path: Path) -> None:
 
     blocks = project_history_into_transcript_blocks(session.messages)
 
+    # tool_call + tool_result 合并为单个 tool_use
     assert [item["type"] for item in blocks] == [
         "user",
-        "tool_call",
-        "tool_result",
+        "tool_use",
         "assistant_text",
     ]
     assert all(isinstance(item.get("id"), str) and item["id"] for item in blocks)
+    # tool_use 应包含 result 和 status
+    tool_use = blocks[1]
+    assert tool_use["status"] == "success"
+    assert tool_use["result"] == '{"ok": true}'
 
     blocks_again = project_history_into_transcript_blocks(session.messages)
     assert [item["id"] for item in blocks] == [item["id"] for item in blocks_again]
@@ -83,11 +87,10 @@ def test_collapse_readonly_activity_into_single_block(tmp_path: Path) -> None:
     assert all(isinstance(item.get("id"), str) and item["id"] for item in blocks)
     assert blocks[1]["activityType"] == "read"
     assert blocks[1]["count"] == 2
+    # 折叠块内部现在是 tool_use 类型
     assert [item["type"] for item in blocks[1]["blocks"]] == [
-        "tool_call",
-        "tool_result",
-        "tool_call",
-        "tool_result",
+        "tool_use",
+        "tool_use",
     ]
     assert all(isinstance(item.get("id"), str) and item["id"] for item in blocks[1]["blocks"])
 
@@ -154,11 +157,13 @@ def test_collapsed_activity_nested_blocks_require_structured_items() -> None:
             "count": 1,
             "blocks": [
                 {
-                    "id": "tool_call:1",
-                    "type": "tool_call",
+                    "id": "tool_use:1",
+                    "type": "tool_use",
                     "toolCallId": "call_1",
                     "toolName": "read",
                     "arguments": {"path": "README.md"},
+                    "result": "content",
+                    "status": "success",
                 }
             ],
         }
@@ -173,7 +178,7 @@ def test_collapsed_activity_nested_blocks_require_structured_items() -> None:
                 "count": 1,
                 "blocks": [
                     {
-                        "type": "tool_call",
+                        "type": "tool_use",
                         "toolName": "read",
                         "arguments": {"path": "README.md"},
                     }

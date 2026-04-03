@@ -1,7 +1,6 @@
 export type TranscriptBlock =
   | TranscriptUserBlock
-  | TranscriptToolCallBlock
-  | TranscriptToolResultBlock
+  | TranscriptToolUseBlock
   | TranscriptAssistantTextBlock
   | TranscriptRunStatusBlock
   | TranscriptAgentTaskBlock
@@ -15,20 +14,14 @@ export interface TranscriptUserBlock {
   timestamp: string
 }
 
-export interface TranscriptToolCallBlock {
+export interface TranscriptToolUseBlock {
   id: string
-  type: 'tool_call'
+  type: 'tool_use'
   toolCallId: string
   toolName: string
   arguments: unknown
-}
-
-export interface TranscriptToolResultBlock {
-  id: string
-  type: 'tool_result'
-  toolCallId: string
-  toolName: string
-  content: string
+  result: string | null
+  status: 'running' | 'success' | 'error'
 }
 
 export interface TranscriptAssistantTextBlock {
@@ -61,7 +54,7 @@ export interface TranscriptCollapsedActivityBlock {
   type: 'collapsed_activity'
   activityType: 'read'
   count: number
-  blocks: Array<TranscriptToolCallBlock | TranscriptToolResultBlock>
+  blocks: TranscriptToolUseBlock[]
 }
 
 export interface TranscriptSystemNoticeBlock {

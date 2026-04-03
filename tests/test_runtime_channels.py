@@ -47,7 +47,8 @@ class _FakeTools:
 
 
 @pytest.mark.asyncio
-async def test_manager_falls_back_to_terminal_when_no_channels_configured() -> None:
+async def test_manager_no_fallback_terminal_when_no_channels_configured() -> None:
+    """所有渠道关闭时不应自动启动终端模式。"""
     terminal_channel = _FakeChannel("terminal")
     bus = MagicMock()
     manager = ChannelRuntimeManager(
@@ -67,6 +68,33 @@ async def test_manager_falls_back_to_terminal_when_no_channels_configured() -> N
     )
 
     await manager.start_initial_channels(terminal_mode=False)
+
+    assert manager.channels == []
+    bus.subscribe_outbound.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_manager_starts_terminal_when_explicitly_requested() -> None:
+    """显式指定 terminal_mode=True 时应启动终端。"""
+    terminal_channel = _FakeChannel("terminal")
+    bus = MagicMock()
+    manager = ChannelRuntimeManager(
+        config=SimpleNamespace(
+            DINGTALK_ENABLED=False,
+            DINGTALK_CLIENT_ID="",
+            DINGTALK_CLIENT_SECRET="",
+            NAPCAT_ENABLED=False,
+        ),
+        bus=bus,
+        agent=MagicMock(command_queue=object(), tools=_FakeTools()),
+        workspace=Path("."),
+        terminal_factory=lambda queue: terminal_channel,
+        dingtalk_factory=MagicMock(),
+        napcat_factory=MagicMock(),
+        napcat_tool_factory=MagicMock(return_value=[]),
+    )
+
+    await manager.start_initial_channels(terminal_mode=True)
 
     assert manager.channels == [terminal_channel]
     bus.subscribe_outbound.assert_called_once_with("terminal", terminal_channel.send)

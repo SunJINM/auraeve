@@ -13,6 +13,7 @@ from auraeve.providers.base import (
     LLMProvider, LLMResponse, ToolCallRequest,
     LLMCallError, RateLimitError, OverloadError,
     ContextOverflowError, AuthError, BillingError,
+    normalize_tool_call_ids_in_messages, normalize_tool_call_requests,
 )
 
 # 上下文溢出的错误消息特征（各厂商不尽相同）
@@ -103,7 +104,7 @@ class OpenAICompatibleProvider(LLMProvider):
 
         kwargs: dict[str, Any] = {
             "model": model,
-            "messages": messages,
+            "messages": normalize_tool_call_ids_in_messages(messages),
             "max_tokens": max_tokens,
             "temperature": temperature,
         }
@@ -154,6 +155,7 @@ class OpenAICompatibleProvider(LLMProvider):
                     name=tc.function.name,
                     arguments=args,
                 ))
+            tool_calls = normalize_tool_call_requests(tool_calls)
 
         usage = {}
         if response.usage:

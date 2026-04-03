@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -12,6 +13,7 @@ from loguru import logger
 from auraeve.agent_runtime.command_queue import RuntimeCommandQueue
 from auraeve.agent_runtime.command_types import QueuedCommand
 from auraeve.bus.events import OutboundMessage
+from auraeve.observability import get_observability
 from auraeve.session.manager import SessionManager
 from auraeve.webui.schemas import ChatTranscriptBlockEvent, ChatTranscriptDoneEvent
 
@@ -35,6 +37,7 @@ class ChatService:
     - 发送消息（统一入 RuntimeCommandQueue）
     - 终止（软中止：标记 done/aborted）
     - SSE 事件队列管理（每个 sessionKey 对应一个广播队列）
+    - 实时 tool_use 事件推送（订阅 observability 的 runtime/tools 事件）
     """
 
     def __init__(
@@ -50,6 +53,9 @@ class ChatService:
         self._idem: dict[str, str] = {}
         # session_key -> list[asyncio.Queue]（SSE 订阅者）
         self._sse_queues: dict[str, list[asyncio.Queue]] = {}
+        # obs 订阅 ID
+        self._obs_sub_id: str | None = None
+        self._obs_task: asyncio.Task | None = None
 
     # ─── 历史 ──────────────────────────────────────────────────────
 
@@ -133,6 +139,9 @@ class ChatService:
                 },
             ),
         )
+
+        # 启动 obs 监听（如果尚未启动）
+        self._ensure_obs_listener()
 
         return run_id, "started"
 
@@ -220,6 +229,129 @@ class ChatService:
         if run_id and run_id in self._runs:
             self._runs[run_id].done = True
 
+    # ─── Observability 实时 tool 事件监听 ──────────────────────────
+
+    def _ensure_obs_listener(self) -> None:
+        """确保 obs tool 事件监听器已启动。"""
+        if self._obs_task is not None and not self._obs_task.done():
+            return
+        try:
+            obs = get_observability()
+            if not obs.enabled:
+                return
+            self._obs_sub_id, queue = obs.subscribe(subsystems=["runtime/tools"])
+            self._obs_task = asyncio.create_task(self._obs_tool_listener(queue))
+        except Exception:
+            logger.debug("无法启动 obs tool 事件监听")
+
+    async def _obs_tool_listener(self, queue: asyncio.Queue) -> None:
+        """持续消费 obs runtime/tools 事件，实时推送 tool_use block。"""
+        try:
+            while True:
+                event = await queue.get()
+                try:
+                    await self._handle_tool_event(event)
+                except Exception:
+                    logger.debug(f"处理 tool 事件异常: {event.get('message', '')}")
+        except asyncio.CancelledError:
+            pass
+        finally:
+            if self._obs_sub_id:
+                try:
+                    get_observability().unsubscribe(self._obs_sub_id)
+                except Exception:
+                    pass
+
+    async def _handle_tool_event(self, event: dict[str, Any]) -> None:
+        """将 obs tool 事件转化为 transcript tool_use block 推送。"""
+        message = str(event.get("message") or "")
+        attrs = event.get("attrs") or {}
+        session_key = str(event.get("sessionKey") or "")
+        if not session_key:
+            return
+
+        # 只处理 webui 会话
+        state = self._latest_run_for_session(session_key)
+        if state is None or state.done:
+            return
+        run_id = state.run_id
+
+        tool_name = str(attrs.get("toolName") or "")
+        tool_call_id = str(attrs.get("toolCallId") or "")
+        block_id = f"tool_use:{tool_call_id or uuid.uuid4()}"
+
+        if message == "tool_call_started":
+            args_preview = str(attrs.get("argsPreview") or "")
+            # 尝试解析 args 为结构化数据
+            parsed_args: Any = args_preview
+            try:
+                parsed_args = json.loads(args_preview)
+            except Exception:
+                pass
+
+            await self._broadcast(
+                session_key,
+                self._build_block_event(
+                    session_key=session_key,
+                    run_id=run_id,
+                    seq=self._next_seq(run_id),
+                    block={
+                        "id": block_id,
+                        "type": "tool_use",
+                        "toolCallId": tool_call_id,
+                        "toolName": tool_name,
+                        "arguments": parsed_args,
+                        "result": None,
+                        "status": "running",
+                    },
+                ),
+            )
+
+        elif message == "tool_call_completed":
+            status_str = str(attrs.get("status") or "success")
+            tool_status = "error" if status_str in ("failed", "timeout", "policy_denied", "hook_blocked") else "success"
+            result_preview = str(attrs.get("resultPreview") or "")
+
+            await self._broadcast(
+                session_key,
+                self._build_block_event(
+                    session_key=session_key,
+                    run_id=run_id,
+                    seq=self._next_seq(run_id),
+                    op="replace",
+                    block={
+                        "id": block_id,
+                        "type": "tool_use",
+                        "toolCallId": tool_call_id,
+                        "toolName": tool_name,
+                        "arguments": None,
+                        "result": result_preview,
+                        "status": tool_status,
+                    },
+                ),
+            )
+
+        elif message in ("tool_call_policy_denied", "tool_call_hook_blocked"):
+            reason = str(attrs.get("reason") or message)
+            await self._broadcast(
+                session_key,
+                self._build_block_event(
+                    session_key=session_key,
+                    run_id=run_id,
+                    seq=self._next_seq(run_id),
+                    op="replace",
+                    block={
+                        "id": block_id,
+                        "type": "tool_use",
+                        "toolCallId": tool_call_id,
+                        "toolName": tool_name,
+                        "arguments": None,
+                        "result": reason,
+                        "status": "error",
+                    },
+                ),
+            )
+
     # ─── SSE 订阅 ──────────────────────────────────────────────────
 
     async def subscribe(self, session_key: str) -> AsyncIterator[dict]:
@@ -267,6 +399,7 @@ class ChatService:
         run_id: str | None,
         seq: int,
         block: dict[str, Any],
+        op: str = "append",
     ) -> dict[str, Any]:
         return ChatTranscriptBlockEvent.model_validate(
             {
@@ -274,7 +407,7 @@ class ChatService:
                 "sessionKey": session_key,
                 "runId": run_id,
                 "seq": seq,
-                "op": "append",
+                "op": op,
                 "block": block,
             }
         ).model_dump(mode="json", exclude_none=True)
