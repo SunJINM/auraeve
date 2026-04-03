@@ -169,16 +169,7 @@ class SessionAttemptRunner:
                             max_tokens=max_tokens,
                             tools=[],
                         )
-                        final_content = (
-                            summary_response.get("content")
-                            or summary_response.get("text")
-                            or ""
-                        )
-                        if not final_content:
-                            # fallback: 尝试从 choices 结构取
-                            choices = summary_response.get("choices") or []
-                            if choices:
-                                final_content = (choices[0].get("message") or {}).get("content") or ""
+                        final_content = summary_response.content or ""
                     except Exception as exc:
                         logger.warning(f"[session_attempt] 子体预算耗尽汇总失败: {exc}")
                         final_content = None
@@ -294,15 +285,7 @@ class SessionAttemptRunner:
                             max_tokens=max_tokens,
                             tools=[],
                         )
-                        final_content = (
-                            summary_response.get("content")
-                            or summary_response.get("text")
-                            or ""
-                        )
-                        if not final_content:
-                            choices = summary_response.get("choices") or []
-                            if choices:
-                                final_content = (choices[0].get("message") or {}).get("content") or ""
+                        final_content = summary_response.content or ""
                     except Exception as exc:
                         logger.warning(f"[session_attempt] 子体预算耗尽汇总失败: {exc}")
                         final_content = None

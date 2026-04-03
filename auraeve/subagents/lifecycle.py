@@ -75,13 +75,16 @@ class SubagentLifecycle:
         notification: TaskNotification,
     ) -> None:
         session_key = f"{task.origin_channel}:{task.origin_chat_id}".strip(":")
+        payload = notification.to_payload()
+        payload["channel"] = task.origin_channel
+        payload["chat_id"] = task.origin_chat_id
         self._command_queue.enqueue_command(
             QueuedCommand(
                 session_key=session_key or task.task_id,
                 source="subagent",
                 mode="task-notification",
                 priority="later",
-                payload=notification.to_payload(),
+                payload=payload,
                 origin={"kind": "task-notification", "is_system_generated": True},
             )
         )

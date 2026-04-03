@@ -10,7 +10,8 @@ def project_command_to_messages(command: QueuedCommand) -> list[dict]:
     if command.mode == "task-notification":
         payload = command.payload
         text = (
-            "A background agent completed a task:\n"
+            "A background agent completed a task.\n"
+            "This is a system task-notification, not a new user message.\n"
             f"- task_id: {payload.get('task_id', '')}\n"
             f"- agent_type: {payload.get('agent_type', '')}\n"
             f"- goal: {payload.get('goal', '')}\n"

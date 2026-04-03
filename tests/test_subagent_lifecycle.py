@@ -31,6 +31,8 @@ async def test_lifecycle_marks_completed_and_enqueues_notification():
     assert commands[0].mode == "task-notification"
     assert commands[0].priority == "later"
     assert commands[0].payload["status"] == "completed"
+    assert commands[0].payload["channel"] == "webui"
+    assert commands[0].payload["chat_id"] == "chat-1"
 
 
 @pytest.mark.asyncio
@@ -55,3 +57,5 @@ async def test_lifecycle_marks_failed_and_enqueues_failure_notification():
     commands = queue.snapshot_all()
     assert len(commands) == 1
     assert commands[0].payload["status"] == "failed"
+    assert commands[0].payload["channel"] == "webui"
+    assert commands[0].payload["chat_id"] == "chat-2"

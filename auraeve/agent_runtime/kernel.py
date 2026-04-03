@@ -252,6 +252,9 @@ class RuntimeKernel:
         metadata = dict(payload.get("metadata") or {})
         metadata.setdefault("command_mode", command.mode)
         metadata.setdefault("command_origin", command.origin)
+        if command.mode == "task-notification":
+            metadata.setdefault("is_meta_event", True)
+            metadata.setdefault("meta_event_kind", "task-notification")
         return await self._process_message(
             session_key=command.session_key,
             channel=channel,
@@ -496,6 +499,7 @@ class RuntimeKernel:
         metadata: dict | None = None,
     ) -> OutboundMessage | None:
         metadata = dict(metadata or {})
+        is_meta_event = bool(metadata.get("is_meta_event"))
         media = list(media or [])
         attachments = list(attachments or [])
 
@@ -600,19 +604,20 @@ class RuntimeKernel:
         sanitized_content = self._sanitize_assistant_output(final_content)
         persist_content = sanitized_content if sanitized_content is not None else SILENT_REPLY_TOKEN
 
-        session.add_message(
-            "user",
-            content,
-            channel=channel,
-            chat_id=chat_id,
-            sender_id=sender_id,
-        )
+        if not is_meta_event:
+            session.add_message(
+                "user",
+                content,
+                channel=channel,
+                chat_id=chat_id,
+                sender_id=sender_id,
+            )
         session.add_message("assistant", persist_content,
                             tools_used=tools_used if tools_used else None)
         self.sessions.save(session)
 
         asyncio.create_task(self.engine.after_turn(session.key, session.get_history()))
-        if self.memory_lifecycle is not None:
+        if self.memory_lifecycle is not None and not is_meta_event:
             asyncio.create_task(
                 self.memory_lifecycle.record_turn(
                     session_key=session.key,
