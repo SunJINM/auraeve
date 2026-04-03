@@ -17,6 +17,7 @@ from auraeve.observability import get_observability
 from auraeve.agent_runtime.tool_policy.contracts import PolicyContext
 from auraeve.agent_runtime.tool_runtime_context import (
     FileReadStateStore,
+    TaskReadStateStore,
     ToolRuntimeContext,
     use_tool_runtime_context,
 )
@@ -151,7 +152,10 @@ class SessionAttemptRunner:
         recent_fingerprints: list[str] = []
         transcript_messages: list[dict[str, Any]] = []
         file_reads = FileReadStateStore()
-        runtime_context = ToolRuntimeContext(file_reads=file_reads)
+        runtime_context = ToolRuntimeContext(
+            file_reads=file_reads,
+            task_reads=TaskReadStateStore(),
+        )
 
         budget = ExecutionBudget(self._execution_cfg)
         trace = RunTrace(session_id=thread_id, is_subagent=is_subagent)

@@ -183,14 +183,16 @@ class ContextBuilder:
         if {"TaskCreate", "TaskGet", "TaskUpdate", "TaskList"} & tools:
             task_guidance = [
                 "## 任务管理",
-                "复杂任务（3 步以上）使用 TaskCreate / TaskGet / TaskUpdate / TaskList 管理工作，不要把当前任务列表直接写进回复里。",
-                "开始执行某项前先用 TaskUpdate 标记 in_progress；完成后立刻标记 completed；修改前先用 TaskGet 读取最新状态。",
+                "复杂任务（3 步以上）或非平凡工作，使用 TaskCreate / TaskGet / TaskUpdate / TaskList 管理进度；纯对话或简单单步任务通常不需要。",
+                "推荐流程：先用 TaskList 看概览，再用 TaskGet 获取某个将要处理的任务详情；开始时用 TaskUpdate 标记 in_progress，完成后立刻标记 completed。",
+                "完成一个任务后，优先再次调用 TaskList 查看下一项可执行工作，而不是反复读取同一个任务。",
                 "",
             ]
         elif "todo" in tools:
             task_guidance = [
                 "## 计划与自检",
                 "复杂任务（3 步以上）先调用 todo 建立计划，并保持同一时刻仅一个 in_progress。",
+                "如果当前工作确实适合计划跟踪，再使用 todo；如果不相关就不要为了形式而更新。",
                 "每完成一步立即更新状态，结束前自检：交付物是否齐全、是否已完成必要消息发送、是否还需用户确认。",
                 "",
             ]

@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import json
 from typing import Any
 
 from auraeve.agent.tasks import TaskStore
-from auraeve.agent.tools.base import Tool
+from auraeve.agent.tools.base import Tool, ToolExecutionResult
 
 
 class TaskCreateTool(Tool):
@@ -18,8 +17,8 @@ class TaskCreateTool(Tool):
     @property
     def description(self) -> str:
         return (
-            "创建一个新任务。适合在复杂工作开始时拆出清晰的任务项。"
-            "任务应写成明确可执行的步骤，默认状态为 pending。"
+            "创建一个新任务。适合在复杂、多步骤工作中建立结构化任务列表。"
+            "新任务默认为 pending；需要指派负责人或建立依赖时，用 TaskUpdate 继续补充。"
         )
 
     @property
@@ -38,7 +37,7 @@ class TaskCreateTool(Tool):
             "required": ["subject", "description"],
         }
 
-    async def execute(self, **kwargs: Any) -> str:
+    async def execute(self, **kwargs: Any) -> ToolExecutionResult:
         task = self._store.create_task(
             subject=kwargs["subject"],
             description=kwargs["description"],
@@ -48,4 +47,12 @@ class TaskCreateTool(Tool):
             blocked_by=kwargs.get("blockedBy"),
             metadata=kwargs.get("metadata"),
         )
-        return json.dumps(task.to_payload(), ensure_ascii=False)
+        return ToolExecutionResult(
+            content=f"Task #{task.id} created successfully: {task.subject}",
+            data={
+                "task": {
+                    "id": task.id,
+                    "subject": task.subject,
+                }
+            },
+        )

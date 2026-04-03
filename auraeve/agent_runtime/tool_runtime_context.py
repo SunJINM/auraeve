@@ -3,6 +3,8 @@ from __future__ import annotations
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
+import json
+from typing import Any
 
 
 @dataclass(slots=True)
@@ -30,8 +32,33 @@ class FileReadStateStore:
 
 
 @dataclass(slots=True)
+class TaskReadSnapshot:
+    task_id: str
+    payload: dict[str, Any] | None
+    last_action: str
+
+
+@dataclass(slots=True)
+class TaskReadStateStore:
+    snapshots: dict[str, TaskReadSnapshot] = field(default_factory=dict)
+
+    def record(self, snapshot: TaskReadSnapshot) -> None:
+        self.snapshots[snapshot.task_id] = snapshot
+
+    def get(self, task_id: str) -> TaskReadSnapshot | None:
+        return self.snapshots.get(task_id)
+
+    @staticmethod
+    def payload_equals(left: dict[str, Any] | None, right: dict[str, Any] | None) -> bool:
+        return json.dumps(left or {}, sort_keys=True, ensure_ascii=False) == json.dumps(
+            right or {}, sort_keys=True, ensure_ascii=False
+        )
+
+
+@dataclass(slots=True)
 class ToolRuntimeContext:
     file_reads: FileReadStateStore
+    task_reads: TaskReadStateStore = field(default_factory=TaskReadStateStore)
 
 
 _CURRENT_CONTEXT: ContextVar[ToolRuntimeContext | None] = ContextVar(
