@@ -27,6 +27,8 @@ _CONTEXT_OVERFLOW_PATTERNS = [
     "请求的token数超过",
     "context_overflow",
     "input is too long",
+    "413 request entity too large",
+    "request entity too large",
 ]
 
 # 配额/计费错误特征

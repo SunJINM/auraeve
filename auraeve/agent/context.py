@@ -139,8 +139,8 @@ class ContextBuilder:
         """工具目录 + 工具调用风格规范。"""
         # 核心工具描述映射
         CORE_TOOL_SUMMARIES: dict[str, str] = {
-            "read_file":      "读取文件内容",
-            "write_file":     "创建或覆盖文件",
+            "Read":           "读取文件内容",
+            "Write":          "创建或覆盖文件",
             "edit_file":      "精确编辑文件片段",
             "list_dir":       "列出目录内容",
             "exec":           "执行 Shell 命令",
@@ -161,7 +161,7 @@ class ContextBuilder:
             "TaskList":       "列出当前任务列表",
         }
         TOOL_ORDER = [
-            "read_file", "write_file", "edit_file", "list_dir", "exec",
+            "Read", "Write", "edit_file", "list_dir", "exec",
             "web_search", "web_fetch", "browser", "pdf",
             "memory_search", "memory_get", "memory_status", "message", "agent", "cron",
             "TaskCreate", "TaskGet", "TaskUpdate", "TaskList", "todo",
@@ -200,9 +200,19 @@ class ContextBuilder:
             "工具名区分大小写，调用时请完全匹配。",
             "\n".join(tool_lines),
             "",
+            "## Read / Write 约束",
+            "- Read 的 file_path 必须是绝对路径。",
+            f"- Read 默认最多读取 {2000} 行文本；需要更精确范围时使用 offset 和 limit。",
+            "- Read 可读取图片、PDF 和 Jupyter notebook。",
+            "- 读取超过 10 页的 PDF 时，必须提供 pages；单次最多读取 20 页。",
+            "- 如果文件自上次完整 Read 后未变化，再次 Read 会返回 unchanged stub，而不是重复发送同一内容。",
+            "- Write 必须提供完整文件内容。",
+            "- 对已存在文件执行 Write 前，必须先用 Read 完整读取该文件；partial Read 不够。",
+            "- 如果文件在 Read 之后发生变化，必须重新 Read 后才能 Write。",
+            "",
             "## 工具调用风格",
             "默认：直接调用，不要过度解释。读文件、搜索、列目录等低风险操作直接执行。",
-            "高风险操作（exec / write_file / edit_file / browser）先用一句话说明再执行。",
+            "高风险操作（exec / Write / edit_file / browser）先用一句话说明再执行。",
             "只在以下情况简要说明正在做什么：多步骤复杂操作、敏感操作（删除/覆盖）、用户明确要求。",
             "有专用工具时，直接调用工具，不要让用户自行运行命令。",
             "长时间等待时，避免紧密轮询：用 exec 配合足够的等待时间，或用后台任务。",
@@ -228,10 +238,10 @@ class ContextBuilder:
         return [
             "## 技能（必须遵守）",
             "回复前扫描技能列表中的 <description> 条目：",
-            "- 恰好一个技能明确适用：用 read_file 读取该技能的 <location> 字段所指定的完整路径，然后严格遵照执行。",
+            "- 恰好一个技能明确适用：用 Read 读取该技能的 <location> 字段所指定的完整路径，然后严格遵照执行。",
             "- 多个可能适用：选择最具体的一个，读取其 <location> 路径并遵照执行。",
             "- 没有明确适用：不读任何 SKILL.md。",
-            "重要：必须使用 <location> 字段中的原始路径调用 read_file，不得自行猜测或拼接路径。",
+            "重要：必须使用 <location> 字段中的原始路径调用 Read，不得自行猜测或拼接路径。",
             "限制：一次最多读一个技能；只在选定后才读取。",
             "当技能涉及外部 API 写入时，优先进行少量大批量写操作，避免单项紧密循环，遇到 429/Retry-After 时串行化请求。",
             skills_prompt,
@@ -276,7 +286,7 @@ class ContextBuilder:
             workspace_lines.extend(
                 [
                     f"命令执行目录：{execution_path}",
-                    "在 exec/read_file/write_file/edit_file/list_dir 中优先使用命令执行目录路径。",
+                    "在 exec/Read/Write/edit_file/list_dir 中优先使用命令执行目录路径。",
                 ]
             )
         workspace_lines.extend(
@@ -292,7 +302,7 @@ class ContextBuilder:
                 "3. 只有真正卡住才向用户提问",
                 "",
                 "没有专用工具不代表无法完成任务——写脚本解决：",
-                f"- 用 write_file 在 {script_base}/scripts/ 写 Python/Shell 脚本",
+                f"- 用 Write 在 {script_base}/scripts/ 写 Python/Shell 脚本",
                 "- 用 exec 执行并读取输出",
                 "适合写脚本的场景：数据处理、API 调用、批量操作、格式转换、复杂计算。",
                 "",
@@ -353,7 +363,7 @@ class ContextBuilder:
             "文字回复：直接用文字响应，不要调用 message 工具。",
             "以下情况必须调用 message 工具：",
             "- 发送文件 → message(content='', file_path='/绝对路径/文件名')",
-            "- 任务产出了文件（write_file 写入）→ 任务完成前主动调用 message(file_path=...) 发送",
+            "- 任务产出了文件（Write 写入）→ 任务完成前主动调用 message(file_path=...) 发送",
             "- 主动推送通知 → message(content='通知内容')",
             "- 发送网络图片 → message(content='', image_url='https://...')",
             "- 当你已经拿到公网图片 URL 时，禁止先下载到本地再发 file_path；必须直接使用 image_url 发送",

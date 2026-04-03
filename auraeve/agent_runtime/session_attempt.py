@@ -12,8 +12,14 @@ from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 
+from auraeve.agent.tools.base import ToolExecutionResult
 from auraeve.observability import get_observability
 from auraeve.agent_runtime.tool_policy.contracts import PolicyContext
+from auraeve.agent_runtime.tool_runtime_context import (
+    FileReadStateStore,
+    ToolRuntimeContext,
+    use_tool_runtime_context,
+)
 from auraeve.plugins.base import (
     HookAfterToolCallEvent,
     HookBeforeModelResolveEvent,
@@ -144,6 +150,8 @@ class SessionAttemptRunner:
         tools_used: list[str] = []
         recent_fingerprints: list[str] = []
         transcript_messages: list[dict[str, Any]] = []
+        file_reads = FileReadStateStore()
+        runtime_context = ToolRuntimeContext(file_reads=file_reads)
 
         budget = ExecutionBudget(self._execution_cfg)
         trace = RunTrace(session_id=thread_id, is_subagent=is_subagent)
@@ -317,7 +325,7 @@ class SessionAttemptRunner:
             semaphore = asyncio.Semaphore(self._execution_cfg.tool_concurrency)
             tool_timeout_s = self._execution_cfg.tool_timeout_ms / 1000
 
-            async def _exec(tc: Any) -> tuple[Any, str, dict[str, Any]]:
+            async def _exec(tc: Any) -> tuple[Any, Any, dict[str, Any]]:
                 async with semaphore:
                     args_str = _safe_json(tc.arguments)
                     logger.info(f"[attempt] tool={tc.name} args={args_str[:200]}")
@@ -427,9 +435,10 @@ class SessionAttemptRunner:
                     if before_result.params is not None:
                         effective_args = before_result.params
 
-                    async def _run_tool() -> str:
+                    async def _run_tool() -> Any:
                         try:
-                            result = await active_tools.execute(tc.name, effective_args)
+                            with use_tool_runtime_context(runtime_context):
+                                result = await active_tools.execute(tc.name, effective_args)
                         except Exception as exc:  # noqa: BLE001
                             result = f"工具执行出错：{exc}"
                         asyncio.create_task(
@@ -437,25 +446,27 @@ class SessionAttemptRunner:
                                 HookAfterToolCallEvent(
                                     tool_name=tc.name,
                                     params=effective_args,
-                                    result=result,
+                                    result=_tool_result_text(result),
                                     session_id=thread_id,
                                     channel=channel,
                                     chat_id=chat_id,
                                 )
                             )
                         )
-                        return str(result)
+                        return result
 
                     status = "success"
                     error_kind = ""
                     try:
-                        result_text = await asyncio.wait_for(_run_tool(), timeout=tool_timeout_s)
+                        raw_result = await asyncio.wait_for(_run_tool(), timeout=tool_timeout_s)
                     except asyncio.TimeoutError:
                         status = "timeout"
                         error_kind = "timeout"
-                        result_text = f"工具执行超时：{self._execution_cfg.tool_timeout_ms}ms"
+                        raw_result = f"工具执行超时：{self._execution_cfg.tool_timeout_ms}ms"
                     else:
-                        status, error_kind = _classify_tool_result(result_text)
+                        status, error_kind = _classify_tool_result(_tool_result_text(raw_result))
+
+                    result_text = _tool_result_text(raw_result)
 
                     duration_ms = int((time.perf_counter() - started_at) * 1000)
                     self._obs.emit(
@@ -477,7 +488,7 @@ class SessionAttemptRunner:
                         channel=channel,
                     )
 
-                    return tc, result_text, {
+                    return tc, raw_result, {
                         "status": status,
                         "errorKind": error_kind,
                         "durationMs": duration_ms,
@@ -509,7 +520,7 @@ class SessionAttemptRunner:
             )
 
             for tc, result, meta in results:
-                compact_result = _compact_tool_result(tc.name, result)
+                compact_result = _compact_tool_result(tc.name, _tool_result_content(result))
                 before_len = len(msgs)
                 msgs = _add_tool_result(msgs, tc.id, tc.name, compact_result)
                 transcript_messages.extend(msgs[before_len:])
@@ -519,6 +530,8 @@ class SessionAttemptRunner:
                         "error_kind": meta.get("errorKind") or None,
                         "duration_ms": meta.get("durationMs"),
                     }
+                if isinstance(result, ToolExecutionResult) and result.extra_messages:
+                    msgs.extend(result.extra_messages)
 
             if self._execution_cfg.tool_failure_policy == "fail_fast" and failed_count > 0:
                 final_content = f"任务中止：工具批次失败（{failed_count}/{len(results)}）。"
@@ -564,7 +577,7 @@ def _add_tool_result(
     messages: list[dict[str, Any]],
     tool_call_id: str,
     tool_name: str,
-    result: str,
+    result: Any,
 ) -> list[dict[str, Any]]:
     messages.append(
         {
@@ -606,7 +619,19 @@ def _classify_tool_result(result_text: str) -> tuple[str, str]:
     return "success", ""
 
 
-def _compact_tool_result(tool_name: str, result_text: str) -> str:
+def _tool_result_content(result: Any) -> Any:
+    if isinstance(result, ToolExecutionResult):
+        return result.content
+    return result
+
+
+def _tool_result_text(result: Any) -> str:
+    return str(_tool_result_content(result) or "")
+
+
+def _compact_tool_result(tool_name: str, result_text: Any) -> Any:
+    if isinstance(result_text, list):
+        return result_text
     text = str(result_text or "")
     text = _replace_embedded_binary(text)
     if len(text) <= _MAX_TOOL_RESULT_CHARS:
