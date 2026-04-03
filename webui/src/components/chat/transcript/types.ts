@@ -4,7 +4,9 @@ export type TranscriptBlock =
   | TranscriptToolResultBlock
   | TranscriptAssistantTextBlock
   | TranscriptRunStatusBlock
+  | TranscriptAgentTaskBlock
   | TranscriptCollapsedActivityBlock
+  | TranscriptSystemNoticeBlock
 
 export interface TranscriptUserBlock {
   id: string
@@ -44,12 +46,29 @@ export interface TranscriptRunStatusBlock {
   timestamp: string
 }
 
+export interface TranscriptAgentTaskBlock {
+  id: string
+  type: 'agent_task'
+  title?: string
+  summary: string
+  status: string
+  detail: Record<string, unknown>
+  children?: TranscriptBlock[]
+}
+
 export interface TranscriptCollapsedActivityBlock {
   id: string
   type: 'collapsed_activity'
   activityType: 'read'
   count: number
   blocks: Array<TranscriptToolCallBlock | TranscriptToolResultBlock>
+}
+
+export interface TranscriptSystemNoticeBlock {
+  id: string
+  type: 'system_notice'
+  level?: 'info' | 'warning' | 'error'
+  content: string
 }
 
 export interface TranscriptRun {
