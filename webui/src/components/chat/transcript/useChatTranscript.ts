@@ -5,6 +5,7 @@ import type {
   ChatTranscriptEvent,
   TranscriptBlock,
   TranscriptRun,
+  TranscriptRunStatusBlock,
 } from './types'
 
 function upsertBlock(blocks: TranscriptBlock[], nextBlock: TranscriptBlock, op: 'append' | 'replace'): TranscriptBlock[] {
@@ -21,6 +22,10 @@ function upsertBlock(blocks: TranscriptBlock[], nextBlock: TranscriptBlock, op: 
   }
 
   return [...blocks, nextBlock]
+}
+
+function isRunStatusBlock(block: TranscriptBlock): block is TranscriptRunStatusBlock {
+  return block.type === 'run_status'
 }
 
 export function useChatTranscript(sessionKey: string) {
@@ -41,6 +46,18 @@ export function useChatTranscript(sessionKey: string) {
 
   const applyEvent = useCallback((event: ChatTranscriptEvent) => {
     if (event.type === 'transcript.block') {
+      if (isRunStatusBlock(event.block)) {
+        const runBlock = event.block
+        setRun((prev) => ({
+          runId: event.runId ?? prev?.runId ?? null,
+          status:
+            runBlock.status === 'started' || runBlock.status === 'running'
+              ? 'running'
+              : runBlock.status,
+          done: runBlock.status === 'completed' || runBlock.status === 'aborted',
+          aborted: runBlock.status === 'aborted',
+        }))
+      }
       setBlocks((prev) => upsertBlock(prev, event.block, event.op))
       return
     }

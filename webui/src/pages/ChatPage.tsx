@@ -1,122 +1,85 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { v4 as uuid } from 'uuid'
-import { chatApi, type ChatEvent, type ChatMessage, type ChatRuntimeSnapshotResp } from '../api/client'
-import { useAppStore } from '../store/app'
+
 import { ChatComposer } from '../components/chat/ChatComposer'
-import { ChatMessageBubble } from '../components/chat/ChatMessageBubble'
-import { RunPanel } from '../components/chat/RunPanel'
+import { ChatTranscript } from '../components/chat/transcript/ChatTranscript'
+import { useChatTranscript } from '../components/chat/transcript/useChatTranscript'
+import type { ChatTranscriptEvent } from '../components/chat/transcript/types'
+import { chatApi } from '../api/client'
+import { useAppStore } from '../store/app'
 
 export function ChatPage() {
   const { sessionKey, setSessionKey } = useAppStore()
-  const [messages, setMessages] = useState<ChatMessage[]>([])
-  const [runtime, setRuntime] = useState<ChatRuntimeSnapshotResp | null>(null)
+  const { blocks, run, loading, load, applyEvent } = useChatTranscript(sessionKey)
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
-  const [runId, setRunId] = useState<string | null>(null)
-  const [status, setStatus] = useState<'idle' | 'waiting' | 'error'>('idle')
   const [errorMsg, setErrorMsg] = useState('')
-  const [loadingRuntime, setLoadingRuntime] = useState(false)
+  const [runId, setRunId] = useState<string | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
-  const unsubRef = useRef<(() => void) | null>(null)
 
-  const scrollToBottom = () => {
+  const scrollToBottom = useCallback(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }
-
-  const loadHistory = useCallback(async () => {
-    try {
-      const resp = await chatApi.history(sessionKey, 200)
-      setMessages(resp.messages)
-      window.setTimeout(scrollToBottom, 100)
-    } catch {
-      setStatus('error')
-      setErrorMsg('加载历史失败，请检查连接或 Token')
-    }
-  }, [sessionKey])
-
-  const loadRuntime = useCallback(async () => {
-    try {
-      setLoadingRuntime(true)
-      const resp = await chatApi.runtime(sessionKey, 100)
-      setRuntime(resp)
-      if (resp.run.runId) setRunId(resp.run.runId)
-      if (resp.run.status === 'running') setSending(true)
-      else if (resp.run.status === 'completed' || resp.run.status === 'aborted' || resp.run.status === 'idle') setSending(false)
-    } catch {
-      // 控制台面板失败不阻断主聊天流
-    } finally {
-      setLoadingRuntime(false)
-    }
-  }, [sessionKey])
-
-  const syncAll = useCallback(async () => {
-    await Promise.all([loadHistory(), loadRuntime()])
-  }, [loadHistory, loadRuntime])
-
-  const subscribe = useCallback(() => {
-    unsubRef.current?.()
-    unsubRef.current = chatApi.events(sessionKey, (e: ChatEvent) => {
-      if (e.type === 'chat.started') {
-        setStatus('waiting')
-        if (e.runId) setRunId(e.runId)
-        void loadRuntime()
-      } else if (e.type === 'chat.final') {
-        setMessages((prev) => [
-          ...prev,
-          { role: 'assistant', content: e.content || '', timestamp: new Date().toISOString() },
-        ])
-        setSending(false)
-        setRunId(null)
-        setStatus('idle')
-        void loadRuntime()
-        window.setTimeout(scrollToBottom, 80)
-      } else if (e.type === 'chat.error') {
-        setStatus('error')
-        setErrorMsg(e.error || '处理出错')
-        setSending(false)
-        void loadRuntime()
-      } else if (e.type === 'chat.aborted') {
-        setSending(false)
-        setStatus('idle')
-        setRunId(null)
-        void loadRuntime()
-      }
-    })
-  }, [loadRuntime, sessionKey])
+  }, [])
 
   useEffect(() => {
-    const timer = window.setTimeout(() => {
-      void syncAll()
-    }, 0)
-    subscribe()
-    const poll = window.setInterval(() => {
-      void loadRuntime()
-    }, 4000)
-    return () => {
-      window.clearTimeout(timer)
-      window.clearInterval(poll)
-      unsubRef.current?.()
+    void load()
+
+    const unsubscribe = chatApi.transcriptEvents(sessionKey, (event: ChatTranscriptEvent) => {
+      applyEvent(event)
+
+      if (event.type === 'transcript.block' && event.block.type === 'run_status') {
+        setSending(event.block.status === 'started' || event.block.status === 'running')
+      }
+
+      if (event.type === 'transcript.done') {
+        setSending(false)
+        void load()
+      }
+    })
+
+    return unsubscribe
+  }, [applyEvent, load, sessionKey])
+
+  useEffect(() => {
+    scrollToBottom()
+  }, [blocks, scrollToBottom, sending])
+
+  useEffect(() => {
+    if (run?.runId) {
+      setRunId(run.runId)
     }
-  }, [subscribe, syncAll, loadRuntime])
+    if (run?.status === 'idle' || run?.status === 'completed' || run?.status === 'aborted') {
+      setSending(false)
+    }
+  }, [run])
 
   const send = async () => {
     const text = input.trim()
     if (!text || sending) return
-    const ikey = uuid()
-    const userMsg: ChatMessage = { role: 'user', content: text, timestamp: new Date().toISOString() }
-    setMessages((prev) => [...prev, userMsg])
-    setInput('')
-    setSending(true)
-    setStatus('waiting')
+
+    const idempotencyKey = uuid()
     setErrorMsg('')
-    window.setTimeout(scrollToBottom, 80)
+    setSending(true)
+    setInput('')
+
+    applyEvent({
+      type: 'transcript.block',
+      sessionKey,
+      seq: Date.now(),
+      op: 'append',
+      block: {
+        id: `local-user:${idempotencyKey}`,
+        type: 'user',
+        content: text,
+        timestamp: new Date().toISOString(),
+      },
+    })
+
     try {
-      const resp = await chatApi.send(sessionKey, text, ikey)
+      const resp = await chatApi.send(sessionKey, text, idempotencyKey)
       setRunId(resp.runId)
-      void loadRuntime()
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err)
-      setStatus('error')
       setErrorMsg(msg)
       setSending(false)
     }
@@ -125,10 +88,9 @@ export function ChatPage() {
   const abort = async () => {
     if (!runId) return
     await chatApi.abort(sessionKey, runId)
-    void loadRuntime()
   }
 
-  const statusLine = buildStatusLine(status, errorMsg, runtime)
+  const statusLine = buildStatusLine(run?.status, errorMsg, blocks.length, sending)
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -137,7 +99,7 @@ export function ChatPage() {
           <div className="min-w-0 flex-1">
             <div className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Agent Console</div>
             <div className="mt-1 text-xs" style={{ color: 'var(--text-secondary)' }}>
-              把最终回复、子体协作、审批与节点状态放在一个界面里。
+              智能体回复、工具过程和子体运行统一展示在一条消息流中。
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -147,7 +109,7 @@ export function ChatPage() {
               style={{ background: 'var(--input-bg)', color: 'var(--text-primary)', borderColor: 'var(--glass-border)' }}
               value={sessionKey}
               onChange={(e) => setSessionKey(e.target.value)}
-              onBlur={() => void syncAll()}
+              onBlur={() => void load()}
               placeholder="会话 key"
             />
           </div>
@@ -166,60 +128,55 @@ export function ChatPage() {
         </div>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col gap-3 p-3 xl:flex-row">
-        <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[22px] border" style={{ borderColor: 'var(--glass-border)', background: 'color-mix(in srgb, var(--surface-1) 92%, transparent)' }}>
+      <div className="flex min-h-0 flex-1 flex-col p-3">
+        <section
+          className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[22px] border"
+          style={{ borderColor: 'var(--glass-border)', background: 'color-mix(in srgb, var(--surface-1) 92%, transparent)' }}
+        >
           <div className="border-b px-4 py-3" style={{ borderColor: 'var(--glass-border)' }}>
             <div className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>聊天主线</div>
             <div className="mt-1 text-xs" style={{ color: 'var(--text-secondary)' }}>
-              结果面向用户，过程沉淀到右侧运行面板。
+              结果与运行过程统一展示在一条消息流中。
             </div>
           </div>
 
           <div className="flex-1 overflow-y-auto px-4 py-4">
-            {messages.length === 0 ? (
-              <div className="mx-auto mt-10 max-w-2xl rounded-[28px] border px-6 py-6" style={{ borderColor: 'var(--glass-border)', background: 'rgba(255,255,255,0.22)' }}>
+            {!loading && blocks.length === 0 ? (
+              <div
+                className="mx-auto mt-10 max-w-2xl rounded-[28px] border px-6 py-6"
+                style={{ borderColor: 'var(--glass-border)', background: 'rgba(255,255,255,0.22)' }}
+              >
                 <div className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>欢迎来到 AuraEve Agent Console</div>
                 <div className="mt-2 text-sm leading-7" style={{ color: 'var(--text-secondary)' }}>
-                  这里不只是聊天窗口。你会同时看到子体分工、审批请求、节点状态和执行轨迹，方便理解 AuraEve 如何完成任务。
+                  这里会把最终回复、工具活动和子体过程统一整理到主消息流里，帮助你直接看清智能体的运行过程。
                 </div>
               </div>
             ) : (
-              <div className="space-y-3">
-                {messages.map((msg, index) => (
-                  <ChatMessageBubble key={`${msg.timestamp || 'msg'}-${index}`} message={msg} index={index} />
-                ))}
-                {sending && (
-                  <div className="flex justify-start">
-                    <div className="rounded-[22px] border px-4 py-3 text-sm" style={{ background: 'var(--msg-agent)', color: 'var(--text-secondary)', borderColor: 'var(--glass-border)' }}>
-                      <span className="cursor-blink">▍</span> 正在等待模型和子体结果...
-                    </div>
-                  </div>
-                )}
-              </div>
+              <ChatTranscript blocks={blocks} />
             )}
             <div ref={bottomRef} />
           </div>
 
           <ChatComposer value={input} sending={sending} onChange={setInput} onSubmit={() => void send()} onAbort={() => void abort()} />
         </section>
-
-        <RunPanel snapshot={runtime} loading={loadingRuntime} onRefresh={() => void loadRuntime()} />
       </div>
     </div>
   )
 }
 
 function buildStatusLine(
-  status: 'idle' | 'waiting' | 'error',
+  runStatus: 'idle' | 'running' | 'completed' | 'aborted' | undefined,
   errorMsg: string,
-  runtime: ChatRuntimeSnapshotResp | null,
+  blockCount: number,
+  sending: boolean,
 ): Array<{ text: string; color?: string }> {
   const items: Array<{ text: string; color?: string }> = []
-  if (status === 'waiting') items.push({ text: '处理中', color: 'var(--accent)' })
-  if (status === 'error' && errorMsg) items.push({ text: `错误: ${errorMsg}`, color: 'var(--danger)' })
-  if (runtime?.summary.runningTasks) items.push({ text: `${runtime.summary.runningTasks} 个子体任务运行中` })
-  if (runtime?.summary.pendingApprovals) items.push({ text: `${runtime.summary.pendingApprovals} 个审批等待处理`, color: '#d97706' })
-  if (runtime?.toolCalls.length) items.push({ text: `${runtime.toolCalls.length} 次工具调用` })
+
+  if (sending || runStatus === 'running') items.push({ text: '处理中', color: 'var(--accent)' })
+  if (runStatus === 'aborted') items.push({ text: '已中止', color: 'var(--danger)' })
+  if (errorMsg) items.push({ text: `错误: ${errorMsg}`, color: 'var(--danger)' })
+  if (blockCount > 0) items.push({ text: `${blockCount} 个运行块` })
   if (items.length === 0) items.push({ text: '当前空闲，可直接开始新一轮任务' })
+
   return items
 }

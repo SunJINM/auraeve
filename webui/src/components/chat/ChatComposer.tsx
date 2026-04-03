@@ -23,12 +23,6 @@ export function ChatComposer({
       className="border-t px-4 pb-4 pt-3"
       style={{ borderColor: 'var(--glass-border)', background: 'var(--glass-bg)', backdropFilter: 'blur(12px)' }}
     >
-      <div className="mb-3 flex flex-wrap gap-2 text-[11px]" style={{ color: 'var(--text-secondary)' }}>
-        <span className="rounded-full border px-2 py-1" style={{ borderColor: 'var(--glass-border)' }}>聊天主线</span>
-        <span className="rounded-full border px-2 py-1" style={{ borderColor: 'var(--glass-border)' }}>子体协作</span>
-        <span className="rounded-full border px-2 py-1" style={{ borderColor: 'var(--glass-border)' }}>审批可视化</span>
-      </div>
-
       <div className="flex items-end gap-3">
         <textarea
           className="min-h-[48px] max-h-[180px] flex-1 resize-none rounded-2xl border px-4 py-3 text-sm focus:outline-none"
