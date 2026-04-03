@@ -2,8 +2,17 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+from pydantic import ValidationError
+
 from auraeve.session.manager import SessionManager
 from auraeve.webui.chat_transcript_service import project_history_into_transcript_blocks
+from auraeve.webui.schemas import (
+    ChatTranscriptBlockEvent,
+    ChatTranscriptDoneEvent,
+    ChatTranscriptHistoryResponse,
+    TranscriptCollapsedActivityBlock,
+)
 
 
 def test_project_history_into_transcript_blocks(tmp_path: Path) -> None:
@@ -32,6 +41,10 @@ def test_project_history_into_transcript_blocks(tmp_path: Path) -> None:
         "tool_result",
         "assistant_text",
     ]
+    assert all(isinstance(item.get("id"), str) and item["id"] for item in blocks)
+
+    blocks_again = project_history_into_transcript_blocks(session.messages)
+    assert [item["id"] for item in blocks] == [item["id"] for item in blocks_again]
 
 
 def test_collapse_readonly_activity_into_single_block(tmp_path: Path) -> None:
@@ -67,5 +80,103 @@ def test_collapse_readonly_activity_into_single_block(tmp_path: Path) -> None:
     blocks = project_history_into_transcript_blocks(session.messages)
 
     assert [item["type"] for item in blocks] == ["user", "collapsed_activity", "assistant_text"]
+    assert all(isinstance(item.get("id"), str) and item["id"] for item in blocks)
     assert blocks[1]["activityType"] == "read"
     assert blocks[1]["count"] == 2
+    assert [item["type"] for item in blocks[1]["blocks"]] == [
+        "tool_call",
+        "tool_result",
+        "tool_call",
+        "tool_result",
+    ]
+    assert all(isinstance(item.get("id"), str) and item["id"] for item in blocks[1]["blocks"])
+
+    payload = {"sessionKey": "webui:test-user", "blocks": blocks}
+    model = ChatTranscriptHistoryResponse.model_validate(payload)
+    assert model.blocks[1].type == "collapsed_activity"
+
+
+def test_chat_transcript_event_schema_requires_valid_block_states() -> None:
+    ChatTranscriptBlockEvent.model_validate(
+        {
+            "type": "transcript.block",
+            "sessionKey": "webui:test",
+            "seq": 1,
+            "op": "append",
+            "block": {
+                "id": "user:1",
+                "type": "user",
+                "content": "hello",
+                "timestamp": "2026-04-03T00:00:00",
+            },
+        }
+    )
+    ChatTranscriptDoneEvent.model_validate(
+        {
+            "type": "transcript.done",
+            "sessionKey": "webui:test",
+            "seq": 2,
+        }
+    )
+
+    with pytest.raises(ValidationError):
+        ChatTranscriptBlockEvent.model_validate(
+            {
+                "type": "transcript.block",
+                "sessionKey": "webui:test",
+                "seq": 3,
+                "op": "append",
+            }
+        )
+
+    with pytest.raises(ValidationError):
+        ChatTranscriptDoneEvent.model_validate(
+            {
+                "type": "transcript.done",
+                "sessionKey": "webui:test",
+                "seq": 4,
+                "block": {
+                    "id": "assistant:1",
+                    "type": "assistant_text",
+                    "content": "ok",
+                    "timestamp": "2026-04-03T00:00:00",
+                },
+            }
+        )
+
+
+def test_collapsed_activity_nested_blocks_require_structured_items() -> None:
+    TranscriptCollapsedActivityBlock.model_validate(
+        {
+            "id": "collapsed:read:1",
+            "type": "collapsed_activity",
+            "activityType": "read",
+            "count": 1,
+            "blocks": [
+                {
+                    "id": "tool_call:1",
+                    "type": "tool_call",
+                    "toolCallId": "call_1",
+                    "toolName": "read",
+                    "arguments": {"path": "README.md"},
+                }
+            ],
+        }
+    )
+
+    with pytest.raises(ValidationError):
+        TranscriptCollapsedActivityBlock.model_validate(
+            {
+                "id": "collapsed:read:2",
+                "type": "collapsed_activity",
+                "activityType": "read",
+                "count": 1,
+                "blocks": [
+                    {
+                        "type": "tool_call",
+                        "toolName": "read",
+                        "arguments": {"path": "README.md"},
+                    }
+                ],
+            }
+        )

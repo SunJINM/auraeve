@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ChatHistoryResponse(BaseModel):
@@ -11,12 +11,16 @@ class ChatHistoryResponse(BaseModel):
 
 
 class TranscriptUserBlock(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: str = Field(min_length=1)
     type: Literal["user"] = "user"
     content: str = ""
     timestamp: str = ""
 
 
 class TranscriptToolCallBlock(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: str = Field(min_length=1)
     type: Literal["tool_call"] = "tool_call"
     toolCallId: str = ""
     toolName: str = ""
@@ -24,6 +28,8 @@ class TranscriptToolCallBlock(BaseModel):
 
 
 class TranscriptToolResultBlock(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: str = Field(min_length=1)
     type: Literal["tool_result"] = "tool_result"
     toolCallId: str = ""
     toolName: str = ""
@@ -31,16 +37,26 @@ class TranscriptToolResultBlock(BaseModel):
 
 
 class TranscriptAssistantTextBlock(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: str = Field(min_length=1)
     type: Literal["assistant_text"] = "assistant_text"
     content: str = ""
     timestamp: str = ""
 
 
+TranscriptCollapsedActivityItem = Annotated[
+    TranscriptToolCallBlock | TranscriptToolResultBlock,
+    Field(discriminator="type"),
+]
+
+
 class TranscriptCollapsedActivityBlock(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: str = Field(min_length=1)
     type: Literal["collapsed_activity"] = "collapsed_activity"
     activityType: Literal["read"] = "read"
     count: int = Field(default=1, ge=1)
-    blocks: list[dict[str, Any]] = Field(default_factory=list)
+    blocks: list[TranscriptCollapsedActivityItem] = Field(default_factory=list)
 
 
 TranscriptBlock = Annotated[
@@ -58,11 +74,28 @@ class ChatTranscriptHistoryResponse(BaseModel):
     blocks: list[TranscriptBlock] = Field(default_factory=list)
 
 
-class ChatTranscriptEvent(BaseModel):
-    type: Literal["transcript.block", "transcript.done"]
+class ChatTranscriptBlockEvent(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    type: Literal["transcript.block"] = "transcript.block"
     sessionKey: str
     runId: str | None = None
-    block: TranscriptBlock | None = None
+    seq: int = Field(ge=0)
+    op: Literal["append", "replace"] = "append"
+    block: TranscriptBlock
+
+
+class ChatTranscriptDoneEvent(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    type: Literal["transcript.done"] = "transcript.done"
+    sessionKey: str
+    runId: str | None = None
+    seq: int = Field(ge=0)
+
+
+ChatTranscriptEvent = Annotated[
+    ChatTranscriptBlockEvent | ChatTranscriptDoneEvent,
+    Field(discriminator="type"),
+]
 
 
 class ChatSendRequest(BaseModel):
