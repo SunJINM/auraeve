@@ -53,7 +53,7 @@ def test_progress_tracker():
 
 def test_progress_tracker_record():
     p = ProgressTracker()
-    p.record_activity("read_file", {"path": "foo.py"})
+    p.record_activity("Read", {"file_path": "foo.py"})
     assert p.tool_use_count == 1
     assert len(p.recent_activities) == 1
     # 超过5个时自动淘汰旧的

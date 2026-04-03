@@ -413,7 +413,7 @@ async def download_and_extract(
             fname = original_filename or "file"
 
         mime = detect_mime(data, content_type, original_filename)
-        # 保存到本地（供 Agent 后续用 read_file 工具访问）
+        # 保存到本地（供 Agent 后续用 Read 工具访问）
         local_path = save_media_bytes(data, workspace, content_type, fname)
         logger.debug(f"媒体文件已下载：{local_path.name} ({mime}, {len(data)/1024:.0f}KB)")
         result = await extract_file_content(data, mime, fname)

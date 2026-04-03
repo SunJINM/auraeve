@@ -3,6 +3,7 @@ import { useState } from 'react'
 import type { TranscriptToolUseBlock } from '../types'
 
 const TOOL_DISPLAY: Record<string, { icon: string; label: string }> = {
+  Read: { icon: '📄', label: 'Read' },
   read: { icon: '📄', label: 'Read' },
   read_file: { icon: '📄', label: 'Read' },
   grep: { icon: '🔍', label: 'Search' },
@@ -10,6 +11,7 @@ const TOOL_DISPLAY: Record<string, { icon: string; label: string }> = {
   bash: { icon: '⚡', label: 'Bash' },
   exec: { icon: '⚡', label: 'Exec' },
   edit: { icon: '✏️', label: 'Edit' },
+  Write: { icon: '📝', label: 'Write' },
   write: { icon: '📝', label: 'Write' },
   create_file: { icon: '📝', label: 'Create' },
   web_fetch: { icon: '🌐', label: 'Fetch' },
@@ -31,6 +33,7 @@ function getToolSummary(toolName: string, args: unknown): string {
   const a = args as Record<string, unknown>
 
   switch (toolName) {
+    case 'Read':
     case 'read':
     case 'read_file':
       return String(a.file_path ?? a.path ?? '')
@@ -43,6 +46,7 @@ function getToolSummary(toolName: string, args: unknown): string {
       return String(a.pattern ?? '')
     case 'edit':
       return String(a.file_path ?? '')
+    case 'Write':
     case 'write':
     case 'create_file':
       return String(a.file_path ?? a.path ?? '')
@@ -71,6 +75,7 @@ function getResultSummary(toolName: string, result: string, status: string): str
 
   const lines = result.split('\n').filter(Boolean)
   switch (toolName) {
+    case 'Read':
     case 'read':
     case 'read_file':
       return `${lines.length} 行`

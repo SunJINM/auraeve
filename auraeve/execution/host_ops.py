@@ -116,20 +116,37 @@ async def execute_shell_command(
     return result
 
 
-def read_file(*, path: str, allowed_dir: Path | None = None) -> str:
+def read_file(
+    *,
+    path: str,
+    allowed_dir: Path | None = None,
+    offset: int | None = None,
+    limit: int | None = None,
+) -> str:
     file_path = _resolve_path(path, allowed_dir)
     if not file_path.exists():
         return f"Error: file not found: {path}"
     if not file_path.is_file():
         return f"Error: not a file: {path}"
-    return file_path.read_text(encoding="utf-8")
+    text = file_path.read_text(encoding="utf-8")
+    lines = text.splitlines()
+    start = int(offset or 0)
+    count = int(limit or min(len(lines), 2000))
+    selected = lines[start : start + count]
+    return "\n".join(f"{start + idx + 1}\t{line}" for idx, line in enumerate(selected))
 
 
-def write_file(*, path: str, content: str, allowed_dir: Path | None = None) -> str:
+def write_file(
+    *,
+    path: str,
+    content: str,
+    allowed_dir: Path | None = None,
+) -> tuple[str, str | None]:
     file_path = _resolve_path(path, allowed_dir)
+    original = file_path.read_text(encoding="utf-8") if file_path.exists() else None
     file_path.parent.mkdir(parents=True, exist_ok=True)
     file_path.write_text(content, encoding="utf-8")
-    return f"Wrote {len(content)} bytes to {path}"
+    return ("create" if original is None else "update"), original
 
 
 def edit_file(

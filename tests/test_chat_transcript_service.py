@@ -62,11 +62,11 @@ def test_collapse_readonly_activity_into_single_block(tmp_path: Path) -> None:
             {
                 "id": "read_1",
                 "type": "function",
-                "function": {"name": "read", "arguments": "{\"path\":\"config.yaml\"}"},
+                "function": {"name": "Read", "arguments": "{\"file_path\":\"config.yaml\"}"},
             }
         ],
     )
-    session.add_message("tool", "db: sqlite", tool_call_id="read_1", name="read")
+    session.add_message("tool", "1\tdb: sqlite", tool_call_id="read_1", name="Read")
     session.add_message(
         "assistant",
         "",
@@ -74,11 +74,11 @@ def test_collapse_readonly_activity_into_single_block(tmp_path: Path) -> None:
             {
                 "id": "read_2",
                 "type": "function",
-                "function": {"name": "read", "arguments": "{\"path\":\"README.md\"}"},
+                "function": {"name": "Read", "arguments": "{\"file_path\":\"README.md\"}"},
             }
         ],
     )
-    session.add_message("tool", "# AuraEve", tool_call_id="read_2", name="read")
+    session.add_message("tool", "1\t# AuraEve", tool_call_id="read_2", name="Read")
     session.add_message("assistant", "我已经读取并总结完成。")
 
     blocks = project_history_into_transcript_blocks(session.messages)
@@ -160,8 +160,8 @@ def test_collapsed_activity_nested_blocks_require_structured_items() -> None:
                     "id": "tool_use:1",
                     "type": "tool_use",
                     "toolCallId": "call_1",
-                    "toolName": "read",
-                    "arguments": {"path": "README.md"},
+                    "toolName": "Read",
+                    "arguments": {"file_path": "README.md"},
                     "result": "content",
                     "status": "success",
                 }
@@ -179,8 +179,8 @@ def test_collapsed_activity_nested_blocks_require_structured_items() -> None:
                 "blocks": [
                     {
                         "type": "tool_use",
-                        "toolName": "read",
-                        "arguments": {"path": "README.md"},
+                        "toolName": "Read",
+                        "arguments": {"file_path": "README.md"},
                     }
                 ],
             }

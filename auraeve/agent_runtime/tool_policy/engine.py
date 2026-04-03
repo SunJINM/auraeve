@@ -17,7 +17,7 @@ _SUBAGENT_DENY: frozenset[str] = frozenset({"agent"})
 
 # 高副作用工具风险标签（用于 session 层策略参考）
 _HIGH_RISK_TOOLS: frozenset[str] = frozenset({
-    "exec", "write_file", "edit_file", "browser",
+    "exec", "Write", "write_file", "edit_file", "browser",
 })
 
 
@@ -46,7 +46,7 @@ class ToolPolicyEngine:
     def infer_tool_group(tool_name: str) -> str:
         if tool_name.startswith("mcp_"):
             return "mcp"
-        if tool_name in {"read_file", "write_file", "edit_file", "list_dir"}:
+        if tool_name in {"Read", "Write", "read_file", "write_file", "edit_file", "list_dir"}:
             return "filesystem"
         if tool_name in {"web_search", "web_fetch", "browser"}:
             return "web"

@@ -4,7 +4,7 @@ import type {
   TranscriptToolUseBlock,
 } from './types'
 
-const COLLAPSIBLE_TOOL_NAMES = new Set(['read', 'read_file', 'grep', 'glob', 'bash'])
+const COLLAPSIBLE_TOOL_NAMES = new Set(['Read', 'read', 'read_file', 'grep', 'glob', 'bash'])
 
 function isCollapsibleToolBlock(
   block: TranscriptBlock,

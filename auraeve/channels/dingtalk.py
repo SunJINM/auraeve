@@ -414,7 +414,7 @@ class DingTalkChannel(BaseChannel):
             file_path = self._media_dir / "files" / f"{int(time.time())}_{safe_name}"
             file_path.write_bytes(file_bytes)
             logger.info(f"文件已保存：{file_path}（{len(file_bytes)} 字节）")
-            return f"[文件: {file_name}，已保存至 {file_path}，可用 read_file 读取内容]"
+            return f"[文件: {file_name}，已保存至 {file_path}，可用 Read 读取内容]"
 
         return f"[文件: {file_name}，{len(file_bytes)} 字节，未保存（未配置工作区）]"
 

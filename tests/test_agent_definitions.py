@@ -19,7 +19,7 @@ def test_general_purpose_agent():
 def test_explore_agent():
     a = EXPLORE_AGENT
     assert a.agent_type == "explore"
-    assert "write_file" not in a.tools
+    assert "Write" not in a.tools
     assert "agent" in a.disallowed_tools
     assert a.permission_mode == "bypass"
 
@@ -29,6 +29,13 @@ def test_plan_agent():
     assert a.agent_type == "plan"
     assert "agent" in a.disallowed_tools
     assert a.permission_mode == "bypass"
+
+
+def test_explore_agent_uses_read_replacement_names():
+    a = EXPLORE_AGENT
+    assert "Read" in a.tools
+    assert "Write" not in a.tools
+    assert "agent" in a.disallowed_tools
 
 
 def test_get_builtin_agents():
@@ -55,7 +62,7 @@ def test_custom_agent_definition():
     a = AgentDefinition(
         agent_type="my-agent",
         when_to_use="自定义用途",
-        tools=["read_file", "exec"],
+        tools=["Read", "exec"],
         disallowed_tools=["agent"],
         max_turns=20,
     )

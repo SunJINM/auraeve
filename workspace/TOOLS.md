@@ -12,16 +12,16 @@
 
 ## 文件操作
 
-### read_file
+### Read
 读取文件内容。
 ```
-read_file(path: str) -> str
+Read(file_path: str, offset: int = 1, limit: int = None) -> str
 ```
 
-### write_file
+### Write
 创建或覆盖文件内容；如需要会自动创建父目录。
 ```
-write_file(path: str, content: str) -> str
+Write(file_path: str, content: str) -> str
 ```
 
 ### edit_file
@@ -60,13 +60,13 @@ exec(command: str, working_dir: str = None) -> str
 3. 脚本执行后读取输出，再决定下一步
 
 **推荐做法：**
-1. 用 `write_file` 将脚本写到当前工作区的 `scripts/`
+1. 用 `Write` 将脚本写到当前工作区的 `scripts/`
 2. 用 `exec` 执行脚本
 3. 读取输出并继续处理
 
 **示例 1：处理 JSON 数据**
 ```python
-# write_file("scripts/parse_data.py", ...)
+# Write("scripts/parse_data.py", ...)
 import json
 
 data = json.load(open("data.json", "r", encoding="utf-8"))
@@ -79,7 +79,7 @@ exec("python scripts/parse_data.py")
 
 **示例 2：多步 API 调用**
 ```python
-# write_file("scripts/fetch_weather.py", ...)
+# Write("scripts/fetch_weather.py", ...)
 import json
 import urllib.request
 
@@ -94,7 +94,7 @@ exec("python scripts/fetch_weather.py")
 
 **示例 3：批量文件处理**
 ```python
-# write_file("scripts/rename_files.py", ...)
+# Write("scripts/rename_files.py", ...)
 import re
 from pathlib import Path
 

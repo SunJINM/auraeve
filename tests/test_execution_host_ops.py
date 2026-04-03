@@ -21,10 +21,10 @@ class HostOpsFsTests(unittest.TestCase):
             target = root / "a" / "b.txt"
 
             write_res = write_file(path=str(target), content="hello", allowed_dir=root)
-            self.assertIn("Wrote", write_res)
+            self.assertEqual(write_res, ("create", None))
 
-            read_res = read_file(path=str(target), allowed_dir=root)
-            self.assertEqual(read_res, "hello")
+            read_res = read_file(path=str(target), allowed_dir=root, offset=0, limit=1)
+            self.assertEqual(read_res, "1\thello")
 
             edit_res = edit_file(
                 path=str(target),

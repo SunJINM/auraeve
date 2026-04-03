@@ -25,8 +25,21 @@ class ExecutionBackend(Protocol):
         restrict_to_workspace: bool,
     ) -> str: ...
 
-    async def read_file(self, *, path: str, allowed_dir: str | None) -> str: ...
-    async def write_file(self, *, path: str, content: str, allowed_dir: str | None) -> str: ...
+    async def read_file(
+        self,
+        *,
+        path: str,
+        allowed_dir: str | None,
+        offset: int | None = None,
+        limit: int | None = None,
+    ) -> str: ...
+    async def write_file(
+        self,
+        *,
+        path: str,
+        content: str,
+        allowed_dir: str | None,
+    ) -> tuple[str, str | None]: ...
     async def edit_file(
         self,
         *,
@@ -57,11 +70,24 @@ class LocalExecutionBackend:
             restrict_to_workspace=restrict_to_workspace,
         )
 
-    async def read_file(self, *, path: str, allowed_dir: str | None) -> str:
+    async def read_file(
+        self,
+        *,
+        path: str,
+        allowed_dir: str | None,
+        offset: int | None = None,
+        limit: int | None = None,
+    ) -> str:
         allowed = Path(allowed_dir).expanduser().resolve() if allowed_dir else None
-        return read_file(path=path, allowed_dir=allowed)
+        return read_file(path=path, allowed_dir=allowed, offset=offset, limit=limit)
 
-    async def write_file(self, *, path: str, content: str, allowed_dir: str | None) -> str:
+    async def write_file(
+        self,
+        *,
+        path: str,
+        content: str,
+        allowed_dir: str | None,
+    ) -> tuple[str, str | None]:
         allowed = Path(allowed_dir).expanduser().resolve() if allowed_dir else None
         return write_file(path=path, content=content, allowed_dir=allowed)
 
@@ -104,10 +130,28 @@ class ExecutionDispatcher:
             restrict_to_workspace=restrict_to_workspace,
         )
 
-    async def read_file(self, *, path: str, allowed_dir: str | None) -> str:
-        return await self._backend.read_file(path=path, allowed_dir=allowed_dir)
+    async def read_file(
+        self,
+        *,
+        path: str,
+        allowed_dir: str | None,
+        offset: int | None = None,
+        limit: int | None = None,
+    ) -> str:
+        return await self._backend.read_file(
+            path=path,
+            allowed_dir=allowed_dir,
+            offset=offset,
+            limit=limit,
+        )
 
-    async def write_file(self, *, path: str, content: str, allowed_dir: str | None) -> str:
+    async def write_file(
+        self,
+        *,
+        path: str,
+        content: str,
+        allowed_dir: str | None,
+    ) -> tuple[str, str | None]:
         return await self._backend.write_file(path=path, content=content, allowed_dir=allowed_dir)
 
     async def edit_file(
@@ -127,4 +171,3 @@ class ExecutionDispatcher:
 
     async def list_dir(self, *, path: str, allowed_dir: str | None) -> str:
         return await self._backend.list_dir(path=path, allowed_dir=allowed_dir)
-
