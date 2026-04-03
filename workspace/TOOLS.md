@@ -1,6 +1,14 @@
 # 可用工具
 
-本文档描述 auraeve 可用的工具。
+本文档描述 AuraEve 当前工作区常用工具的使用方式。系统实际可用工具以当轮提示词中的工具目录为准；本文件提供更具体的行为建议、边界和示例。
+
+## 使用原则
+
+- 低风险操作直接执行：读文件、列目录、搜索、读取网页内容
+- 高风险操作先简短说明：删除、覆盖、批量改动、对外发送、改系统配置
+- 有专用工具时优先用专用工具；没有合适工具时，再写脚本
+- 多个互不依赖的操作尽量并行，减少轮次和等待
+- 不凭印象回答；先读文件、查资料、跑命令确认事实
 
 ## 文件操作
 
@@ -11,13 +19,13 @@ read_file(path: str) -> str
 ```
 
 ### write_file
-将内容写入文件（如需要会自动创建父目录）。
+创建或覆盖文件内容；如需要会自动创建父目录。
 ```
 write_file(path: str, content: str) -> str
 ```
 
 ### edit_file
-通过替换特定文本来编辑文件。
+通过替换特定文本精确编辑文件。
 ```
 edit_file(path: str, old_text: str, new_text: str) -> str
 ```
@@ -28,8 +36,6 @@ edit_file(path: str, old_text: str, new_text: str) -> str
 list_dir(path: str) -> str
 ```
 
-## 服务管理
-
 ## Shell 执行
 
 ### exec
@@ -38,296 +44,280 @@ list_dir(path: str) -> str
 exec(command: str, working_dir: str = None) -> str
 ```
 
-**安全说明：**
-- 命令有可配置的超时时间（默认 60 秒）
-- 危险命令被屏蔽（rm -rf、format、dd、shutdown 等）
-- 输出截断至 10,000 个字符
-- 可配置 `restrictToWorkspace` 限制路径范围
+**说明：**
+- 命令有超时限制
+- 明显危险的命令会被拦截
+- 输出会截断，适合查看结果，不适合长时间刷屏
+- 相对路径默认相对于当前工作目录
 
-### 脚本策略（重要）
+## 脚本策略
 
-当现有工具无法直接完成任务时，**写脚本来解决**——这是标准方法，不是备选方案。
+当现有工具不能直接完成任务时，写脚本是标准手段，但不是默认第一选择。
 
-**步骤：**
-1. 用 `write_file` 将脚本写入 `workspace/scripts/`
-2. 用 `exec` 执行：`python workspace/scripts/task.py`
-3. 读取输出，继续下一步
+**优先顺序：**
+1. 先看是否已有专用工具可直接完成
+2. 专用工具不合适时，再写脚本
+3. 脚本执行后读取输出，再决定下一步
+
+**推荐做法：**
+1. 用 `write_file` 将脚本写到当前工作区的 `scripts/`
+2. 用 `exec` 执行脚本
+3. 读取输出并继续处理
 
 **示例 1：处理 JSON 数据**
 ```python
-# write_file("workspace/scripts/parse_data.py", ...)
-import json, sys
+# write_file("scripts/parse_data.py", ...)
+import json
 
-data = json.load(open("workspace/data.json"))
+data = json.load(open("data.json", "r", encoding="utf-8"))
 result = [item for item in data if item["status"] == "active"]
 print(json.dumps(result, ensure_ascii=False, indent=2))
 ```
 ```
-exec("python workspace/scripts/parse_data.py")
+exec("python scripts/parse_data.py")
 ```
 
-**示例 2：调用第三方 API**
+**示例 2：多步 API 调用**
 ```python
-# write_file("workspace/scripts/fetch_weather.py", ...)
-import urllib.request, json
+# write_file("scripts/fetch_weather.py", ...)
+import json
+import urllib.request
 
 url = "https://wttr.in/Beijing?format=j1"
 res = urllib.request.urlopen(url)
 data = json.loads(res.read())
 print(data["current_condition"][0]["weatherDesc"][0]["value"])
 ```
-
-**示例 3：批量文件操作**
-```python
-# write_file("workspace/scripts/rename_files.py", ...)
-import os, re
-from pathlib import Path
-
-for f in Path("workspace/data").glob("*.txt"):
-    new_name = re.sub(r"\s+", "_", f.stem) + f.suffix
-    f.rename(f.parent / new_name)
-    print(f"重命名：{f.name} → {new_name}")
+```
+exec("python scripts/fetch_weather.py")
 ```
 
-**注意：**
-- 脚本放在 `workspace/scripts/` 统一管理
-- 优先用 Python 标准库，避免不必要的 pip 安装
-- 确实需要第三方包时，先 `exec("pip show xxx")` 检查是否已安装
+**示例 3：批量文件处理**
+```python
+# write_file("scripts/rename_files.py", ...)
+import re
+from pathlib import Path
+
+for f in Path("data").glob("*.txt"):
+    new_name = re.sub(r"\s+", "_", f.stem) + f.suffix
+    f.rename(f.parent / new_name)
+    print(f"{f.name} -> {new_name}")
+```
+```
+exec("python scripts/rename_files.py")
+```
+
+**适合写脚本的场景：**
+- 数据处理
+- 批量操作
+- 格式转换
+- 复杂计算
+- 多步 API 调用
+
+**不适合写脚本的场景：**
+- 已有专用工具可以直接完成
+- 只是一次读取、一次搜索、一次发送
 
 ## 网络访问
 
 ### web_search
-使用 Brave Search API 搜索网络。
+搜索网络信息。
 ```
 web_search(query: str, count: int = 5) -> str
 ```
 
-返回含标题、URL 和摘要的搜索结果。需要在配置中设置 `tools.web.search.apiKey`。
-
 ### web_fetch
-抓取并提取 URL 的主要内容。
+抓取并提取网页主要内容。
 ```
 web_fetch(url: str, extractMode: str = "markdown", maxChars: int = 50000) -> str
 ```
 
-**说明：**
-- 使用 readability 提取内容
-- 支持 markdown 或纯文本提取
-- 默认输出截断至 50,000 个字符
+**建议：**
+- 先用 `web_search` 找来源，再用 `web_fetch` 读具体页面
+- 搜索时尽量带上关键词、时间范围、主体名
+- 需要给用户可核实的信息时，保留来源链接
 
-## 消息通信
+## 浏览器与 PDF
 
-> **原则：用工具发完消息后，最终回复必须为空字符串 `""`。**
-> 系统会自动判断：若最终回复为空，则不再额外发送任何文字。
-> 典型场景：发送语音、发送文件、推送图片、早安/晚安定时任务——这些已经是完整的消息，**不需要再说"已发送""完成啦"等确认文字**。
+### browser
+浏览器自动化工具，支持打开网页、交互、快照、截图、保存 PDF。
+```
+browser(action: str, ...)
+```
+
+常见操作：
+- `navigate`：打开网页
+- `act`：点击、输入、选择、按键等
+- `snapshot`：读取页面内容快照
+- `screenshot`：截图并保存到本地
+- `pdf_save`：将页面保存为 PDF
+- `close`：关闭浏览器
+
+### pdf
+PDF 处理工具，支持提取文本、元数据、表格，以及在可用时用模型分析 PDF。
+```
+pdf(action: str, path: str, ...)
+```
+
+常见操作：
+- `extract`
+- `metadata`
+- `tables`
+- `analyze`
+
+## 记忆检索
+
+### memory_search
+搜索长期记忆和历史记录。
+```
+memory_search(query: str, max_results: int = 8, min_score: float = 0.05) -> str
+```
+
+### memory_get
+读取指定记忆文件的精确片段。
+
+### memory_status
+查看记忆索引状态和检索模式。
+
+**建议：**
+- 回答历史决策、偏好、日期、人物、待办事项前，先用 `memory_search`
+- 需要精确引用时，再用 `memory_get`
+
+## 消息发送
 
 ### message
-向用户发送消息，支持**文字、文件附件、图片**。
-
+向用户发送消息，支持文字、本地文件和公开图片 URL。
 ```
 message(
-  content: str,           # 文字内容（Markdown）
-  file_path: str = None,  # 本地文件绝对路径（上传后发送）
-  image_url: str = None,  # 公开图片 URL（直接显示）
+  content: str,
+  file_path: str = None,
+  image_url: str = None,
   channel: str = None,
   chat_id: str = None
 ) -> str
 ```
 
-**支持的文件类型：**
-- 图片：jpg / png / gif / webp
-- 音频：mp3 / wav / amr
-- 视频：mp4
-- 文档：pdf / docx / xlsx / pptx / zip 等
+**使用规则：**
+- 发送文件：`message(content="", file_path="/绝对路径/文件名")`
+- 发送图片 URL：`message(content="", image_url="https://...")`
+- 同时发文字和文件时，传 `content + file_path`
+- `content` 可以为空字符串，但参数本身必须传
+
+**回复规则：**
+- 如果 `message` 已经完成了全部用户可见交付，且不需要额外说明，最终回复可用 `__SILENT__`
+- 如果用户还需要结论、提醒或说明，发送完 `message` 后仍应正常回复
 
 **典型用法：**
-
-发送文件（先用 exec 找到路径，再用 message 发送）：
-```
-exec("find /Users -name '*.pptx' 2>/dev/null | head -5")
-→ 得到路径 /Users/xxx/Documents/demo.pptx
-message(content="你的 PPT：", file_path="/Users/xxx/Documents/demo.pptx")
-```
-
-发文件不带说明文字：
-```
-message(content="", file_path="/path/to/report.pdf")
-```
-
-发网络图片：
-```
+```python
+message(content="", file_path="D:/reports/summary.pdf")
 message(content="天气图：", image_url="https://example.com/weather.png")
+message(content="分析完毕，附上报告。", file_path="D:/reports/output.xlsx")
 ```
 
-同时发文字 + 文件：
+**重要：**
+- 用户说“发文件给我”“发图片给我”时，先找路径，再调用 `message`
+- 不要说“无法发送文件”；这是已支持能力
+- 需要发给其他渠道或其他会话时，明确传 `channel` 和 `chat_id`
+
+## 子智能体
+
+### agent
+启动或管理后台子智能体任务。
 ```
-message(content="分析完毕，附上报告", file_path="/workspace/scripts/output.xlsx")
-```
-
-**重要：** 用户说"发文件给我""发图片给我"时，先用 `exec` 或 `list_dir` 找到文件路径，再用 `message(file_path=...)` 发送，**不要说"无法发送文件"**。
-
-**给指定好友发私信（按昵称查找）：**
-
-只知道对方昵称/备注，不知道 QQ 号时，先查好友列表再发送：
-```
-napcat_get_friend_list()
-→ 找到"张三"对应的 user_id，例如 123456789
-message(content="消息内容", channel="napcat", chat_id="private:123456789")
-```
-
-群成员同理，用 `napcat_get_group_members(group_id="群号")` 查成员列表找到 QQ 号后再发。
-
-## 子体任务管理
-
-### subagent
-管理子体（SubAgent）的完整生命周期。子体在后台独立运行，支持本地子体和远程子体。
-
-```
-subagent(
-  action: str,                  # 操作类型（见下方）
-  goal: str = None,             # (spawn) 任务目标描述
-  priority: int = 5,            # (spawn) 优先级 1-9
-  assigned_node_id: str = "",   # (spawn) 指定执行节点 ID；留空则自动调度到最优节点
-  tasks: list = None,           # (dag) DAG 任务列表
-  task_id: str = None,          # 目标任务 ID
-  message: str = None,          # (steer) 引导消息
-  approval_id: str = None,      # (approve) 审批 ID
-  decision: str = None,         # (approve) approve/reject
-  limit: int = 20               # (list) 返回数量
+agent(
+  action: str = "spawn",
+  prompt: str = None,
+  subagent_type: str = "general-purpose",
+  run_in_background: bool = True,
+  role_prompt: str = None,
+  max_steps: int = 50,
+  max_tool_calls: int = 100,
+  task_id: str = None
 ) -> str
 ```
 
 **action 可选值：**
+- `spawn`：创建任务
+- `list`：列出任务
+- `status`：查看任务详情
+- `cancel`：取消任务
 
-| action | 说明 | 必填参数 |
-|--------|------|----------|
-| `spawn` | 派生子体在后台执行任务 | `goal` |
-| `dag` | 提交 DAG 任务组（按依赖拓扑执行） | `tasks` |
-| `list` | 查询任务列表 | — |
-| `status` | 查询任务详情 | `task_id` |
-| `steer` | 向运行中的任务推送引导消息 | `task_id`, `message` |
-| `pause` | 暂停任务 | `task_id` |
-| `resume` | 恢复任务 | `task_id` |
-| `cancel` | 取消任务 | `task_id` |
-| `approve` | 审批高风险操作 | `approval_id`, `decision` |
+**subagent_type 可选值：**
+- `general-purpose`：通用执行
+- `explore`：偏只读搜索
+- `plan`：偏方案分析
 
 **典型用法：**
-
-派生后台任务（自动调度到最优节点）：
-```
-subagent(action="spawn", goal="搜索最新的 AI 论文并总结关键发现")
-```
-
-派生任务到指定远程节点：
-```
-subagent(action="spawn", goal="检查服务器磁盘空间和内存使用情况", assigned_node_id="work-pc")
+```python
+agent(action="spawn", prompt="搜索最新的 AI 论文并总结关键发现")
+agent(action="spawn", prompt="从法律、舆情、行业三个角度分析这个问题", subagent_type="explore")
+agent(action="list")
+agent(action="status", task_id="abc123")
+agent(action="cancel", task_id="abc123")
 ```
 
-提交有依赖关系的 DAG 任务组：
-```
-subagent(action="dag", tasks=[
-    {"id": "A", "goal": "收集服务器性能数据"},
-    {"id": "B", "goal": "清洗并标准化数据", "depends_on": ["A"]},
-    {"id": "C", "goal": "生成可视化分析报告", "depends_on": ["B"]}
-])
-```
+**建议：**
+- 独立任务尽量并行派发
+- 能直接完成的事不要派子智能体
+- 子智能体的 prompt 要自包含，不要假设它能看到你的完整对话
 
-查看任务状态：
+## 任务计划
+
+### todo
+管理当前会话的任务规划列表。
 ```
-subagent(action="list")
-subagent(action="status", task_id="task-xxxx")
+todo(todos: list[object]) -> str
 ```
 
-引导运行中的任务调整方向：
+**建议：**
+- 复杂任务开始前先建计划
+- 同一时刻只保留一个 `in_progress`
+- 所有步骤完成后传空列表 `[]` 清空计划
+
+## 定时任务
+
+### cron
+管理提醒和周期性任务。
 ```
-subagent(action="steer", task_id="task-xxxx", message="重点关注内存使用趋势")
-```
-
-审批子体的高风险操作请求：
-```
-subagent(action="approve", approval_id="apv-xxxx", decision="approve")
-```
-
-**远程节点调度：**
-- 不指定 `assigned_node_id` 时，调度器根据节点能力评分、当前负载、优先级自动选择最优节点
-- 指定 `assigned_node_id` 时，任务将强制分配到该节点执行
-- 使用 `subagent(action="list")` 查看任务分配到了哪个节点
-- 远程节点可用的工具集（read_file、write_file、list_dir、exec、web_search、web_fetch）是本地工具的安全子集
-
-**适用场景：**
-- 耗时任务（数据采集、报告生成、批量处理）
-- 需要在远程节点执行的任务（如远程服务器运维、跨机器操作）
-- 多步骤有依赖的工作流（DAG 编排）
-- 需要并行处理的独立子任务
-
-**风险策略：**
-- 子体执行 shell 命令、文件写入等高风险操作时会自动请求审批
-- 审批请求会通过消息通知，使用 `approve` action 处理
-
-## 定时提醒（Cron）
-
-使用 `cron` 工具直接创建定时提醒：
-
-### 设置定期提醒
-```
-cron(action="add", message="早上好！☀️", cron_expr="0 9 * * *")
-cron(action="add", message="喝水！💧", every_seconds=7200)
+cron(action: str, ...)
 ```
 
-### 设置一次性提醒
-```
-cron(action="add", message="会议马上开始！", at="2025-01-31T15:00:00")
+**action 可选值：**
+- `status`
+- `list`
+- `add`
+- `update`
+- `remove`
+- `run`
+- `runs`
+- `wake`
+
+**典型用法：**
+```python
+cron(action="add", message="早上好", cron_expr="0 9 * * *")
+cron(action="add", message="喝水", every_seconds=7200)
+cron(action="add", message="会议马上开始", at="2026-04-03T15:00:00")
+cron(action="list")
+cron(action="remove", job_id="abc123")
 ```
 
-### 管理提醒
-```
-cron(action="list")              # 列出所有任务
-cron(action="remove", job_id="abc123")   # 删除任务
-```
+## 心跳任务
 
-## 心跳任务管理
+工作区中的 `HEARTBEAT.md` 会被系统定期检查。
+需要定期跟进的事项，直接维护在该文件中。
 
-工作区中的 `HEARTBEAT.md` 文件每 30 分钟被检查一次。
-使用文件操作来管理定期任务：
-
-### 添加心跳任务
+**典型用法：**
 ```python
 edit_file(
     path="HEARTBEAT.md",
     old_text="## 待执行任务",
-    new_text="## 待执行任务
-
-- [ ] 新定期任务"
+    new_text="## 待执行任务\n\n- [ ] 每周一检查未完成事项并提醒"
 )
 ```
-
-### 删除心跳任务
-```python
-edit_file(
-    path="HEARTBEAT.md",
-    old_text="- [ ] 要删除的任务
-",
-    new_text=""
-)
-```
-
-### 重写所有任务
-```python
-write_file(
-    path="HEARTBEAT.md",
-    content="# 心跳任务
-
-- [ ] 任务 1
-- [ ] 任务 2
-"
-)
-```
-
----
 
 ## 添加自定义工具
 
-添加自定义工具：
+如需扩展工具：
 1. 在 `auraeve/agent/tools/` 中创建继承 `Tool` 的类
 2. 实现 `name`、`description`、`parameters` 和 `execute`
 3. 在 `auraeve/agent/tools/assembler.py` 的 `build_tool_registry()` 中注册
