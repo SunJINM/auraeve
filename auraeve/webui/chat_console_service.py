@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any
 
+from auraeve.agent.tasks import TaskStore
 from auraeve.subagents.data.repositories import SubagentStore
 from auraeve.webui.chat_service import ChatService
 
@@ -11,9 +13,15 @@ from auraeve.webui.chat_service import ChatService
 class ChatConsoleService:
     """聚合会话、工具调用与子体任务快照。"""
 
-    def __init__(self, chat_service: ChatService, store: SubagentStore | None = None) -> None:
+    def __init__(
+        self,
+        chat_service: ChatService,
+        store: SubagentStore | None = None,
+        task_base_dir: Path | None = None,
+    ) -> None:
         self._chat = chat_service
         self._store = store
+        self._task_base_dir = Path(task_base_dir) if task_base_dir is not None else None
 
     def get_snapshot(self, session_key: str, limit: int = 200) -> dict[str, Any]:
         session = self._chat._sm.get_or_create(session_key)
@@ -21,9 +29,11 @@ class ChatConsoleService:
 
         tool_calls = self._extract_tool_calls(session.messages)
         tasks = self._list_session_tasks(session_key, limit=limit)
+        main_tasks = self._list_main_tasks(session_key, limit=limit)
 
         summary = {
             "runningTasks": sum(1 for item in tasks if item["status"] == "running"),
+            "runningMainTasks": sum(1 for item in main_tasks if item["status"] == "in_progress"),
             "pendingApprovals": 0,
             "toolCalls": len(tool_calls),
             "onlineNodes": 0,
@@ -33,6 +43,7 @@ class ChatConsoleService:
             "run": run,
             "toolCalls": tool_calls,
             "tasks": tasks,
+            "mainTasks": main_tasks,
             "approvals": [],
             "nodes": [],
             "timeline": [],
@@ -56,6 +67,26 @@ class ChatConsoleService:
                 "result": task.result[:500] if task.result else "",
                 "createdAt": task.created_at,
                 "updatedAt": task.completed_at or task.created_at,
+            }
+            for task in tasks[:limit]
+        ]
+
+    def _list_main_tasks(self, session_key: str, limit: int) -> list[dict[str, Any]]:
+        if self._task_base_dir is None:
+            return []
+        store = TaskStore(base_dir=self._task_base_dir, task_list_id=session_key)
+        tasks = store.list_tasks()
+        return [
+            {
+                "taskId": task.id,
+                "subject": task.subject,
+                "description": task.description,
+                "activeForm": task.active_form or task.subject,
+                "status": task.status.value,
+                "owner": task.owner or "",
+                "blockedBy": list(task.blocked_by),
+                "blocks": list(task.blocks),
+                "updatedAt": task.updated_at,
             }
             for task in tasks[:limit]
         ]

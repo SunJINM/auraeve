@@ -130,6 +130,7 @@ class SessionAttemptRunner:
         model: str,
         temperature: float,
         max_tokens: int,
+        tools: "ToolRegistry | None" = None,
         thread_id: str = "",
         channel: str | None = None,
         chat_id: str | None = None,
@@ -137,9 +138,11 @@ class SessionAttemptRunner:
         steer_queue: asyncio.Queue | None = None,
     ) -> AttemptResult:
         msgs = list(messages)
+        active_tools = tools or self._tools
         final_content: str | None = None
         tools_used: list[str] = []
         recent_fingerprints: list[str] = []
+        transcript_messages: list[dict[str, Any]] = []
 
         budget = ExecutionBudget(self._execution_cfg)
         trace = RunTrace(session_id=thread_id, is_subagent=is_subagent)
@@ -212,7 +215,7 @@ class SessionAttemptRunner:
 
             response = await self._provider.chat(
                 messages=msgs,
-                tools=self._tools.get_definitions(),
+                tools=active_tools.get_definitions(),
                 model=effective_model,
                 temperature=temperature,
                 max_tokens=max_tokens,
@@ -243,9 +246,13 @@ class SessionAttemptRunner:
                     await asyncio.sleep(int(self._loop_guard_cfg["slowdownBackoffMs"]) / 1000)
                 elif mode == "block_tools":
                     tool_call_dicts = _make_tool_call_dicts(response.tool_calls)
+                    before_len = len(msgs)
                     msgs = _add_assistant_msg(msgs, response.content, tool_call_dicts, response.reasoning_content)
+                    transcript_messages.extend(msgs[before_len:])
                     for tc in response.tool_calls:
+                        before_len = len(msgs)
                         msgs = _add_tool_result(msgs, tc.id, tc.name, "[工具调用被跳过：检测到重复循环]")
+                        transcript_messages.extend(msgs[before_len:])
                     msgs.append(
                         {
                             "role": "user",
@@ -300,7 +307,9 @@ class SessionAttemptRunner:
                 tool_calls = tool_calls[:admitted]
 
             tool_call_dicts = _make_tool_call_dicts(tool_calls)
+            before_len = len(msgs)
             msgs = _add_assistant_msg(msgs, response.content, tool_call_dicts, response.reasoning_content)
+            transcript_messages.extend(msgs[before_len:])
             for tc in tool_calls:
                 tools_used.append(tc.name)
 
@@ -312,7 +321,7 @@ class SessionAttemptRunner:
                     args_str = _safe_json(tc.arguments)
                     logger.info(f"[attempt] tool={tc.name} args={args_str[:200]}")
                     started_at = time.perf_counter()
-                    tool_meta = self._tools.get_metadata(tc.name)
+                    tool_meta = active_tools.get_metadata(tc.name)
                     meta_group = None
                     if isinstance(tool_meta, dict):
                         meta_group = tool_meta.get("group")
@@ -419,7 +428,7 @@ class SessionAttemptRunner:
 
                     async def _run_tool() -> str:
                         try:
-                            result = await self._tools.execute(tc.name, effective_args)
+                            result = await active_tools.execute(tc.name, effective_args)
                         except Exception as exc:  # noqa: BLE001
                             result = f"工具执行出错：{exc}"
                         asyncio.create_task(
@@ -500,7 +509,9 @@ class SessionAttemptRunner:
 
             for tc, result, meta in results:
                 compact_result = _compact_tool_result(tc.name, result)
+                before_len = len(msgs)
                 msgs = _add_tool_result(msgs, tc.id, tc.name, compact_result)
+                transcript_messages.extend(msgs[before_len:])
                 if meta.get("status") != "success":
                     msgs[-1] = {
                         **msgs[-1],
@@ -517,7 +528,7 @@ class SessionAttemptRunner:
         return AttemptResult(
             final_content=final_content,
             tools_used=tools_used,
-            messages=msgs,
+            messages=transcript_messages,
             trace=trace.to_dict(),
         )
 

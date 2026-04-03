@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from auraeve.agent.tasks import TaskStore
 from auraeve.agent.tools.browser import BrowserTool
 from auraeve.agent.tools.cron import CronTool
 from auraeve.agent.tools.filesystem import EditFileTool, ListDirTool, ReadFileTool, WriteFileTool
@@ -9,11 +10,50 @@ from auraeve.agent.tools.message import MessageTool
 from auraeve.agent.tools.media_understand import MediaUnderstandTool
 from auraeve.agent.tools.pdf import PdfTool
 from auraeve.agent.tools.plan import TodoTool
+from auraeve.agent.tools.task_create import TaskCreateTool
+from auraeve.agent.tools.task_get import TaskGetTool
+from auraeve.agent.tools.task_list import TaskListTool
+from auraeve.agent.tools.task_update import TaskUpdateTool
 from auraeve.agent.tools.registry import ToolRegistry
 from auraeve.agent.tools.shell import ExecTool
 from auraeve.agent.tools.agent_tool import AgentTool
 from auraeve.agent.tools.web import WebFetchTool, WebSearchTool
+from auraeve.config.paths import resolve_state_dir
 from auraeve.execution.dispatcher import ExecutionDispatcher
+
+
+def _resolve_task_base_dir(task_base_dir: Path | None) -> Path:
+    if task_base_dir is not None:
+        return Path(task_base_dir)
+    return resolve_state_dir() / "tasks"
+
+
+def register_task_tools(
+    registry: ToolRegistry,
+    *,
+    task_mode: str,
+    plan_manager,
+    task_session_key: str | None,
+    task_base_dir: Path | None = None,
+) -> None:
+    if task_mode == "task_v2":
+        if not task_session_key:
+            raise ValueError("task_session_key is required when task_mode='task_v2'")
+        store = TaskStore(
+            base_dir=_resolve_task_base_dir(task_base_dir),
+            task_list_id=task_session_key,
+        )
+        registry.register(TaskCreateTool(store))
+        registry.register(TaskGetTool(store))
+        registry.register(TaskUpdateTool(store))
+        registry.register(TaskListTool(store))
+        return
+
+    if task_mode == "legacy_todo":
+        todo_tool = TodoTool(plan_manager=plan_manager)
+        if task_session_key:
+            todo_tool.set_thread_id(task_session_key)
+        registry.register(todo_tool)
 
 
 def build_tool_registry(
@@ -38,6 +78,9 @@ def build_tool_registry(
     execution_workspace: str | None = None,
     execution_dispatcher: ExecutionDispatcher | None = None,
     media_runtime=None,
+    task_mode: str = "legacy_todo",
+    task_session_key: str | None = None,
+    task_base_dir: Path | None = None,
 ) -> ToolRegistry:
     registry = ToolRegistry()
     tool_workspace = execution_workspace or str(workspace)
@@ -87,10 +130,13 @@ def build_tool_registry(
             cron_tool.set_context(origin_channel, origin_chat_id)
         registry.register(cron_tool)
 
-    todo_tool = TodoTool(plan_manager=plan_manager)
-    if thread_id:
-        todo_tool.set_thread_id(thread_id)
-    registry.register(todo_tool)
+    register_task_tools(
+        registry,
+        task_mode=task_mode,
+        plan_manager=plan_manager,
+        task_session_key=task_session_key or thread_id,
+        task_base_dir=task_base_dir,
+    )
 
     registry.register(BrowserTool(screenshot_dir=Path(tool_workspace) / "artifacts" / "browser"))
     registry.register(PdfTool(provider=provider, model=model))

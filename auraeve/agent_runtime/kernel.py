@@ -21,13 +21,14 @@ from auraeve.bus.events import OutboundMessage
 from auraeve.bus.queue import OutboundDispatcher
 from auraeve.providers.base import LLMProvider
 from auraeve.agent.engines.base import ContextEngine
+from auraeve.agent.legacy_todo_state import extract_latest_todos
 from auraeve.agent.tools.registry import ToolRegistry
 from auraeve.agent.tools.message import MessageTool
 from auraeve.agent.tools.media_understand import MediaUnderstandTool
 from auraeve.agent.tools.agent_tool import AgentTool
 from auraeve.agent.tools.cron import CronTool
 from auraeve.agent.tools.plan import TodoTool
-from auraeve.agent.tools.assembler import build_tool_registry
+from auraeve.agent.tools.assembler import build_tool_registry, register_task_tools
 from auraeve.agent.plan import PlanManager
 from auraeve.agent.context import ContextBuilder, SILENT_REPLY_TOKEN, HEARTBEAT_OK
 from auraeve.session.manager import SessionManager
@@ -38,6 +39,8 @@ from auraeve.mcp import MCPRuntimeManager
 from .prompt.assembler import PromptAssembler
 from .session_attempt import SessionAttemptRunner
 from .run_orchestrator import RunOrchestrator
+from .task_mode import is_task_v2_enabled
+from .task_reminders import build_task_runtime_instruction
 from .tool_policy.engine import ToolPolicyEngine
 
 if TYPE_CHECKING:
@@ -104,6 +107,7 @@ class RuntimeKernel:
         # 会话管理与任务计划管理
         self.sessions = SessionManager(sessions_dir)
         self._plan = PlanManager()
+        self._task_base_dir = sessions_dir.parent / "tasks"
 
         # 插件注册与 Hook 运行器
         _registry = plugin_registry or PluginRegistry()
@@ -158,6 +162,9 @@ class RuntimeKernel:
                 engine=self.engine,
                 execution_workspace=task.worktree_path or self._execution_workspace,
                 media_runtime=self._media_runtime,
+                task_mode="legacy_todo",
+                task_session_key=f"sub:{task.task_id}",
+                task_base_dir=self._task_base_dir,
             ),
             policy=self.policy,
             model=self.model,
@@ -338,6 +345,8 @@ class RuntimeKernel:
             engine=self.engine,
             execution_workspace=self._execution_workspace,
             media_runtime=self._media_runtime,
+            task_mode="none",
+            task_base_dir=self._task_base_dir,
         )
         self._runner._tools = self.tools
 
@@ -399,34 +408,64 @@ class RuntimeKernel:
             "issues": issues,
         }
 
-    def _set_tool_context(self, channel: str, chat_id: str, thread_id: str) -> None:
-        message_tool = self.tools.get("message")
+    def _set_tool_context(self, tools: ToolRegistry, channel: str, chat_id: str, thread_id: str) -> None:
+        message_tool = tools.get("message")
         if message_tool is not None and isinstance(message_tool, MessageTool):
             message_tool.set_context(channel, chat_id)
-        agent_tool = self.tools.get("agent")
+        agent_tool = tools.get("agent")
         if agent_tool is not None and isinstance(agent_tool, AgentTool):
             agent_tool.set_context(channel, chat_id)
-        cron_tool = self.tools.get("cron")
+        cron_tool = tools.get("cron")
         if cron_tool is not None and isinstance(cron_tool, CronTool):
             cron_tool.set_context(channel, chat_id)
-        todo_tool = self.tools.get("todo")
+        todo_tool = tools.get("todo")
         if todo_tool is not None and isinstance(todo_tool, TodoTool):
             todo_tool.set_thread_id(thread_id)
 
     def _set_media_understand_context(
         self,
+        tools: ToolRegistry,
         *,
         content: str,
         media: list[str] | None,
         attachments,
     ) -> None:
-        media_tool = self.tools.get("media_understand")
+        media_tool = tools.get("media_understand")
         if media_tool is not None and isinstance(media_tool, MediaUnderstandTool):
             media_tool.set_context(
                 content=content,
                 media=media,
                 attachments=attachments,
             )
+
+    def _resolve_runtime_tools(self, channel: str, chat_id: str, thread_id: str) -> ToolRegistry:
+        base_tools = getattr(self, "tools", None)
+        registry = base_tools.clone() if isinstance(base_tools, ToolRegistry) else ToolRegistry()
+        task_mode = "task_v2" if is_task_v2_enabled(channel=channel) else "legacy_todo"
+        if task_mode == "legacy_todo":
+            session_manager = getattr(self, "sessions", None)
+            session_messages = []
+            if session_manager is not None:
+                session = session_manager.get_or_create(thread_id)
+                session_messages = list(getattr(session, "messages", []) or [])
+            self._plan.set_plan(thread_id, extract_latest_todos(session_messages))
+        register_task_tools(
+            registry,
+            task_mode=task_mode,
+            plan_manager=self._plan,
+            task_session_key=thread_id,
+            task_base_dir=getattr(self, "_task_base_dir", None),
+        )
+        self._set_tool_context(registry, channel, chat_id, thread_id)
+        return registry
+
+    def _persist_tool_transcript(self, session, transcript_messages: list[dict]) -> None:
+        for message in transcript_messages:
+            role = message.get("role")
+            if role not in {"assistant", "tool"}:
+                continue
+            payload = {k: v for k, v in message.items() if k != "role"}
+            session.add_message(role, payload.pop("content", ""), **payload)
 
     async def _extract_attachments_legacy(self, attachments):
         if not attachments:
@@ -530,7 +569,7 @@ class RuntimeKernel:
                 content="可用命令：\n/new - 开始新对话\n/help - 显示帮助",
             )
 
-        self._set_tool_context(channel, chat_id, thread_id)
+        runtime_tools = self._resolve_runtime_tools(channel, chat_id, thread_id)
 
         # session_start hook (fire-and-forget)
         asyncio.create_task(self.hooks.run_session_start(
@@ -559,12 +598,19 @@ class RuntimeKernel:
             extracted_attachments = await self._extract_attachments_legacy(attachments)
 
         self._set_media_understand_context(
+            runtime_tools,
             content=current_message,
             media=media if media else None,
             attachments=attachments if attachments else None,
         )
 
         # PromptAssembler (includes before_prompt_build hook)
+        runtime_instruction = build_task_runtime_instruction(
+            session_key=session.key,
+            session_messages=session.messages,
+            available_tools=set(runtime_tools.tool_names),
+            task_base_dir=getattr(self, "_task_base_dir", None),
+        )
         assemble_result = await self.assembler.assemble(
             session_id=session.key,
             messages=session.get_history(),
@@ -573,23 +619,20 @@ class RuntimeKernel:
             chat_id=chat_id,
             media=media if media else None,
             attachments=extracted_attachments,
-            available_tools=set(self.tools.tool_names),
+            available_tools=set(runtime_tools.tool_names),
+            runtime_instruction=runtime_instruction or "",
         )
         if assemble_result.compacted_messages is not None:
             session.replace_history(assemble_result.compacted_messages)
             logger.info(f"[kernel] context compacted: {assemble_result.estimated_tokens} tokens")
 
-        # 将当前计划注入到提示词
-        final_messages = self._inject_plan_into_messages(
-            assemble_result.messages, thread_id
-        )
-
         # 通过统一编排器执行（含恢复策略）
         recovery_result = await self._orchestrator.run(
-            messages=final_messages,
+            messages=assemble_result.messages,
             model=self.model,
             temperature=self.temperature,
             max_tokens=self.max_tokens,
+            tools=runtime_tools,
             thread_id=thread_id,
             channel=channel,
             chat_id=chat_id,
@@ -612,6 +655,7 @@ class RuntimeKernel:
                 chat_id=chat_id,
                 sender_id=sender_id,
             )
+        self._persist_tool_transcript(session, recovery_result.messages)
         session.add_message("assistant", persist_content,
                             tools_used=tools_used if tools_used else None)
         self.sessions.save(session)

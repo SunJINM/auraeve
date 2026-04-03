@@ -125,7 +125,11 @@ class WebUIServer:
             else None
         )
         self._nodes = None
-        self._chat_console = ChatConsoleService(chat_service, getattr(subagent_executor, "_store", None))
+        self._chat_console = ChatConsoleService(
+            chat_service,
+            getattr(subagent_executor, "_store", None),
+            task_base_dir=cfg.resolve_state_dir() / "agents" / "default" / "tasks",
+        )
         self._server: uvicorn.Server | None = None
         self._restart_callback = restart_callback
         self._upload = UploadWebService()

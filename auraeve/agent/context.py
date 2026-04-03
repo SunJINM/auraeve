@@ -155,11 +155,16 @@ class ContextBuilder:
             "agent":          "启动子智能体执行复杂多步骤任务，支持查询和管理已创建的子智能体",
             "cron":           "管理定时任务和唤醒事件（用于提醒；设置提醒时，写入自然语言描述以便触发时读起来像提醒）",
             "todo":           "管理当前任务规划列表",
+            "TaskCreate":     "创建任务项",
+            "TaskGet":        "读取单个任务详情",
+            "TaskUpdate":     "增量更新任务状态与字段",
+            "TaskList":       "列出当前任务列表",
         }
         TOOL_ORDER = [
             "read_file", "write_file", "edit_file", "list_dir", "exec",
             "web_search", "web_fetch", "browser", "pdf",
-            "memory_search", "memory_get", "memory_status", "message", "agent", "cron", "todo",
+            "memory_search", "memory_get", "memory_status", "message", "agent", "cron",
+            "TaskCreate", "TaskGet", "TaskUpdate", "TaskList", "todo",
         ]
 
         enabled = [t for t in TOOL_ORDER if t in tools]
@@ -174,6 +179,22 @@ class ContextBuilder:
             summary = CORE_TOOL_SUMMARIES.get(t)
             tool_lines.append(f"- {t}: {summary}" if summary else f"- {t}")
 
+        task_guidance: list[str] = []
+        if {"TaskCreate", "TaskGet", "TaskUpdate", "TaskList"} & tools:
+            task_guidance = [
+                "## 任务管理",
+                "复杂任务（3 步以上）使用 TaskCreate / TaskGet / TaskUpdate / TaskList 管理工作，不要把当前任务列表直接写进回复里。",
+                "开始执行某项前先用 TaskUpdate 标记 in_progress；完成后立刻标记 completed；修改前先用 TaskGet 读取最新状态。",
+                "",
+            ]
+        elif "todo" in tools:
+            task_guidance = [
+                "## 计划与自检",
+                "复杂任务（3 步以上）先调用 todo 建立计划，并保持同一时刻仅一个 in_progress。",
+                "每完成一步立即更新状态，结束前自检：交付物是否齐全、是否已完成必要消息发送、是否还需用户确认。",
+                "",
+            ]
+
         return [
             "## 工具目录",
             "工具名区分大小写，调用时请完全匹配。",
@@ -186,10 +207,7 @@ class ContextBuilder:
             "有专用工具时，直接调用工具，不要让用户自行运行命令。",
             "长时间等待时，避免紧密轮询：用 exec 配合足够的等待时间，或用后台任务。",
             "",
-            "## 计划与自检",
-            "复杂任务（3 步以上）先调用 todo 建立计划，并保持同一时刻仅一个 in_progress。",
-            "每完成一步立即更新状态，结束前自检：交付物是否齐全、是否已完成必要消息发送、是否还需用户确认。",
-            "",
+            *task_guidance,
         ]
 
     def _section_safety(self) -> list[str]:
@@ -312,7 +330,7 @@ class ContextBuilder:
             "**完成通知语义**：子智能体完成后你会收到一条 `task-notification`，包含字段：",
             "- `status`：completed / failed / killed",
             "- `result`：子智能体的输出内容",
-            "这是系统注入的内部信号，不是用户发言——不要打招呼，不要回复「收到」，直接处理结果。"
+            "这是系统注入的内部信号，不是用户新的发言——不要打招呼，不要回复“收到”，直接处理结果。"
             "有新信息到达就向用户更新进展，不必等全部子智能体完成。",
             "",
             "**失败处理**：status=failed 时，已有的部分结果仍可参考；失败原因属于内部细节，不要原样透传给用户。",
@@ -344,7 +362,7 @@ class ContextBuilder:
             "**绝不能回复\"无法发送文件\"——这是已支持的功能。**",
             "",
             "## 任务完成规则",
-            "调用 todo([]) 仅表示计划已清空，不等于自动结束回复流程。",
+            "更新任务状态或清空 legacy todo 仅表示任务跟踪已同步，不等于自动结束回复流程。",
             "若任务产出了文件，先调用 message(file_path=...) 发送文件。",
             "若当前轮次仅完成工具动作且无额外用户可见信息，允许最终回复 __SILENT__。",
             "若有结果、结论、提醒或下一步建议需要用户感知，必须给出正常文字回复。",

@@ -16,6 +16,12 @@ class ToolRegistry:
         self._tools[tool.name] = tool
         self._meta[tool.name] = dict(getattr(tool, "metadata", {}) or {})
 
+    def clone(self) -> "ToolRegistry":
+        cloned = ToolRegistry()
+        cloned._tools = dict(self._tools)
+        cloned._meta = {name: dict(meta) for name, meta in self._meta.items()}
+        return cloned
+
     def unregister(self, name: str) -> None:
         self._tools.pop(name, None)
         self._meta.pop(name, None)

@@ -261,16 +261,49 @@ agent(action="cancel", task_id="abc123")
 - 能直接完成的事不要派子智能体
 - 子智能体的 prompt 要自包含，不要假设它能看到你的完整对话
 
-## 任务计划
+## 任务管理
+
+交互式会话（如 `webui`、`terminal`）优先使用 Task V2；非交互式会话可能仍提供 legacy `todo`。
+
+### TaskCreate
+创建任务项。
+```
+TaskCreate(subject: str, description: str, activeForm: str = None, owner: str = None, blocks: list[str] = None, blockedBy: list[str] = None, metadata: object = None) -> str
+```
+
+### TaskGet
+读取单个任务详情。
+```
+TaskGet(taskId: str) -> str
+```
+
+### TaskUpdate
+增量更新任务。
+```
+TaskUpdate(taskId: str, status: str = None, subject: str = None, description: str = None, activeForm: str = None, owner: str = None, blocks: list[str] = None, blockedBy: list[str] = None, metadata: object = None, deleted: bool = False) -> str
+```
+
+### TaskList
+列出当前任务列表。
+```
+TaskList() -> str
+```
+
+**Task V2 建议：**
+- 复杂任务开始时先拆出清晰任务项
+- 开始某项前用 `TaskUpdate(..., status=\"in_progress\")`
+- 完成后立刻改成 `completed`
+- 修改前先用 `TaskGet` 读取最新状态
+- 完成一个任务后用 `TaskList` 查看下一个任务
 
 ### todo
-管理当前会话的任务规划列表。
+管理当前会话的任务规划列表（legacy，全量替换）。
 ```
 todo(todos: list[object]) -> str
 ```
 
-**建议：**
-- 复杂任务开始前先建计划
+**legacy todo 建议：**
+- 仅在未提供 Task V2 时使用
 - 同一时刻只保留一个 `in_progress`
 - 所有步骤完成后传空列表 `[]` 清空计划
 

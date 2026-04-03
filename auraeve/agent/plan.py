@@ -4,8 +4,8 @@ PlanManager — 任务规划全局状态管理器。
 参考 Claude Code 的 TodoWrite 机制：
 - 每个会话（thread_id）维护独立的任务列表
 - Agent 调用 todo 工具时全量替换任务列表（原子操作，无差量同步问题）
-- 每次 LLM 调用前，prompt_fn 读取并注入当前计划到系统提示词
-- 计划为内存状态（不持久化），随会话生命周期存在
+- 交互式主路径不再依赖该机制；非交互式 legacy todo 仍使用它作为运行时状态缓存
+- 当前计划通过 transcript 恢复，而不是注入系统提示词
 """
 
 from __future__ import annotations
@@ -95,7 +95,7 @@ class PlanManager:
 
     def format_for_prompt(self, thread_id: str) -> str:
         """
-        将当前计划格式化为 Markdown，用于注入系统提示词。
+        将当前计划格式化为 Markdown。
         无计划时返回空字符串。
         """
         todos = self._plans.get(thread_id)

@@ -13,7 +13,6 @@ class TodoTool(Tool):
     管理当前会话的任务规划列表（TodoWrite 风格）。
 
     全量替换整个列表，无差量同步问题。
-    计划会在每次 LLM 调用前自动注入到系统提示词中。
     """
 
     def __init__(self, plan_manager: "PlanManager"):

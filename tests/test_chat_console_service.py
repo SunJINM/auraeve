@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from auraeve.agent_runtime.command_queue import RuntimeCommandQueue
+from auraeve.agent.tasks import TaskStatus as MainTaskStatus, TaskStore
 from auraeve.subagents.data.models import Task, TaskBudget, TaskStatus
 from auraeve.subagents.data.repositories import SubagentStore
 from auraeve.session.manager import SessionManager
@@ -75,6 +76,29 @@ def test_chat_console_snapshot_filters_session_tasks_and_extracts_tools(tmp_path
     assert snapshot["approvals"] == []
     assert snapshot["nodes"] == []
     assert snapshot["timeline"] == []
+    assert snapshot["mainTasks"] == []
+
+
+def test_chat_console_snapshot_includes_main_thread_task_v2_snapshot(tmp_path: Path) -> None:
+    sessions_dir = tmp_path / "sessions"
+    task_store = TaskStore(base_dir=tmp_path / "tasks", task_list_id="webui:test-user")
+    task_store.create_task(
+        subject="梳理运行时模式",
+        description="确认交互式与非交互式工具集",
+        active_form="正在梳理运行时模式",
+    )
+    task_store.update_task("1", status=MainTaskStatus.IN_PROGRESS)
+
+    sm = SessionManager(sessions_dir)
+    chat = ChatService(sm, RuntimeCommandQueue())
+    service = ChatConsoleService(chat_service=chat, store=None, task_base_dir=tmp_path / "tasks")
+
+    snapshot = service.get_snapshot("webui:test-user")
+
+    assert len(snapshot["mainTasks"]) == 1
+    assert snapshot["mainTasks"][0]["taskId"] == "1"
+    assert snapshot["mainTasks"][0]["status"] == "in_progress"
+    assert snapshot["summary"]["runningMainTasks"] == 1
 
 
 @pytest.mark.asyncio
