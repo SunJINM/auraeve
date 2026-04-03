@@ -1,3 +1,8 @@
+import type {
+  ChatTranscriptEvent,
+  ChatTranscriptHistoryResp,
+} from '../components/chat/transcript/types'
+
 // API 客户端：对接 AuraEve WebUI 后端
 const BASE = '/api/webui'
 
@@ -156,6 +161,9 @@ export const chatApi = {
   history: (sessionKey: string, limit = 200) =>
     req<ChatHistoryResp>('GET', `/chat/history?sessionKey=${encodeURIComponent(sessionKey)}&limit=${limit}`),
 
+  transcript: (sessionKey: string, limit = 200) =>
+    req<ChatTranscriptHistoryResp>('GET', `/chat/transcript?sessionKey=${encodeURIComponent(sessionKey)}&limit=${limit}`),
+
   runtime: (sessionKey: string, limit = 100) =>
     req<ChatRuntimeSnapshotResp>('GET', `/chat/runtime?sessionKey=${encodeURIComponent(sessionKey)}&limit=${limit}`),
 
@@ -180,6 +188,17 @@ export const chatApi = {
     es.onerror = () => {
       onEvent({ type: 'chat.error', error: 'SSE disconnected' })
     }
+    return () => es.close()
+  },
+
+  transcriptEvents(sessionKey: string, onEvent: (e: ChatTranscriptEvent) => void): () => void {
+    const t = token()
+    const url = `${BASE}/chat/transcript/events?sessionKey=${encodeURIComponent(sessionKey)}${t ? `&token=${t}` : ''}`
+    const es = new EventSource(url)
+    es.onmessage = (ev) => {
+      try { onEvent(JSON.parse(ev.data) as ChatTranscriptEvent) } catch { /* skip */ }
+    }
+    es.onerror = () => es.close()
     return () => es.close()
   },
 }
