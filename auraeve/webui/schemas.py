@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -8,6 +8,61 @@ from pydantic import BaseModel, Field
 class ChatHistoryResponse(BaseModel):
     sessionKey: str
     messages: list[dict[str, Any]]
+
+
+class TranscriptUserBlock(BaseModel):
+    type: Literal["user"] = "user"
+    content: str = ""
+    timestamp: str = ""
+
+
+class TranscriptToolCallBlock(BaseModel):
+    type: Literal["tool_call"] = "tool_call"
+    toolCallId: str = ""
+    toolName: str = ""
+    arguments: Any = None
+
+
+class TranscriptToolResultBlock(BaseModel):
+    type: Literal["tool_result"] = "tool_result"
+    toolCallId: str = ""
+    toolName: str = ""
+    content: str = ""
+
+
+class TranscriptAssistantTextBlock(BaseModel):
+    type: Literal["assistant_text"] = "assistant_text"
+    content: str = ""
+    timestamp: str = ""
+
+
+class TranscriptCollapsedActivityBlock(BaseModel):
+    type: Literal["collapsed_activity"] = "collapsed_activity"
+    activityType: Literal["read"] = "read"
+    count: int = Field(default=1, ge=1)
+    blocks: list[dict[str, Any]] = Field(default_factory=list)
+
+
+TranscriptBlock = Annotated[
+    TranscriptUserBlock
+    | TranscriptToolCallBlock
+    | TranscriptToolResultBlock
+    | TranscriptAssistantTextBlock
+    | TranscriptCollapsedActivityBlock,
+    Field(discriminator="type"),
+]
+
+
+class ChatTranscriptHistoryResponse(BaseModel):
+    sessionKey: str
+    blocks: list[TranscriptBlock] = Field(default_factory=list)
+
+
+class ChatTranscriptEvent(BaseModel):
+    type: Literal["transcript.block", "transcript.done"]
+    sessionKey: str
+    runId: str | None = None
+    block: TranscriptBlock | None = None
 
 
 class ChatSendRequest(BaseModel):
