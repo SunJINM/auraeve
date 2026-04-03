@@ -44,6 +44,15 @@ class TranscriptAssistantTextBlock(BaseModel):
     timestamp: str = ""
 
 
+class TranscriptRunStatusBlock(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: str = Field(min_length=1)
+    type: Literal["run_status"] = "run_status"
+    status: Literal["started", "running", "completed", "aborted"] = "running"
+    content: str = ""
+    timestamp: str = ""
+
+
 TranscriptCollapsedActivityItem = Annotated[
     TranscriptToolCallBlock | TranscriptToolResultBlock,
     Field(discriminator="type"),
@@ -64,6 +73,7 @@ TranscriptBlock = Annotated[
     | TranscriptToolCallBlock
     | TranscriptToolResultBlock
     | TranscriptAssistantTextBlock
+    | TranscriptRunStatusBlock
     | TranscriptCollapsedActivityBlock,
     Field(discriminator="type"),
 ]
@@ -71,6 +81,7 @@ TranscriptBlock = Annotated[
 
 class ChatTranscriptHistoryResponse(BaseModel):
     sessionKey: str
+    run: dict[str, Any] = Field(default_factory=dict)
     blocks: list[TranscriptBlock] = Field(default_factory=list)
 
 

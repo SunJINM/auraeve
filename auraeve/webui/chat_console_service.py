@@ -1,7 +1,6 @@
 """聊天控制台聚合服务：为聊天页提供运行面板所需的快照数据。"""
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 
@@ -24,10 +23,7 @@ class ChatConsoleService:
         self._task_base_dir = Path(task_base_dir) if task_base_dir is not None else None
 
     def get_snapshot(self, session_key: str, limit: int = 200) -> dict[str, Any]:
-        session = self._chat._sm.get_or_create(session_key)
         run = self._chat.get_runtime_status(session_key)
-
-        tool_calls = self._extract_tool_calls(session.messages)
         tasks = self._list_session_tasks(session_key, limit=limit)
         main_tasks = self._list_main_tasks(session_key, limit=limit)
 
@@ -35,13 +31,11 @@ class ChatConsoleService:
             "runningTasks": sum(1 for item in tasks if item["status"] == "running"),
             "runningMainTasks": sum(1 for item in main_tasks if item["status"] == "in_progress"),
             "pendingApprovals": 0,
-            "toolCalls": len(tool_calls),
-            "onlineNodes": 0,
         }
 
         return {
             "run": run,
-            "toolCalls": tool_calls,
+            "toolCalls": [],
             "tasks": tasks,
             "mainTasks": main_tasks,
             "approvals": [],
@@ -90,35 +84,3 @@ class ChatConsoleService:
             }
             for task in tasks[:limit]
         ]
-
-    @staticmethod
-    def _extract_tool_calls(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        tool_results: dict[str, str] = {}
-        items: list[dict[str, Any]] = []
-        for message in messages:
-            if message.get("role") == "tool":
-                tool_results[str(message.get("tool_call_id") or "")] = str(message.get("content") or "")
-
-        for message in messages:
-            if message.get("role") != "assistant":
-                continue
-            for tool_call in message.get("tool_calls") or []:
-                function = tool_call.get("function") or {}
-                tool_call_id = str(tool_call.get("id") or "")
-                raw_args = function.get("arguments") or ""
-                try:
-                    parsed_args = json.loads(raw_args) if isinstance(raw_args, str) and raw_args else raw_args
-                except Exception:
-                    parsed_args = raw_args
-                result_preview = tool_results.get(tool_call_id, "")
-                items.append(
-                    {
-                        "toolCallId": tool_call_id,
-                        "toolName": function.get("name") or "",
-                        "arguments": parsed_args,
-                        "status": "completed" if tool_call_id in tool_results else "running",
-                        "resultPreview": result_preview[:300],
-                    }
-                )
-        items.reverse()
-        return items

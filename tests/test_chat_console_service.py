@@ -1,16 +1,28 @@
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 import pytest
 
 from auraeve.agent_runtime.command_queue import RuntimeCommandQueue
 from auraeve.agent.tasks import TaskStatus as MainTaskStatus, TaskStore
+from auraeve.bus.events import OutboundMessage
 from auraeve.subagents.data.models import Task, TaskBudget, TaskStatus
 from auraeve.subagents.data.repositories import SubagentStore
 from auraeve.session.manager import SessionManager
 from auraeve.webui.chat_console_service import ChatConsoleService
 from auraeve.webui.chat_service import ChatService, RunState
+from auraeve.webui.schemas import ChatTranscriptBlockEvent, ChatTranscriptDoneEvent
+
+
+async def _collect_events(service: ChatService, session_key: str, expected_count: int) -> list[dict]:
+    items: list[dict] = []
+    async for event in service.subscribe(session_key):
+        items.append(event)
+        if len(items) >= expected_count:
+            break
+    return items
 
 def test_chat_console_snapshot_filters_session_tasks_and_extracts_tools(tmp_path: Path) -> None:
     sessions_dir = tmp_path / "sessions"
@@ -69,10 +81,10 @@ def test_chat_console_snapshot_filters_session_tasks_and_extracts_tools(tmp_path
     assert snapshot["run"]["runId"] == "run-1"
     assert len(snapshot["tasks"]) == 1
     assert snapshot["tasks"][0]["taskId"] == "task_1"
-    assert snapshot["toolCalls"][0]["toolName"] == "agent"
-    assert snapshot["toolCalls"][0]["status"] == "completed"
-    assert snapshot["toolCalls"][0]["resultPreview"] == "{\"ok\": true}"
+    assert snapshot["toolCalls"] == []
     assert snapshot["summary"]["runningTasks"] == 1
+    assert snapshot["summary"]["runningMainTasks"] == 0
+    assert snapshot["summary"]["pendingApprovals"] == 0
     assert snapshot["approvals"] == []
     assert snapshot["nodes"] == []
     assert snapshot["timeline"] == []
@@ -99,6 +111,7 @@ def test_chat_console_snapshot_includes_main_thread_task_v2_snapshot(tmp_path: P
     assert snapshot["mainTasks"][0]["taskId"] == "1"
     assert snapshot["mainTasks"][0]["status"] == "in_progress"
     assert snapshot["summary"]["runningMainTasks"] == 1
+    assert snapshot["toolCalls"] == []
 
 
 @pytest.mark.asyncio
@@ -124,3 +137,63 @@ async def test_chat_service_enqueues_prompt_command(tmp_path: Path) -> None:
     assert len(commands) == 1
     assert commands[0].mode == "prompt"
     assert commands[0].payload["content"] == "hello"
+
+
+@pytest.mark.asyncio
+async def test_chat_service_send_broadcasts_transcript_run_started_event(tmp_path: Path) -> None:
+    queue = RuntimeCommandQueue()
+    session_manager = SessionManager(tmp_path / "sessions")
+    service = ChatService(session_manager=session_manager, command_queue=queue)
+
+    events_task = asyncio.create_task(_collect_events(service, "webui:s1", expected_count=1))
+    await asyncio.sleep(0)
+
+    run_id, status = await service.send(
+        session_key="webui:s1",
+        message="hello",
+        idempotency_key="idem-1",
+        user_id="u1",
+    )
+    events = await asyncio.wait_for(events_task, timeout=2)
+
+    assert status == "started"
+    assert len(events) == 1
+    event = ChatTranscriptBlockEvent.model_validate(events[0]).model_dump()
+    assert event["sessionKey"] == "webui:s1"
+    assert event["runId"] == run_id
+    assert event["block"]["type"] == "run_status"
+    assert event["block"]["status"] == "started"
+
+
+@pytest.mark.asyncio
+async def test_chat_service_on_outbound_broadcasts_assistant_block_and_done(tmp_path: Path) -> None:
+    queue = RuntimeCommandQueue()
+    session_manager = SessionManager(tmp_path / "sessions")
+    service = ChatService(session_manager=session_manager, command_queue=queue)
+    run_id, _ = await service.send(
+        session_key="webui:s1",
+        message="hello",
+        idempotency_key="idem-1",
+        user_id="u1",
+    )
+
+    events_task = asyncio.create_task(_collect_events(service, "webui:s1", expected_count=2))
+    await asyncio.sleep(0)
+
+    await service.on_outbound(
+        OutboundMessage(
+            channel="webui",
+            chat_id="webui:s1",
+            content="final answer",
+            metadata={"run_id": run_id},
+        )
+    )
+    events = await asyncio.wait_for(events_task, timeout=2)
+
+    block_event = ChatTranscriptBlockEvent.model_validate(events[0]).model_dump()
+    done_event = ChatTranscriptDoneEvent.model_validate(events[1]).model_dump()
+
+    assert block_event["runId"] == run_id
+    assert block_event["block"]["type"] == "assistant_text"
+    assert block_event["block"]["content"] == "final answer"
+    assert done_event["runId"] == run_id
