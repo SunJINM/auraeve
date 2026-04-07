@@ -55,9 +55,9 @@ class ReadTool(_FsToolBase):
             "type": "object",
             "properties": {
                 "file_path": {"type": "string", "description": "Absolute path to the file"},
-                "offset": {"type": "integer", "description": "Optional zero-based line offset"},
-                "limit": {"type": "integer", "description": "Optional number of lines to read"},
-                "pages": {"type": "string", "description": "Optional PDF page range"},
+                "offset": {"type": "integer", "description": "Optional zero-based line offset. Omit for a full read."},
+                "limit": {"type": "integer", "description": "Optional number of lines to read. Omit for a full read."},
+                "pages": {"type": "string", "description": "Optional PDF page range. Omit for a full read."},
             },
             "required": ["file_path"],
         }
@@ -80,6 +80,13 @@ class ReadTool(_FsToolBase):
                 return ToolExecutionResult(content=f"Error: not a file: {resolved}")
 
             pages = kwargs.get("pages")
+            normalized_pages = str(pages).strip() if pages is not None else None
+            if normalized_pages == "":
+                normalized_pages = None
+            normalized_offset, normalized_limit = _normalize_default_text_read_args(
+                offset,
+                limit,
+            )
             ctx = get_current_tool_runtime_context()
             current_mtime_ms = int(resolved.stat().st_mtime * 1000)
             existing_snapshot = ctx.file_reads.get(str(resolved)) if ctx is not None else None
@@ -87,9 +94,9 @@ class ReadTool(_FsToolBase):
                 existing_snapshot is not None
                 and existing_snapshot.file_mtime_ms == current_mtime_ms
                 and not existing_snapshot.is_partial_view
-                and offset is None
-                and limit is None
-                and not pages
+                and normalized_offset is None
+                and normalized_limit is None
+                and not normalized_pages
             ):
                 return ToolExecutionResult(
                     content=file_read_support.FILE_UNCHANGED_STUB,
@@ -105,7 +112,7 @@ class ReadTool(_FsToolBase):
                 result = await file_read_support.read_image_file(str(resolved))
                 content_type = "image"
             elif suffix == ".pdf":
-                result = await file_read_support.read_pdf_file(str(resolved), pages)
+                result = await file_read_support.read_pdf_file(str(resolved), normalized_pages)
                 content_type = "pdf"
             elif suffix == ".ipynb":
                 result = file_read_support.read_notebook_file(str(resolved))
@@ -121,16 +128,16 @@ class ReadTool(_FsToolBase):
                 line_endings = text_meta.line_endings
                 rendered = file_read_support.format_text_with_line_numbers(
                     raw_text_for_state,
-                    offset,
-                    limit,
+                    normalized_offset,
+                    normalized_limit,
                 )
                 result = ToolExecutionResult(
                     content=rendered,
                     data={
                         "type": "text",
                         "filePath": str(resolved),
-                        "offset": offset,
-                        "limit": limit,
+                        "offset": normalized_offset,
+                        "limit": normalized_limit,
                     },
                 )
 
@@ -140,12 +147,12 @@ class ReadTool(_FsToolBase):
                         file_path=str(resolved),
                         timestamp_ms=int(time.time() * 1000),
                         file_mtime_ms=current_mtime_ms,
-                        is_partial_view=offset is not None or limit is not None or bool(pages),
+                        is_partial_view=normalized_offset is not None or normalized_limit is not None or bool(normalized_pages),
                         content_type=content_type,
                         content=raw_text_for_state,
-                        offset=offset,
-                        limit=limit,
-                        pages=pages,
+                        offset=normalized_offset,
+                        limit=normalized_limit,
+                        pages=normalized_pages,
                         encoding=encoding,
                         line_endings=line_endings,
                     )
@@ -469,6 +476,19 @@ WriteFileTool = WriteTool
 _HUNK_RE = re.compile(
     r"^@@ -(?P<old_start>\d+)(?:,(?P<old_lines>\d+))? \+(?P<new_start>\d+)(?:,(?P<new_lines>\d+))? @@"
 )
+
+
+def _normalize_default_text_read_args(
+    offset: int | None,
+    limit: int | None,
+) -> tuple[int | None, int | None]:
+    normalized_offset = offset
+    normalized_limit = limit
+    if normalized_offset == 0:
+        normalized_offset = None
+    if normalized_limit == file_read_support.MAX_LINES_TO_READ:
+        normalized_limit = None
+    return normalized_offset, normalized_limit
 
 
 def _build_structured_patch(old_content: str, new_content: str) -> list[dict[str, Any]]:

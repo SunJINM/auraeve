@@ -205,6 +205,7 @@ class ContextBuilder:
             "## Read / Write 约束",
             "- Read 的 file_path 必须是绝对路径。",
             f"- Read 默认最多读取 {2000} 行文本；需要更精确范围时使用 offset 和 limit。",
+            "- 需要“完整读”时，直接只传 file_path；不要附带 offset、limit 或空字符串 pages。",
             "- Read 可读取图片、PDF 和 Jupyter notebook。",
             "- 读取超过 10 页的 PDF 时，必须提供 pages；单次最多读取 20 页。",
             "- 如果文件自上次完整 Read 后未变化，再次 Read 会返回 unchanged stub，而不是重复发送同一内容。",

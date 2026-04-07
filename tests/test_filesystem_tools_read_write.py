@@ -101,6 +101,33 @@ async def test_write_tool_returns_structured_update_and_refreshes_read_state(
     assert snapshot.limit is None
 
 
+@pytest.mark.asyncio
+async def test_read_tool_treats_explicit_default_params_as_full_read(tmp_path: Path) -> None:
+    target = tmp_path / "demo.txt"
+    target.write_text("hello\nworld\n", encoding="utf-8")
+    read_tool = ReadTool(allowed_dir=tmp_path)
+    write_tool = WriteTool(allowed_dir=tmp_path)
+    ctx = ToolRuntimeContext(file_reads=FileReadStateStore())
+
+    with use_tool_runtime_context(ctx):
+        await read_tool.execute(
+            file_path=str(target.resolve()),
+            offset=0,
+            limit=2000,
+            pages="",
+        )
+        write_result = await write_tool.execute(file_path=str(target.resolve()), content="new\nworld\n")
+
+    assert isinstance(write_result, ToolExecutionResult)
+    assert write_result.data["type"] == "update"
+    snapshot = ctx.file_reads.get(str(target.resolve()))
+    assert snapshot is not None
+    assert snapshot.is_partial_view is False
+    assert snapshot.offset is None
+    assert snapshot.limit is None
+    assert snapshot.pages is None
+
+
 def test_build_tool_registry_registers_read_write_without_legacy_names(
     tmp_path: Path,
 ) -> None:

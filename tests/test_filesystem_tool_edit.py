@@ -58,6 +58,31 @@ async def test_edit_tool_rejects_partial_read(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_edit_tool_allows_read_with_explicit_default_full_read_params(tmp_path: Path) -> None:
+    target = tmp_path / "demo.txt"
+    target.write_text("hello\nworld\n", encoding="utf-8")
+    read_tool = ReadTool(allowed_dir=tmp_path)
+    edit_tool = EditTool(allowed_dir=tmp_path)
+
+    with use_tool_runtime_context(_make_ctx()):
+        await read_tool.execute(
+            file_path=str(target.resolve()),
+            offset=0,
+            limit=2000,
+            pages="",
+        )
+        result = await edit_tool.execute(
+            file_path=str(target.resolve()),
+            old_string="hello",
+            new_string="HELLO",
+        )
+
+    assert isinstance(result, ToolExecutionResult)
+    assert "updated successfully" in result.content
+    assert target.read_text(encoding="utf-8") == "HELLO\nworld\n"
+
+
+@pytest.mark.asyncio
 async def test_edit_tool_replaces_unique_match_and_returns_structured_result(
     tmp_path: Path,
 ) -> None:
