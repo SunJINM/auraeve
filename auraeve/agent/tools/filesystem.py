@@ -199,16 +199,11 @@ class WriteTool(_FsToolBase):
                     return ToolExecutionResult(
                         content="Error: file was only partially read; read the whole file before Write"
                     )
-                current_mtime_ms = int(resolved.stat().st_mtime * 1000)
-                if current_mtime_ms > snapshot.file_mtime_ms:
-                    current_content = file_edit_support.read_text_file_with_metadata(
-                        str(resolved)
-                    ).content
-                    if snapshot.content != current_content:
-                        return ToolExecutionResult(
-                            content="Error: file changed after Read; read it again before Write"
-                        )
                 original_meta = file_edit_support.read_text_file_with_metadata(str(resolved))
+                if snapshot.content != original_meta.content:
+                    return ToolExecutionResult(
+                        content="Error: file changed after Read; read it again before Write"
+                    )
                 original = original_meta.content
                 encoding = original_meta.encoding
                 line_endings = original_meta.line_endings
@@ -361,8 +356,7 @@ class EditTool(_FsToolBase):
                     content="File was only partially read. Read the whole file before editing."
                 )
 
-            current_mtime_ms = int(resolved.stat().st_mtime * 1000)
-            if current_mtime_ms > snapshot.file_mtime_ms and snapshot.content != text_meta.content:
+            if snapshot.content != text_meta.content:
                 return ToolExecutionResult(
                     content=(
                         "File has been modified since Read, either by the user or by a linter. "
@@ -467,32 +461,6 @@ class EditTool(_FsToolBase):
         else:
             content = f"The file {resolved} has been updated successfully."
         return ToolExecutionResult(content=content, data=data)
-
-
-class ListDirTool(_FsToolBase):
-    @property
-    def name(self) -> str:
-        return "list_dir"
-
-    @property
-    def description(self) -> str:
-        return "List directory entries"
-
-    @property
-    def parameters(self) -> dict[str, Any]:
-        return {
-            "type": "object",
-            "properties": {"path": {"type": "string", "description": "Directory path"}},
-            "required": ["path"],
-        }
-
-    async def execute(self, path: str, **kwargs: Any) -> str:
-        try:
-            return await self._dispatcher.list_dir(path=path, allowed_dir=self._allowed_dir_str)
-        except PermissionError as exc:
-            return f"Error: {exc}"
-        except Exception as exc:
-            return f"List failed: {exc}"
 
 
 ReadFileTool = ReadTool

@@ -17,7 +17,6 @@ const TOOL_DISPLAY: Record<string, { icon: string; label: string }> = {
   create_file: { icon: '📝', label: 'Create' },
   web_fetch: { icon: '🌐', label: 'Fetch' },
   web_search: { icon: '🔎', label: 'Search' },
-  list_dir: { icon: '📁', label: 'ListDir' },
   agent: { icon: '🤖', label: 'Agent' },
 }
 
@@ -56,8 +55,6 @@ function getToolSummary(toolName: string, args: unknown): string {
       return truncate(String(a.url ?? ''), 70)
     case 'web_search':
       return `"${truncate(String(a.query ?? ''), 60)}"`
-    case 'list_dir':
-      return String(a.path ?? '')
     case 'agent':
       return truncate(String(a.prompt ?? a.goal ?? ''), 60)
     default:
@@ -84,8 +81,6 @@ function getResultSummary(toolName: string, result: string, status: string): str
     case 'Edit':
     case 'grep':
     case 'glob':
-    case 'list_dir':
-      return `${lines.length} 条`
     case 'bash':
     case 'exec': {
       // 提取退出码

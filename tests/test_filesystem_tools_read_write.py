@@ -119,8 +119,11 @@ def test_build_tool_registry_registers_read_write_without_legacy_names(
 
     assert registry.has("Read")
     assert registry.has("Write")
+    assert registry.has("Edit")
     assert registry.has("read_file") is False
     assert registry.has("write_file") is False
+    assert registry.has("list_dir") is False
+    assert registry.has("pdf") is False
 
 
 @pytest.mark.asyncio

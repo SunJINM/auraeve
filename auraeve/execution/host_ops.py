@@ -148,15 +148,3 @@ def write_file(
     file_path.write_text(content, encoding="utf-8")
     return ("create" if original is None else "update"), original
 
-
-def list_dir(*, path: str, allowed_dir: Path | None = None) -> str:
-    dir_path = _resolve_path(path, allowed_dir)
-    if not dir_path.exists():
-        return f"Error: directory not found: {path}"
-    if not dir_path.is_dir():
-        return f"Error: not a directory: {path}"
-    items = []
-    for item in sorted(dir_path.iterdir()):
-        prefix = "[D] " if item.is_dir() else "[F] "
-        items.append(f"{prefix}{item.name}")
-    return "\n".join(items) if items else f"Directory {path} is empty"

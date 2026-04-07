@@ -34,8 +34,11 @@ def test_plan_agent():
 def test_explore_agent_uses_read_replacement_names():
     a = EXPLORE_AGENT
     assert "Read" in a.tools
+    assert "exec" in a.tools
+    assert "web_search" in a.tools
     assert "Write" not in a.tools
     assert "Edit" not in a.tools
+    assert "list_dir" not in a.tools
     assert "agent" in a.disallowed_tools
     assert "Edit" in a.disallowed_tools
 

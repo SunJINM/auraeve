@@ -7,14 +7,13 @@ from pathlib import Path
 
 from auraeve.execution.host_ops import (
     execute_shell_command,
-    list_dir,
     read_file,
     write_file,
 )
 
 
 class HostOpsFsTests(unittest.TestCase):
-    def test_read_write_list(self) -> None:
+    def test_read_write(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             target = root / "a" / "b.txt"
@@ -24,9 +23,6 @@ class HostOpsFsTests(unittest.TestCase):
 
             read_res = read_file(path=str(target), allowed_dir=root, offset=0, limit=1)
             self.assertEqual(read_res, "1\thello")
-
-            ls_res = list_dir(path=str(root / "a"), allowed_dir=root)
-            self.assertIn("b.txt", ls_res)
 
     def test_allowed_dir_boundary(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

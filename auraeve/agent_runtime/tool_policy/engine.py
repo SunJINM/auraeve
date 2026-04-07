@@ -46,7 +46,7 @@ class ToolPolicyEngine:
     def infer_tool_group(tool_name: str) -> str:
         if tool_name.startswith("mcp_"):
             return "mcp"
-        if tool_name in {"Read", "Write", "read_file", "write_file", "Edit", "list_dir"}:
+        if tool_name in {"Read", "Write", "read_file", "write_file", "Edit"}:
             return "filesystem"
         if tool_name in {"web_search", "web_fetch", "browser"}:
             return "web"

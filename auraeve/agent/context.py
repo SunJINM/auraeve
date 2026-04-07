@@ -142,12 +142,10 @@ class ContextBuilder:
             "Read":           "读取文件内容",
             "Write":          "创建或覆盖文件",
             "Edit":           "精确编辑文件片段",
-            "list_dir":       "列出目录内容",
             "exec":           "执行 Shell 命令",
             "web_search":     "搜索网页（Brave + DuckDuckGo 降级）",
             "web_fetch":      "抓取 URL 可读内容（三层提取管道）",
             "browser":        "控制浏览器（导航、截图、交互）",
-            "pdf":            "处理 PDF 文件（提取文本/表格/LLM 分析）",
             "memory_search":  "语义搜索历史记忆（向量 + BM25 混合检索）",
             "memory_get":     "按路径读取记忆文件片段（行范围）",
             "memory_status":  "查看记忆索引状态与降级信息",
@@ -161,8 +159,8 @@ class ContextBuilder:
             "TaskList":       "列出当前任务列表",
         }
         TOOL_ORDER = [
-            "Read", "Write", "Edit", "list_dir", "exec",
-            "web_search", "web_fetch", "browser", "pdf",
+            "Read", "Write", "Edit", "exec",
+            "web_search", "web_fetch", "browser",
             "memory_search", "memory_get", "memory_status", "message", "agent", "cron",
             "TaskCreate", "TaskGet", "TaskUpdate", "TaskList", "todo",
         ]
@@ -292,7 +290,7 @@ class ContextBuilder:
             workspace_lines.extend(
                 [
                     f"命令执行目录：{execution_path}",
-                    "在 exec/Read/Write/Edit/list_dir 中优先使用命令执行目录路径。",
+                    "在 exec/Read/Write/Edit 中优先使用命令执行目录路径。",
                 ]
             )
         workspace_lines.extend(
@@ -374,7 +372,7 @@ class ContextBuilder:
             "- 发送网络图片 → message(content='', image_url='https://...')",
             "- 当你已经拿到公网图片 URL 时，禁止先下载到本地再发 file_path；必须直接使用 image_url 发送",
             "",
-            "用户说'发文件/图片给我'时：先用 exec 或 list_dir 找到绝对路径，再调用 message。",
+            "用户说'发文件/图片给我'时：先用 exec 找到绝对路径，再调用 message。",
             "**绝不能回复\"无法发送文件\"——这是已支持的功能。**",
             "",
             "## 任务完成规则",

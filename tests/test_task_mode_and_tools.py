@@ -109,7 +109,7 @@ def test_context_builder_uses_read_write_tool_names(tmp_path: Path) -> None:
     prompt = builder.build_system_prompt(
         channel="webui",
         chat_id="chat-1",
-        available_tools={"Read", "Write", "Edit", "list_dir", "exec", "message"},
+        available_tools={"Read", "Write", "Edit", "exec", "message"},
     )
 
     assert "- Read: 读取文件内容" in prompt
@@ -120,6 +120,8 @@ def test_context_builder_uses_read_write_tool_names(tmp_path: Path) -> None:
     assert "使用 <location> 字段中的原始路径调用 Read" in prompt
     assert "用 Write 在" in prompt
     assert "任务产出了文件（Write 写入）" in prompt
+    assert "list_dir" not in prompt
+    assert "- pdf:" not in prompt
     assert "read_file" not in prompt
     assert "write_file" not in prompt
     assert "edit_file" not in prompt

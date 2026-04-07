@@ -5,10 +5,9 @@ from pathlib import Path
 from auraeve.agent.tasks import TaskStore
 from auraeve.agent.tools.browser import BrowserTool
 from auraeve.agent.tools.cron import CronTool
-from auraeve.agent.tools.filesystem import EditTool, ListDirTool, ReadTool, WriteTool
+from auraeve.agent.tools.filesystem import EditTool, ReadTool, WriteTool
 from auraeve.agent.tools.message import MessageTool
 from auraeve.agent.tools.media_understand import MediaUnderstandTool
-from auraeve.agent.tools.pdf import PdfTool
 from auraeve.agent.tools.plan import TodoTool
 from auraeve.agent.tools.task_create import TaskCreateTool
 from auraeve.agent.tools.task_get import TaskGetTool
@@ -92,9 +91,6 @@ def build_tool_registry(
     registry.register(ReadTool(allowed_dir=allowed_dir, dispatcher=dispatcher))
     registry.register(WriteTool(allowed_dir=allowed_dir, dispatcher=dispatcher))
     registry.register(EditTool(allowed_dir=allowed_dir, dispatcher=dispatcher))
-    registry.register(
-        ListDirTool(allowed_dir=allowed_dir, dispatcher=dispatcher)
-    )
     registry.register(ExecTool(
         working_dir=tool_workspace,
         timeout=exec_timeout,
@@ -133,7 +129,6 @@ def build_tool_registry(
     )
 
     registry.register(BrowserTool(screenshot_dir=Path(tool_workspace) / "artifacts" / "browser"))
-    registry.register(PdfTool(provider=provider, model=model))
 
     if engine is not None:
         from auraeve.agent.engines.vector.engine import VectorContextEngine

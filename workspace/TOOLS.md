@@ -4,7 +4,7 @@
 
 ## 使用原则
 
-- 低风险操作直接执行：读文件、列目录、搜索、读取网页内容
+- 低风险操作直接执行：读文件、搜索、读取网页内容
 - 高风险操作先简短说明：删除、覆盖、批量改动、对外发送、改系统配置
 - 有专用工具时优先用专用工具；没有合适工具时，再写脚本
 - 多个互不依赖的操作尽量并行，减少轮次和等待
@@ -28,12 +28,6 @@ Write(file_path: str, content: str) -> str
 通过替换特定文本精确编辑文件。
 ```
 Edit(file_path: str, old_string: str, new_string: str, replace_all: bool = false) -> str
-```
-
-### list_dir
-列出目录内容。
-```
-list_dir(path: str) -> str
 ```
 
 ## Shell 执行
@@ -137,7 +131,7 @@ web_fetch(url: str, extractMode: str = "markdown", maxChars: int = 50000) -> str
 - 搜索时尽量带上关键词、时间范围、主体名
 - 需要给用户可核实的信息时，保留来源链接
 
-## 浏览器与 PDF
+## 浏览器
 
 ### browser
 浏览器自动化工具，支持打开网页、交互、快照、截图、保存 PDF。
@@ -152,18 +146,6 @@ browser(action: str, ...)
 - `screenshot`：截图并保存到本地
 - `pdf_save`：将页面保存为 PDF
 - `close`：关闭浏览器
-
-### pdf
-PDF 处理工具，支持提取文本、元数据、表格，以及在可用时用模型分析 PDF。
-```
-pdf(action: str, path: str, ...)
-```
-
-常见操作：
-- `extract`
-- `metadata`
-- `tables`
-- `analyze`
 
 ## 记忆检索
 
