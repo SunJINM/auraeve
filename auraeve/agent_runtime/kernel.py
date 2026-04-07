@@ -52,6 +52,7 @@ if TYPE_CHECKING:
 class RuntimeKernel:
     """Runtime kernel main entry."""
 
+    UNEXPECTED_SILENT_FALLBACK = "我这边没有生成可发送的回复，请再试一次。"
 
     def __init__(
         self,
@@ -644,7 +645,17 @@ class RuntimeKernel:
         if recovery_result.recovery_actions:
             logger.debug(f"[kernel] recovery actions: {recovery_result.recovery_actions}")
 
+        command_mode = str(metadata.get("command_mode") or "prompt")
+        allow_silent_response = is_meta_event or command_mode in {"heartbeat", "cron", "task-notification"}
         sanitized_content = self._sanitize_assistant_output(final_content)
+        if sanitized_content is None and not allow_silent_response:
+            logger.warning(
+                "[kernel] unexpected silent response; "
+                f"command_mode={command_mode} "
+                f"is_meta_event={is_meta_event} "
+                f"raw_final_content={final_content!r}"
+            )
+            sanitized_content = self.UNEXPECTED_SILENT_FALLBACK
         persist_content = sanitized_content if sanitized_content is not None else SILENT_REPLY_TOKEN
 
         if not is_meta_event:
@@ -680,7 +691,12 @@ class RuntimeKernel:
 
         # Silent token handling
         if sanitized_content is None:
-            logger.debug("[kernel] silent/heartbeat token detected, skip outbound")
+            logger.debug(
+                "[kernel] silent/heartbeat token detected, skip outbound; "
+                f"command_mode={command_mode} "
+                f"is_meta_event={is_meta_event} "
+                f"raw_final_content={final_content!r}"
+            )
             return None
         final_content = sanitized_content
 
@@ -709,5 +725,3 @@ class RuntimeKernel:
             content=final_content,
             metadata=metadata,
         )
-
-

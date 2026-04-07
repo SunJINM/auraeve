@@ -139,13 +139,18 @@ def estimate_tokens(messages: list[dict]) -> int:
             content = " ".join(
                 c.get("text", "") for c in content if isinstance(c, dict)
             )
+        # 计算 tool_calls 字段（assistant 消息中工具调用的 JSON 内容）
+        tool_calls = msg.get("tool_calls")
+        tool_calls_text = json.dumps(tool_calls, ensure_ascii=False) if tool_calls else ""
+
+        combined = content + tool_calls_text
         if enc:
             try:
-                total += len(enc.encode(content))
+                total += len(enc.encode(combined))
             except Exception:
-                total += len(content) // 4
+                total += len(combined) // 4
         else:
-            total += len(content) // 4
+            total += len(combined) // 4
         total += 128  # role + metadata 开销
     return total
 

@@ -236,6 +236,16 @@ class SessionAttemptRunner:
             )
 
             if not response.has_tool_calls:
+                if response.content is None or not str(response.content).strip():
+                    logger.warning(
+                        "[session_attempt] empty assistant response without tool calls; "
+                        f"finish_reason={response.finish_reason} "
+                        f"reasoning_content={bool(response.reasoning_content)}"
+                    )
+                    final_content = None
+                    trace.stop_reason = "empty_response"
+                    trace.add("empty_response", finish_reason=response.finish_reason)
+                    break
                 final_content = response.content
                 trace.stop_reason = "model_completed"
                 trace.add("model_completed", finish_reason=response.finish_reason)

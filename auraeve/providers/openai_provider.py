@@ -2,7 +2,6 @@
 
 import json
 import json_repair
-import time
 from typing import Any
 
 from openai import AsyncOpenAI
@@ -92,6 +91,13 @@ class OpenAICompatibleProvider(LLMProvider):
             default_headers=extra_headers or {},
         )
 
+    # 推理模型关键词：这些模型使用 reasoning tokens，不支持 temperature/max_tokens
+    _REASONING_MODEL_PATTERNS = ("o1", "o3", "o4", "codex", "reasoning")
+
+    def _is_reasoning_model(self, model: str) -> bool:
+        model_lower = model.lower()
+        return any(p in model_lower for p in self._REASONING_MODEL_PATTERNS)
+
     async def chat(
         self,
         messages: list[dict[str, Any]],
@@ -104,12 +110,19 @@ class OpenAICompatibleProvider(LLMProvider):
         model = model or self.default_model
         max_tokens = max(1, max_tokens)
 
+        is_reasoning = self._is_reasoning_model(model)
+
         kwargs: dict[str, Any] = {
             "model": model,
             "messages": normalize_tool_call_ids_in_messages(messages),
-            "max_tokens": max_tokens,
-            "temperature": temperature,
+            "stream": True,
         }
+
+        if is_reasoning:
+            kwargs["max_completion_tokens"] = max_tokens
+        else:
+            kwargs["max_tokens"] = max_tokens
+            kwargs["temperature"] = temperature
 
         if tools:
             kwargs["tools"] = tools
@@ -130,50 +143,112 @@ class OpenAICompatibleProvider(LLMProvider):
                 }
 
         try:
-            response = await self._client.chat.completions.create(**kwargs)
-            return self._parse_response(response)
+            logger.debug(
+                f"[openai_provider] chat request model={model} "
+                f"messages={len(kwargs['messages'])} "
+                f"tools={len(kwargs.get('tools') or [])} "
+                f"max_tokens={max_tokens} "
+                f"is_reasoning={is_reasoning}"
+            )
+            stream = await self._client.chat.completions.create(**kwargs)
+            return await self._consume_stream(stream)
         except (_openai.RateLimitError, _openai.APIStatusError, _openai.APIConnectionError) as e:
             raise _classify_openai_error(e) from e
         except Exception as e:
             # 按文本特征二次分类（部分兼容接口不抛 openai 标准异常）
             raise _classify_openai_error(e) from e
 
-    def _parse_response(self, response: Any) -> LLMResponse:
-        """解析 OpenAI 格式的响应。"""
-        choice = response.choices[0]
-        message = choice.message
+    async def _consume_stream(self, stream: Any) -> LLMResponse:
+        """消费流式响应，拼接为完整的 LLMResponse。"""
+        content_parts: list[str] = []
+        reasoning_parts: list[str] = []
+        tool_calls_map: dict[int, dict[str, Any]] = {}
+        finish_reason = "stop"
+        usage = {}
 
-        tool_calls = []
-        if message.tool_calls:
-            for tc in message.tool_calls:
-                args = tc.function.arguments
-                if isinstance(args, str):
-                    try:
-                        args = json_repair.loads(args)
-                    except Exception:
-                        args = {}
-                tool_calls.append(ToolCallRequest(
-                    id=tc.id,
-                    name=tc.function.name,
-                    arguments=args,
-                ))
+        async for chunk in stream:
+            if not chunk.choices:
+                # 最后一个 chunk 可能只包含 usage
+                if chunk.usage:
+                    usage = {
+                        "prompt_tokens": chunk.usage.prompt_tokens,
+                        "completion_tokens": chunk.usage.completion_tokens,
+                        "total_tokens": chunk.usage.total_tokens,
+                    }
+                continue
+
+            choice = chunk.choices[0]
+            delta = choice.delta
+
+            if choice.finish_reason:
+                finish_reason = choice.finish_reason
+
+            if delta.content:
+                content_parts.append(delta.content)
+
+            rc = getattr(delta, "reasoning_content", None)
+            if rc:
+                reasoning_parts.append(rc)
+
+            if delta.tool_calls:
+                for tc_delta in delta.tool_calls:
+                    idx = tc_delta.index
+                    if idx not in tool_calls_map:
+                        tool_calls_map[idx] = {
+                            "id": tc_delta.id or "",
+                            "name": "",
+                            "arguments": "",
+                        }
+                    entry = tool_calls_map[idx]
+                    if tc_delta.id:
+                        entry["id"] = tc_delta.id
+                    if tc_delta.function:
+                        if tc_delta.function.name:
+                            entry["name"] = tc_delta.function.name
+                        if tc_delta.function.arguments:
+                            entry["arguments"] += tc_delta.function.arguments
+
+            # usage 也可能在带 choices 的 chunk 里
+            if chunk.usage:
+                usage = {
+                    "prompt_tokens": chunk.usage.prompt_tokens,
+                    "completion_tokens": chunk.usage.completion_tokens,
+                    "total_tokens": chunk.usage.total_tokens,
+                }
+
+        content = "".join(content_parts) if content_parts else None
+        reasoning_content = "".join(reasoning_parts) if reasoning_parts else None
+
+        tool_calls: list[ToolCallRequest] = []
+        for idx in sorted(tool_calls_map):
+            entry = tool_calls_map[idx]
+            args_str = entry["arguments"]
+            if isinstance(args_str, str) and args_str.strip():
+                try:
+                    args = json_repair.loads(args_str)
+                except Exception:
+                    args = {}
+            else:
+                args = {}
+            tool_calls.append(ToolCallRequest(
+                id=entry["id"],
+                name=entry["name"],
+                arguments=args,
+            ))
+        if tool_calls:
             tool_calls = normalize_tool_call_requests(tool_calls)
 
-        usage = {}
-        if response.usage:
-            usage = {
-                "prompt_tokens": response.usage.prompt_tokens,
-                "completion_tokens": response.usage.completion_tokens,
-                "total_tokens": response.usage.total_tokens,
-            }
-
-        # 部分模型（如 DeepSeek-R1）返回 reasoning_content
-        reasoning_content = getattr(message, "reasoning_content", None)
+        if not tool_calls and content is None:
+            logger.warning(
+                "[openai_provider] empty text response without tool calls; "
+                f"finish_reason={finish_reason} "
+                f"reasoning_content={bool(reasoning_content)}"
+            )
 
         return LLMResponse(
-            content=message.content,
+            content=content,
             tool_calls=tool_calls,
-            finish_reason=choice.finish_reason or "stop",
+            finish_reason=finish_reason,
             usage=usage,
             reasoning_content=reasoning_content,
         )
@@ -183,7 +258,6 @@ class OpenAICompatibleProvider(LLMProvider):
 
     async def transcribe(self, audio_path: str, language: str = "zh") -> str | None:
         """使用 Whisper API 转录音频文件为文本。"""
-        from loguru import logger
         try:
             with open(audio_path, "rb") as f:
                 result = await self._client.audio.transcriptions.create(
