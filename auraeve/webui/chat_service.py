@@ -37,7 +37,7 @@ class ChatService:
     - 发送消息（统一入 RuntimeCommandQueue）
     - 终止（软中止：标记 done/aborted）
     - SSE 事件队列管理（每个 sessionKey 对应一个广播队列）
-    - 实时 tool_use 事件推送（订阅 observability 的 runtime/tools 事件）
+    - 实时 transcript 事件推送（订阅 observability 的 runtime/tools/runtime/assistant 事件）
     """
 
     def __init__(
@@ -232,27 +232,31 @@ class ChatService:
     # ─── Observability 实时 tool 事件监听 ──────────────────────────
 
     def _ensure_obs_listener(self) -> None:
-        """确保 obs tool 事件监听器已启动。"""
+        """确保 obs runtime 事件监听器已启动。"""
         if self._obs_task is not None and not self._obs_task.done():
             return
         try:
             obs = get_observability()
             if not obs.enabled:
                 return
-            self._obs_sub_id, queue = obs.subscribe(subsystems=["runtime/tools"])
-            self._obs_task = asyncio.create_task(self._obs_tool_listener(queue))
+            self._obs_sub_id, queue = obs.subscribe(subsystems=["runtime/tools", "runtime/assistant"])
+            self._obs_task = asyncio.create_task(self._obs_runtime_listener(queue))
         except Exception:
-            logger.debug("无法启动 obs tool 事件监听")
+            logger.debug("无法启动 obs runtime 事件监听")
 
-    async def _obs_tool_listener(self, queue: asyncio.Queue) -> None:
-        """持续消费 obs runtime/tools 事件，实时推送 tool_use block。"""
+    async def _obs_runtime_listener(self, queue: asyncio.Queue) -> None:
+        """持续消费 obs runtime 事件，实时推送 transcript block。"""
         try:
             while True:
                 event = await queue.get()
                 try:
-                    await self._handle_tool_event(event)
+                    subsystem = str(event.get("subsystem") or "")
+                    if subsystem == "runtime/assistant":
+                        await self._handle_assistant_event(event)
+                    else:
+                        await self._handle_tool_event(event)
                 except Exception:
-                    logger.debug(f"处理 tool 事件异常: {event.get('message', '')}")
+                    logger.debug(f"处理 runtime 事件异常: {event.get('message', '')}")
         except asyncio.CancelledError:
             pass
         finally:
@@ -279,16 +283,9 @@ class ChatService:
         tool_name = str(attrs.get("toolName") or "")
         tool_call_id = str(attrs.get("toolCallId") or "")
         block_id = f"tool_use:{tool_call_id or uuid.uuid4()}"
+        parsed_args = self._parse_args_preview(attrs.get("argsPreview"))
 
         if message == "tool_call_started":
-            args_preview = str(attrs.get("argsPreview") or "")
-            # 尝试解析 args 为结构化数据
-            parsed_args: Any = args_preview
-            try:
-                parsed_args = json.loads(args_preview)
-            except Exception:
-                pass
-
             await self._broadcast(
                 session_key,
                 self._build_block_event(
@@ -324,7 +321,7 @@ class ChatService:
                         "type": "tool_use",
                         "toolCallId": tool_call_id,
                         "toolName": tool_name,
-                        "arguments": None,
+                        "arguments": parsed_args,
                         "result": result_preview,
                         "status": tool_status,
                     },
@@ -345,12 +342,46 @@ class ChatService:
                         "type": "tool_use",
                         "toolCallId": tool_call_id,
                         "toolName": tool_name,
-                        "arguments": None,
+                        "arguments": parsed_args,
                         "result": reason,
                         "status": "error",
                     },
                 ),
             )
+
+    async def _handle_assistant_event(self, event: dict[str, Any]) -> None:
+        """将 obs assistant 事件转化为 transcript assistant_text block 推送。"""
+        if str(event.get("message") or "") != "assistant_text":
+            return
+
+        session_key = str(event.get("sessionKey") or "")
+        if not session_key:
+            return
+
+        state = self._latest_run_for_session(session_key)
+        if state is None or state.done:
+            return
+        run_id = state.run_id
+
+        attrs = event.get("attrs") or {}
+        content = str(attrs.get("content") or "").strip()
+        if not content:
+            return
+
+        await self._broadcast(
+            session_key,
+            self._build_block_event(
+                session_key=session_key,
+                run_id=run_id,
+                seq=self._next_seq(run_id),
+                block={
+                    "id": f"assistant_text:{run_id}:{state.seq}",
+                    "type": "assistant_text",
+                    "content": content,
+                    "timestamp": datetime.now().isoformat(),
+                },
+            ),
+        )
 
     # ─── SSE 订阅 ──────────────────────────────────────────────────
 
@@ -422,6 +453,16 @@ class ChatService:
                 "seq": seq,
             }
         ).model_dump(mode="json", exclude_none=True)
+
+    @staticmethod
+    def _parse_args_preview(raw_args: Any) -> Any:
+        args_preview = str(raw_args or "")
+        if not args_preview:
+            return None
+        try:
+            return json.loads(args_preview)
+        except Exception:
+            return args_preview
 
     def get_runtime_status(self, session_key: str) -> dict[str, Any]:
         """返回指定会话最近一次运行的状态摘要。"""

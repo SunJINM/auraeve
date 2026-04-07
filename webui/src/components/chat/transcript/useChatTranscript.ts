@@ -6,14 +6,28 @@ import type {
   TranscriptBlock,
   TranscriptRun,
   TranscriptRunStatusBlock,
+  TranscriptToolUseBlock,
 } from './types'
+
+function mergeToolUseBlock(existing: TranscriptToolUseBlock, next: TranscriptToolUseBlock): TranscriptToolUseBlock {
+  return {
+    ...existing,
+    ...next,
+    arguments: next.arguments ?? existing.arguments,
+    result: next.result ?? existing.result,
+  }
+}
 
 function upsertBlock(blocks: TranscriptBlock[], nextBlock: TranscriptBlock, op: 'append' | 'replace'): TranscriptBlock[] {
   const existingIndex = blocks.findIndex((block) => block.id === nextBlock.id)
 
   if (existingIndex >= 0) {
     const updated = [...blocks]
-    updated[existingIndex] = nextBlock
+    const existing = updated[existingIndex]
+    updated[existingIndex] =
+      existing.type === 'tool_use' && nextBlock.type === 'tool_use'
+        ? mergeToolUseBlock(existing, nextBlock)
+        : nextBlock
     return updated
   }
 

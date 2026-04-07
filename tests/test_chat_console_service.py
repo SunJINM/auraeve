@@ -197,3 +197,86 @@ async def test_chat_service_on_outbound_broadcasts_assistant_block_and_done(tmp_
     assert block_event["block"]["type"] == "assistant_text"
     assert block_event["block"]["content"] == "final answer"
     assert done_event["runId"] == run_id
+
+
+@pytest.mark.asyncio
+async def test_chat_service_tool_completion_keeps_arguments_in_replace_event(tmp_path: Path) -> None:
+    queue = RuntimeCommandQueue()
+    session_manager = SessionManager(tmp_path / "sessions")
+    service = ChatService(session_manager=session_manager, command_queue=queue)
+    run_id, _ = await service.send(
+        session_key="webui:s1",
+        message="hello",
+        idempotency_key="idem-1",
+        user_id="u1",
+    )
+
+    events_task = asyncio.create_task(_collect_events(service, "webui:s1", expected_count=2))
+    await asyncio.sleep(0)
+
+    await service._handle_tool_event(  # noqa: SLF001
+        {
+            "message": "tool_call_started",
+            "sessionKey": "webui:s1",
+            "attrs": {
+                "toolName": "Read",
+                "toolCallId": "call-1",
+                "argsPreview": '{"file_path":"D:\\\\repo\\\\file.txt"}',
+            },
+        }
+    )
+    await service._handle_tool_event(  # noqa: SLF001
+        {
+            "message": "tool_call_completed",
+            "sessionKey": "webui:s1",
+            "attrs": {
+                "toolName": "Read",
+                "toolCallId": "call-1",
+                "status": "success",
+                "argsPreview": '{"file_path":"D:\\\\repo\\\\file.txt"}',
+                "resultPreview": "done",
+            },
+        }
+    )
+    events = await asyncio.wait_for(events_task, timeout=2)
+
+    started_event = ChatTranscriptBlockEvent.model_validate(events[0]).model_dump()
+    completed_event = ChatTranscriptBlockEvent.model_validate(events[1]).model_dump()
+
+    assert started_event["runId"] == run_id
+    assert started_event["block"]["arguments"] == {"file_path": "D:\\repo\\file.txt"}
+    assert completed_event["op"] == "replace"
+    assert completed_event["block"]["arguments"] == {"file_path": "D:\\repo\\file.txt"}
+    assert completed_event["block"]["result"] == "done"
+
+
+@pytest.mark.asyncio
+async def test_chat_service_runtime_assistant_event_broadcasts_assistant_text(tmp_path: Path) -> None:
+    queue = RuntimeCommandQueue()
+    session_manager = SessionManager(tmp_path / "sessions")
+    service = ChatService(session_manager=session_manager, command_queue=queue)
+    run_id, _ = await service.send(
+        session_key="webui:s1",
+        message="hello",
+        idempotency_key="idem-1",
+        user_id="u1",
+    )
+
+    events_task = asyncio.create_task(_collect_events(service, "webui:s1", expected_count=1))
+    await asyncio.sleep(0)
+
+    await service._handle_assistant_event(  # noqa: SLF001
+        {
+            "message": "assistant_text",
+            "sessionKey": "webui:s1",
+            "attrs": {
+                "content": "正在检查 Edit 工具的行为。",
+            },
+        }
+    )
+    events = await asyncio.wait_for(events_task, timeout=2)
+
+    block_event = ChatTranscriptBlockEvent.model_validate(events[0]).model_dump()
+    assert block_event["runId"] == run_id
+    assert block_event["block"]["type"] == "assistant_text"
+    assert block_event["block"]["content"] == "正在检查 Edit 工具的行为。"

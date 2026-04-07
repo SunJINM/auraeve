@@ -6,7 +6,7 @@ const TOOL_DISPLAY: Record<string, { icon: string; label: string }> = {
   Read: { icon: '📄', label: 'Read' },
   read: { icon: '📄', label: 'Read' },
   read_file: { icon: '📄', label: 'Read' },
-  Grep: { icon: '🔍', label: 'Search' },
+  Grep: { icon: '🔍', label: 'Grep' },
   Glob: { icon: '🔍', label: 'Glob' },
   Bash: { icon: '⚡', label: 'Bash' },
   bash: { icon: '⚡', label: 'Bash' },

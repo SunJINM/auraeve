@@ -74,3 +74,67 @@ async def test_runner_exposes_file_read_state_inside_tool_execution() -> None:
 
     assert result.final_content == "done"
     assert "tracked=0" in result.messages[1]["content"]
+
+
+@pytest.mark.asyncio
+async def test_runner_emits_runtime_assistant_text_for_tool_call_rounds() -> None:
+    provider = MagicMock()
+    provider.chat = AsyncMock(
+        side_effect=[
+            LLMResponse(
+                content="先检查文件再继续。",
+                tool_calls=[ToolCallRequest(id="call_1", name="ContextProbe", arguments={})],
+            ),
+            LLMResponse(content="done"),
+        ]
+    )
+    tools = MagicMock()
+    tools.get_definitions.return_value = []
+    tools.get_metadata.return_value = {}
+    probe = _ContextProbeTool()
+
+    async def _execute(_name, _params):
+        return await probe.execute()
+
+    tools.execute = AsyncMock(side_effect=_execute)
+    hooks = MagicMock()
+    hooks.run_before_model_resolve = AsyncMock(return_value=None)
+    hooks.run_before_tool_call = AsyncMock(return_value=MagicMock(block=False, params=None))
+    hooks.run_after_tool_call = AsyncMock()
+    policy = MagicMock()
+    policy.infer_tool_group.return_value = "filesystem"
+    policy.evaluate = AsyncMock(
+        return_value=MagicMock(allowed=True, rewritten_args={}, reason="")
+    )
+
+    runner = SessionAttemptRunner(
+        provider=provider,
+        tools=tools,
+        policy=policy,
+        hooks=hooks,
+        max_iterations=2,
+    )
+    runner._obs = MagicMock()  # noqa: SLF001
+
+    result = await runner.run(
+        messages=[{"role": "system", "content": "sys"}, {"role": "user", "content": "go"}],
+        model="test-model",
+        temperature=0.0,
+        max_tokens=128,
+        thread_id="webui:test",
+    )
+
+    assert result.final_content == "done"
+    runner._obs.emit.assert_any_call(  # noqa: SLF001
+        level="info",
+        kind="event",
+        subsystem="runtime/assistant",
+        message="assistant_text",
+        attrs={
+            "content": "先检查文件再继续。",
+            "contentLength": len("先检查文件再继续。"),
+            "isSubagent": False,
+        },
+        session_key="webui:test",
+        channel=None,
+    )

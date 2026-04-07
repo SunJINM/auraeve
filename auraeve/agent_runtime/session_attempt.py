@@ -333,6 +333,20 @@ class SessionAttemptRunner:
             before_len = len(msgs)
             msgs = _add_assistant_msg(msgs, response.content, tool_call_dicts, response.reasoning_content)
             transcript_messages.extend(msgs[before_len:])
+            if response.content and str(response.content).strip():
+                self._obs.emit(
+                    level="info",
+                    kind="event",
+                    subsystem="runtime/assistant",
+                    message="assistant_text",
+                    attrs={
+                        "content": response.content,
+                        "contentLength": len(str(response.content)),
+                        "isSubagent": bool(is_subagent),
+                    },
+                    session_key=thread_id,
+                    channel=channel,
+                )
             for tc in tool_calls:
                 tools_used.append(tc.name)
 
