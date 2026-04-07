@@ -5,7 +5,7 @@ from pathlib import Path
 from auraeve.agent.tasks import TaskStore
 from auraeve.agent.tools.browser import BrowserTool
 from auraeve.agent.tools.cron import CronTool
-from auraeve.agent.tools.filesystem import EditFileTool, ListDirTool, ReadTool, WriteTool
+from auraeve.agent.tools.filesystem import EditTool, ListDirTool, ReadTool, WriteTool
 from auraeve.agent.tools.message import MessageTool
 from auraeve.agent.tools.media_understand import MediaUnderstandTool
 from auraeve.agent.tools.pdf import PdfTool
@@ -91,9 +91,7 @@ def build_tool_registry(
 
     registry.register(ReadTool(allowed_dir=allowed_dir, dispatcher=dispatcher))
     registry.register(WriteTool(allowed_dir=allowed_dir, dispatcher=dispatcher))
-    registry.register(
-        EditFileTool(allowed_dir=allowed_dir, dispatcher=dispatcher)
-    )
+    registry.register(EditTool(allowed_dir=allowed_dir, dispatcher=dispatcher))
     registry.register(
         ListDirTool(allowed_dir=allowed_dir, dispatcher=dispatcher)
     )

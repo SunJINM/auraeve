@@ -24,10 +24,10 @@ Read(file_path: str, offset: int = 1, limit: int = None) -> str
 Write(file_path: str, content: str) -> str
 ```
 
-### edit_file
+### Edit
 通过替换特定文本精确编辑文件。
 ```
-edit_file(path: str, old_text: str, new_text: str) -> str
+Edit(file_path: str, old_string: str, new_string: str, replace_all: bool = false) -> str
 ```
 
 ### list_dir
@@ -341,10 +341,10 @@ cron(action="remove", job_id="abc123")
 
 **典型用法：**
 ```python
-edit_file(
-    path="HEARTBEAT.md",
-    old_text="## 待执行任务",
-    new_text="## 待执行任务\n\n- [ ] 每周一检查未完成事项并提醒"
+Edit(
+    file_path="HEARTBEAT.md",
+    old_string="## 待执行任务",
+    new_string="## 待执行任务\n\n- [ ] 每周一检查未完成事项并提醒"
 )
 ```
 

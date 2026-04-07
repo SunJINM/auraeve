@@ -35,7 +35,9 @@ def test_explore_agent_uses_read_replacement_names():
     a = EXPLORE_AGENT
     assert "Read" in a.tools
     assert "Write" not in a.tools
+    assert "Edit" not in a.tools
     assert "agent" in a.disallowed_tools
+    assert "Edit" in a.disallowed_tools
 
 
 def test_get_builtin_agents():
@@ -63,7 +65,7 @@ def test_custom_agent_definition():
         agent_type="my-agent",
         when_to_use="自定义用途",
         tools=["Read", "exec"],
-        disallowed_tools=["agent"],
+        disallowed_tools=["agent", "Edit"],
         max_turns=20,
     )
     assert a.agent_type == "my-agent"

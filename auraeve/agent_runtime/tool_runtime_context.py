@@ -18,6 +18,8 @@ class FileReadSnapshot:
     offset: int | None = None
     limit: int | None = None
     pages: str | None = None
+    encoding: str | None = None
+    line_endings: str | None = None
 
 
 @dataclass(slots=True)

@@ -141,7 +141,7 @@ class ContextBuilder:
         CORE_TOOL_SUMMARIES: dict[str, str] = {
             "Read":           "读取文件内容",
             "Write":          "创建或覆盖文件",
-            "edit_file":      "精确编辑文件片段",
+            "Edit":           "精确编辑文件片段",
             "list_dir":       "列出目录内容",
             "exec":           "执行 Shell 命令",
             "web_search":     "搜索网页（Brave + DuckDuckGo 降级）",
@@ -161,7 +161,7 @@ class ContextBuilder:
             "TaskList":       "列出当前任务列表",
         }
         TOOL_ORDER = [
-            "Read", "Write", "edit_file", "list_dir", "exec",
+            "Read", "Write", "Edit", "list_dir", "exec",
             "web_search", "web_fetch", "browser", "pdf",
             "memory_search", "memory_get", "memory_status", "message", "agent", "cron",
             "TaskCreate", "TaskGet", "TaskUpdate", "TaskList", "todo",
@@ -211,10 +211,14 @@ class ContextBuilder:
             "- Write 必须提供完整文件内容。",
             "- 对已存在文件执行 Write 前，必须先用 Read 完整读取该文件；partial Read 不够。",
             "- 如果文件在 Read 之后发生变化，必须重新 Read 后才能 Write。",
+            "- Edit 的 file_path 必须是绝对路径。",
+            "- 对已存在文件执行 Edit 前，必须先用 Read 完整读取该文件；partial Read 不够。",
+            "- Edit 默认要求 old_string 在文件中唯一；若要替换全部匹配项，显式传 replace_all=true。",
+            "- Edit 不用于 .ipynb；notebook 需使用专门的 notebook 编辑工具。",
             "",
             "## 工具调用风格",
             "默认：直接调用，不要过度解释。读文件、搜索、列目录等低风险操作直接执行。",
-            "高风险操作（exec / Write / edit_file / browser）先用一句话说明再执行。",
+            "高风险操作（exec / Write / Edit / browser）先用一句话说明再执行。",
             "只在以下情况简要说明正在做什么：多步骤复杂操作、敏感操作（删除/覆盖）、用户明确要求。",
             "有专用工具时，直接调用工具，不要让用户自行运行命令。",
             "长时间等待时，避免紧密轮询：用 exec 配合足够的等待时间，或用后台任务。",
@@ -288,7 +292,7 @@ class ContextBuilder:
             workspace_lines.extend(
                 [
                     f"命令执行目录：{execution_path}",
-                    "在 exec/Read/Write/edit_file/list_dir 中优先使用命令执行目录路径。",
+                    "在 exec/Read/Write/Edit/list_dir 中优先使用命令执行目录路径。",
                 ]
             )
         workspace_lines.extend(

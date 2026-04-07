@@ -149,26 +149,6 @@ def write_file(
     return ("create" if original is None else "update"), original
 
 
-def edit_file(
-    *,
-    path: str,
-    old_text: str,
-    new_text: str,
-    allowed_dir: Path | None = None,
-) -> str:
-    file_path = _resolve_path(path, allowed_dir)
-    if not file_path.exists():
-        return f"Error: file not found: {path}"
-    content = file_path.read_text(encoding="utf-8")
-    if old_text not in content:
-        return "Error: old_text not found in file"
-    count = content.count(old_text)
-    if count > 1:
-        return f"Warning: old_text appears {count} times; provide more context"
-    file_path.write_text(content.replace(old_text, new_text, 1), encoding="utf-8")
-    return f"Edited {path}"
-
-
 def list_dir(*, path: str, allowed_dir: Path | None = None) -> str:
     dir_path = _resolve_path(path, allowed_dir)
     if not dir_path.exists():

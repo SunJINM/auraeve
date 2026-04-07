@@ -37,7 +37,7 @@ EXPLORE_AGENT = AgentDefinition(
     when_to_use="快速探索代码库。搜索文件、关键词、回答代码结构相关问题。"
     "只读操作，不会修改任何文件。",
     tools=["Read", "list_dir", "exec", "web_search", "web_fetch"],
-    disallowed_tools=["Write", "edit_file", "agent"],
+    disallowed_tools=["Write", "Edit", "agent"],
     permission_mode="bypass",
     is_builtin=True,
 )
@@ -47,7 +47,7 @@ PLAN_AGENT = AgentDefinition(
     when_to_use="设计实现方案，分析架构，规划任务分解。"
     "只读分析，不执行代码修改。",
     tools=["Read", "list_dir", "exec", "web_search", "web_fetch"],
-    disallowed_tools=["Write", "edit_file", "agent"],
+    disallowed_tools=["Write", "Edit", "agent"],
     permission_mode="bypass",
     is_builtin=True,
 )

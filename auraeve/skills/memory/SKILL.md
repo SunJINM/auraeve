@@ -21,7 +21,7 @@ grep -i "关键词" memory/HISTORY.md
 
 ## 何时更新 MEMORY.md
 
-使用 `edit_file` 或 `Write` 立即写入重要事实：
+使用 `Edit` 或 `Write` 立即写入重要事实：
 - 用户偏好（"我喜欢深色模式"）
 - 项目上下文（"API 使用 OAuth2"）
 - 人际关系（"Alice 是项目负责人"）

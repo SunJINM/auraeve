@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from auraeve.agent.tools import file_read_support
+from auraeve.agent.tools import file_edit_support
 from auraeve.agent.tools.base import Tool, ToolExecutionResult
 from auraeve.agent_runtime.tool_runtime_context import (
     FileReadSnapshot,
@@ -98,6 +99,8 @@ class ReadTool(_FsToolBase):
             suffix = resolved.suffix.lower()
             content_type = "text"
             raw_text_for_state: str | None = None
+            encoding: str | None = None
+            line_endings: str | None = None
             if suffix in file_read_support.IMAGE_SUFFIXES:
                 result = await file_read_support.read_image_file(str(resolved))
                 content_type = "image"
@@ -107,9 +110,15 @@ class ReadTool(_FsToolBase):
             elif suffix == ".ipynb":
                 result = file_read_support.read_notebook_file(str(resolved))
                 content_type = "notebook"
-                raw_text_for_state = resolved.read_text(encoding="utf-8")
+                notebook_meta = file_edit_support.read_text_file_with_metadata(str(resolved))
+                raw_text_for_state = notebook_meta.content
+                encoding = notebook_meta.encoding
+                line_endings = notebook_meta.line_endings
             else:
-                raw_text_for_state = resolved.read_text(encoding="utf-8")
+                text_meta = file_edit_support.read_text_file_with_metadata(str(resolved))
+                raw_text_for_state = text_meta.content
+                encoding = text_meta.encoding
+                line_endings = text_meta.line_endings
                 rendered = file_read_support.format_text_with_line_numbers(
                     raw_text_for_state,
                     offset,
@@ -137,6 +146,8 @@ class ReadTool(_FsToolBase):
                         offset=offset,
                         limit=limit,
                         pages=pages,
+                        encoding=encoding,
+                        line_endings=line_endings,
                     )
                 )
 
@@ -175,6 +186,8 @@ class WriteTool(_FsToolBase):
             resolved = self._resolve_path(file_path)
             ctx = get_current_tool_runtime_context()
             original: str | None = None
+            encoding = "utf-8"
+            line_endings = "LF"
 
             if resolved.exists():
                 snapshot = ctx.file_reads.get(str(resolved)) if ctx is not None else None
@@ -188,15 +201,25 @@ class WriteTool(_FsToolBase):
                     )
                 current_mtime_ms = int(resolved.stat().st_mtime * 1000)
                 if current_mtime_ms > snapshot.file_mtime_ms:
-                    current_content = resolved.read_text(encoding="utf-8")
+                    current_content = file_edit_support.read_text_file_with_metadata(
+                        str(resolved)
+                    ).content
                     if snapshot.content != current_content:
                         return ToolExecutionResult(
                             content="Error: file changed after Read; read it again before Write"
                         )
-                original = resolved.read_text(encoding="utf-8")
+                original_meta = file_edit_support.read_text_file_with_metadata(str(resolved))
+                original = original_meta.content
+                encoding = original_meta.encoding
+                line_endings = original_meta.line_endings
 
             resolved.parent.mkdir(parents=True, exist_ok=True)
-            resolved.write_text(content, encoding="utf-8")
+            file_edit_support.write_text_with_metadata(
+                str(resolved),
+                content,
+                encoding=encoding,
+                line_endings=line_endings,
+            )
 
             data = {
                 "type": "create" if original is None else "update",
@@ -220,6 +243,8 @@ class WriteTool(_FsToolBase):
                         offset=None,
                         limit=None,
                         pages=None,
+                        encoding=encoding,
+                        line_endings=line_endings,
                     )
                 )
 
@@ -238,39 +263,210 @@ class WriteTool(_FsToolBase):
             return ToolExecutionResult(content=f"Write failed: {exc}")
 
 
-class EditFileTool(_FsToolBase):
+class EditTool(_FsToolBase):
     @property
     def name(self) -> str:
-        return "edit_file"
+        return "Edit"
 
     @property
     def description(self) -> str:
-        return "Replace old_text with new_text in file"
+        return "Performs exact string replacements in files."
 
     @property
     def parameters(self) -> dict[str, Any]:
         return {
             "type": "object",
             "properties": {
-                "path": {"type": "string", "description": "File path"},
-                "old_text": {"type": "string", "description": "Exact old text"},
-                "new_text": {"type": "string", "description": "Replacement text"},
+                "file_path": {"type": "string", "description": "Absolute path to the file"},
+                "old_string": {"type": "string", "description": "The text to replace"},
+                "new_string": {
+                    "type": "string",
+                    "description": "The text to replace it with (must be different from old_string)",
+                },
+                "replace_all": {
+                    "type": "boolean",
+                    "description": "Replace all occurrences of old_string (default false)",
+                },
             },
-            "required": ["path", "old_text", "new_text"],
+            "required": ["file_path", "old_string", "new_string"],
         }
 
-    async def execute(self, path: str, old_text: str, new_text: str, **kwargs: Any) -> str:
+    async def execute(
+        self,
+        file_path: str,
+        old_string: str,
+        new_string: str,
+        replace_all: bool = False,
+        **kwargs: Any,
+    ) -> ToolExecutionResult:
         try:
-            return await self._dispatcher.edit_file(
-                path=path,
-                old_text=old_text,
-                new_text=new_text,
-                allowed_dir=self._allowed_dir_str,
+            if not Path(file_path).is_absolute():
+                return ToolExecutionResult(content="Error: file_path must be absolute")
+
+            resolved = self._resolve_path(file_path)
+
+            if old_string == new_string:
+                return ToolExecutionResult(
+                    content="No changes to make: old_string and new_string are exactly the same."
+                )
+
+            text_meta = file_edit_support.read_text_file_with_metadata(str(resolved))
+            normalized_old, normalized_new = file_edit_support.normalize_edit_strings(
+                file_path=str(resolved),
+                file_content=text_meta.content if text_meta.file_exists else None,
+                old_string=old_string,
+                new_string=new_string,
+            )
+
+            if not text_meta.file_exists:
+                if normalized_old != "":
+                    return ToolExecutionResult(
+                        content=(
+                            "File does not exist. Read it first or use old_string=\"\" "
+                            "to create a new file with Edit."
+                        )
+                    )
+
+                file_edit_support.write_text_with_metadata(
+                    str(resolved),
+                    normalized_new,
+                    encoding=text_meta.encoding,
+                    line_endings=text_meta.line_endings,
+                )
+                return self._build_edit_result(
+                    resolved=resolved,
+                    original_file="",
+                    old_string="",
+                    new_string=new_string,
+                    updated_file=normalized_new,
+                    replace_all=bool(replace_all),
+                )
+
+            if normalized_old == "" and text_meta.content.strip() != "":
+                return ToolExecutionResult(content="Cannot create new file - file already exists.")
+
+            if resolved.suffix.lower() == ".ipynb" and normalized_old != "":
+                return ToolExecutionResult(
+                    content="File is a Jupyter Notebook. Use the NotebookEdit tool to edit this file."
+                )
+
+            ctx = get_current_tool_runtime_context()
+            snapshot = ctx.file_reads.get(str(resolved)) if ctx is not None else None
+            if snapshot is None:
+                return ToolExecutionResult(
+                    content="File has not been read yet. Read it first before writing to it."
+                )
+            if snapshot.is_partial_view:
+                return ToolExecutionResult(
+                    content="File was only partially read. Read the whole file before editing."
+                )
+
+            current_mtime_ms = int(resolved.stat().st_mtime * 1000)
+            if current_mtime_ms > snapshot.file_mtime_ms and snapshot.content != text_meta.content:
+                return ToolExecutionResult(
+                    content=(
+                        "File has been modified since Read, either by the user or by a linter. "
+                        "Read it again before attempting to write it."
+                    )
+                )
+
+            actual_old_string = file_edit_support.find_actual_string(text_meta.content, normalized_old)
+            if actual_old_string is None:
+                return ToolExecutionResult(
+                    content=f"String to replace not found in file.\nString: {old_string}"
+                )
+
+            matches = text_meta.content.count(actual_old_string)
+            if matches > 1 and not replace_all:
+                return ToolExecutionResult(
+                    content=(
+                        f"Found {matches} matches of the string to replace, but replace_all is false. "
+                        "To replace all occurrences, set replace_all to true. To replace only one occurrence, "
+                        "please provide more context to uniquely identify the instance.\n"
+                        f"String: {old_string}"
+                    )
+                )
+
+            actual_new_string = file_edit_support.preserve_quote_style(
+                normalized_old,
+                actual_old_string,
+                normalized_new,
+            )
+            updated_file = file_edit_support.apply_edit_to_file(
+                text_meta.content,
+                actual_old_string,
+                actual_new_string,
+                replace_all=bool(replace_all),
+            )
+            if updated_file == text_meta.content:
+                return ToolExecutionResult(
+                    content="Original and edited file match exactly. Failed to apply edit."
+                )
+
+            file_edit_support.write_text_with_metadata(
+                str(resolved),
+                updated_file,
+                encoding=text_meta.encoding,
+                line_endings=text_meta.line_endings,
+            )
+            return self._build_edit_result(
+                resolved=resolved,
+                original_file=text_meta.content,
+                old_string=actual_old_string,
+                new_string=new_string,
+                updated_file=updated_file,
+                replace_all=bool(replace_all),
             )
         except PermissionError as exc:
-            return f"Error: {exc}"
+            return ToolExecutionResult(content=f"Error: {exc}")
         except Exception as exc:
-            return f"Edit failed: {exc}"
+            return ToolExecutionResult(content=f"Edit failed: {exc}")
+
+    def _build_edit_result(
+        self,
+        *,
+        resolved: Path,
+        original_file: str,
+        old_string: str,
+        new_string: str,
+        updated_file: str,
+        replace_all: bool,
+    ) -> ToolExecutionResult:
+        data = {
+            "filePath": str(resolved),
+            "oldString": old_string,
+            "newString": new_string,
+            "originalFile": original_file,
+            "structuredPatch": _build_structured_patch(original_file, updated_file),
+            "userModified": False,
+            "replaceAll": replace_all,
+        }
+
+        ctx = get_current_tool_runtime_context()
+        if ctx is not None:
+            current_mtime_ms = int(resolved.stat().st_mtime * 1000)
+            updated_meta = file_edit_support.read_text_file_with_metadata(str(resolved))
+            ctx.file_reads.record(
+                FileReadSnapshot(
+                    file_path=str(resolved),
+                    timestamp_ms=int(time.time() * 1000),
+                    file_mtime_ms=current_mtime_ms,
+                    is_partial_view=False,
+                    content_type="text",
+                    content=updated_file,
+                    offset=None,
+                    limit=None,
+                    pages=None,
+                    encoding=updated_meta.encoding,
+                    line_endings=updated_meta.line_endings,
+                )
+            )
+
+        if replace_all:
+            content = f"The file {resolved} has been updated. All occurrences were successfully replaced."
+        else:
+            content = f"The file {resolved} has been updated successfully."
+        return ToolExecutionResult(content=content, data=data)
 
 
 class ListDirTool(_FsToolBase):

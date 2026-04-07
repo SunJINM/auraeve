@@ -6,7 +6,6 @@ import unittest
 from pathlib import Path
 
 from auraeve.execution.host_ops import (
-    edit_file,
     execute_shell_command,
     list_dir,
     read_file,
@@ -15,7 +14,7 @@ from auraeve.execution.host_ops import (
 
 
 class HostOpsFsTests(unittest.TestCase):
-    def test_read_write_edit_list(self) -> None:
+    def test_read_write_list(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             target = root / "a" / "b.txt"
@@ -25,15 +24,6 @@ class HostOpsFsTests(unittest.TestCase):
 
             read_res = read_file(path=str(target), allowed_dir=root, offset=0, limit=1)
             self.assertEqual(read_res, "1\thello")
-
-            edit_res = edit_file(
-                path=str(target),
-                old_text="hello",
-                new_text="world",
-                allowed_dir=root,
-            )
-            self.assertIn("Edited", edit_res)
-            self.assertEqual(target.read_text(encoding="utf-8"), "world")
 
             ls_res = list_dir(path=str(root / "a"), allowed_dir=root)
             self.assertIn("b.txt", ls_res)

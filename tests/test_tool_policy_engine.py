@@ -29,6 +29,7 @@ def test_infer_tool_group_treats_agent_as_agent_group():
 def test_infer_tool_group_treats_read_and_write_as_filesystem_group():
     assert ToolPolicyEngine.infer_tool_group("Read") == "filesystem"
     assert ToolPolicyEngine.infer_tool_group("Write") == "filesystem"
+    assert ToolPolicyEngine.infer_tool_group("Edit") == "filesystem"
 
 
 @pytest.mark.asyncio
@@ -38,6 +39,23 @@ async def test_write_is_tagged_as_high_risk_tool():
     result = await engine.evaluate(
         PolicyContext(
             tool_name="Write",
+            args={},
+            session_id="session-1",
+            is_subagent=False,
+        )
+    )
+
+    assert result.allowed is True
+    assert any(item.rule_id == "risk_tag:high" for item in result.trace)
+
+
+@pytest.mark.asyncio
+async def test_edit_is_tagged_as_high_risk_tool():
+    engine = ToolPolicyEngine()
+
+    result = await engine.evaluate(
+        PolicyContext(
+            tool_name="Edit",
             args={},
             session_id="session-1",
             is_subagent=False,

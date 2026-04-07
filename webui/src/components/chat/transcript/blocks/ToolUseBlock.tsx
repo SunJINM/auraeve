@@ -10,6 +10,7 @@ const TOOL_DISPLAY: Record<string, { icon: string; label: string }> = {
   glob: { icon: '🔍', label: 'Glob' },
   bash: { icon: '⚡', label: 'Bash' },
   exec: { icon: '⚡', label: 'Exec' },
+  Edit: { icon: '✏️', label: 'Edit' },
   edit: { icon: '✏️', label: 'Edit' },
   Write: { icon: '📝', label: 'Write' },
   write: { icon: '📝', label: 'Write' },
@@ -47,6 +48,7 @@ function getToolSummary(toolName: string, args: unknown): string {
     case 'edit':
       return String(a.file_path ?? '')
     case 'Write':
+    case 'Edit':
     case 'write':
     case 'create_file':
       return String(a.file_path ?? a.path ?? '')
@@ -79,6 +81,7 @@ function getResultSummary(toolName: string, result: string, status: string): str
     case 'read':
     case 'read_file':
       return `${lines.length} 行`
+    case 'Edit':
     case 'grep':
     case 'glob':
     case 'list_dir':

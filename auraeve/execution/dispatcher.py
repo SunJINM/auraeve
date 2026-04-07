@@ -6,7 +6,6 @@ from typing import Protocol
 
 from .host_ops import (
     DEFAULT_DENY_PATTERNS,
-    edit_file,
     execute_shell_command,
     list_dir,
     read_file,
@@ -40,14 +39,6 @@ class ExecutionBackend(Protocol):
         content: str,
         allowed_dir: str | None,
     ) -> tuple[str, str | None]: ...
-    async def edit_file(
-        self,
-        *,
-        path: str,
-        old_text: str,
-        new_text: str,
-        allowed_dir: str | None,
-    ) -> str: ...
     async def list_dir(self, *, path: str, allowed_dir: str | None) -> str: ...
 
 
@@ -90,17 +81,6 @@ class LocalExecutionBackend:
     ) -> tuple[str, str | None]:
         allowed = Path(allowed_dir).expanduser().resolve() if allowed_dir else None
         return write_file(path=path, content=content, allowed_dir=allowed)
-
-    async def edit_file(
-        self,
-        *,
-        path: str,
-        old_text: str,
-        new_text: str,
-        allowed_dir: str | None,
-    ) -> str:
-        allowed = Path(allowed_dir).expanduser().resolve() if allowed_dir else None
-        return edit_file(path=path, old_text=old_text, new_text=new_text, allowed_dir=allowed)
 
     async def list_dir(self, *, path: str, allowed_dir: str | None) -> str:
         allowed = Path(allowed_dir).expanduser().resolve() if allowed_dir else None
@@ -153,21 +133,6 @@ class ExecutionDispatcher:
         allowed_dir: str | None,
     ) -> tuple[str, str | None]:
         return await self._backend.write_file(path=path, content=content, allowed_dir=allowed_dir)
-
-    async def edit_file(
-        self,
-        *,
-        path: str,
-        old_text: str,
-        new_text: str,
-        allowed_dir: str | None,
-    ) -> str:
-        return await self._backend.edit_file(
-            path=path,
-            old_text=old_text,
-            new_text=new_text,
-            allowed_dir=allowed_dir,
-        )
 
     async def list_dir(self, *, path: str, allowed_dir: str | None) -> str:
         return await self._backend.list_dir(path=path, allowed_dir=allowed_dir)
