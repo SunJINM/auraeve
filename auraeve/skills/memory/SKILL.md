@@ -1,6 +1,6 @@
 ---
 name: memory
-description: 双层记忆系统，支持 grep 检索历史。长期事实存入 MEMORY.md，事件日志追加到 HISTORY.md。
+description: 双层记忆系统，支持 Grep 检索历史。长期事实存入 MEMORY.md，事件日志追加到 HISTORY.md。
 always: true
 ---
 
@@ -9,7 +9,7 @@ always: true
 ## 结构
 
 - `memory/MEMORY.md` — 长期事实（偏好、项目上下文、关系）。始终加载到上下文中。
-- `memory/HISTORY.md` — 只追加的事件日志。**不**加载到上下文中，用 grep 搜索。
+- `memory/HISTORY.md` — 只追加的事件日志。**不**加载到上下文中，用 Grep 搜索。
 
 ## 搜索历史事件
 
@@ -17,7 +17,7 @@ always: true
 grep -i "关键词" memory/HISTORY.md
 ```
 
-使用 `Bash` 工具执行 grep。组合模式：`grep -iE "会议|截止日期" memory/HISTORY.md`
+使用 `Grep` 工具搜索历史事件；需要多关键词时可用正则模式如 `会议|截止日期`。
 
 ## 何时更新 MEMORY.md
 

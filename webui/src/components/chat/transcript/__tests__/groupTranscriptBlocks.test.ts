@@ -18,7 +18,7 @@ describe('groupTranscriptBlocks', () => {
         id: 'tool_use:2',
         type: 'tool_use',
         toolCallId: 'call-2',
-        toolName: 'grep',
+        toolName: 'Grep',
         arguments: { pattern: 'ChatPage' },
         result: 'match found',
         status: 'success',

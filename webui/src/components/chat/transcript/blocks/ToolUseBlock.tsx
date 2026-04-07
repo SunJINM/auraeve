@@ -6,8 +6,8 @@ const TOOL_DISPLAY: Record<string, { icon: string; label: string }> = {
   Read: { icon: '📄', label: 'Read' },
   read: { icon: '📄', label: 'Read' },
   read_file: { icon: '📄', label: 'Read' },
-  grep: { icon: '🔍', label: 'Search' },
-  glob: { icon: '🔍', label: 'Glob' },
+  Grep: { icon: '🔍', label: 'Search' },
+  Glob: { icon: '🔍', label: 'Glob' },
   Bash: { icon: '⚡', label: 'Bash' },
   bash: { icon: '⚡', label: 'Bash' },
   Edit: { icon: '✏️', label: 'Edit' },
@@ -40,9 +40,9 @@ function getToolSummary(toolName: string, args: unknown): string {
     case 'Bash':
     case 'bash':
       return `$ ${truncate(firstLine(String(a.command ?? '')), 70)}`
-    case 'grep':
+    case 'Grep':
       return `"${a.pattern ?? ''}" ${a.path ? `in ${a.path}` : ''}`
-    case 'glob':
+    case 'Glob':
       return String(a.pattern ?? '')
     case 'edit':
       return String(a.file_path ?? '')
@@ -79,8 +79,8 @@ function getResultSummary(toolName: string, result: string, status: string): str
     case 'read_file':
       return `${lines.length} 行`
     case 'Edit':
-    case 'grep':
-    case 'glob':
+    case 'Grep':
+    case 'Glob':
     case 'Bash':
     case 'bash':
     {

@@ -34,6 +34,8 @@ def test_plan_agent():
 def test_explore_agent_uses_read_replacement_names():
     a = EXPLORE_AGENT
     assert "Read" in a.tools
+    assert "Grep" in a.tools
+    assert "Glob" in a.tools
     assert "Bash" in a.tools
     assert "web_search" in a.tools
     assert "Write" not in a.tools
@@ -67,7 +69,7 @@ def test_custom_agent_definition():
     a = AgentDefinition(
         agent_type="my-agent",
         when_to_use="自定义用途",
-        tools=["Read", "Bash"],
+        tools=["Read", "Grep", "Glob", "Bash"],
         disallowed_tools=["agent", "Edit"],
         max_turns=20,
     )

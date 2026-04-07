@@ -30,6 +30,43 @@ Write(file_path: str, content: str) -> str
 Edit(file_path: str, old_string: str, new_string: str, replace_all: bool = false) -> str
 ```
 
+## 搜索
+
+### Grep
+用 ripgrep 搜索文件内容。
+```
+Grep(
+  pattern: str,
+  path: str = None,
+  glob: str = None,
+  output_mode: str = "files_with_matches",
+  head_limit: int = None,
+  offset: int = 0,
+  multiline: bool = False,
+  type: str = None,
+  -i: bool = False,
+  -n: bool = True
+) -> str
+```
+
+**说明：**
+- 内容搜索优先使用 `Grep`，不要再用 `Bash` 调 `rg` / `grep`
+- `output_mode="content"` 返回匹配行
+- `output_mode="files_with_matches"` 只返回文件路径
+- `output_mode="count"` 返回计数结果
+- 结果较多时优先配合 `glob`、`type`、`head_limit`、`offset`
+
+### Glob
+按文件名或路径模式查找文件。
+```
+Glob(pattern: str, path: str = None) -> str
+```
+
+**说明：**
+- 路径/文件名模式查找优先使用 `Glob`
+- 适合 `**/*.py`、`src/**/*.ts`、`*.md` 这类场景
+- 返回按修改时间排序的匹配文件路径
+
 ## Shell 执行
 
 ### Bash

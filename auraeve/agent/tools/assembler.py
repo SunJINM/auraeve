@@ -9,6 +9,7 @@ from auraeve.agent.tools.filesystem import EditTool, ReadTool, WriteTool
 from auraeve.agent.tools.message import MessageTool
 from auraeve.agent.tools.media_understand import MediaUnderstandTool
 from auraeve.agent.tools.plan import TodoTool
+from auraeve.agent.tools.search import GlobTool, GrepTool
 from auraeve.agent.tools.task_create import TaskCreateTool
 from auraeve.agent.tools.task_get import TaskGetTool
 from auraeve.agent.tools.task_list import TaskListTool
@@ -91,6 +92,8 @@ def build_tool_registry(
     registry.register(ReadTool(allowed_dir=allowed_dir, dispatcher=dispatcher))
     registry.register(WriteTool(allowed_dir=allowed_dir, dispatcher=dispatcher))
     registry.register(EditTool(allowed_dir=allowed_dir, dispatcher=dispatcher))
+    registry.register(GrepTool(working_dir=tool_workspace, allowed_dir=allowed_dir))
+    registry.register(GlobTool(working_dir=tool_workspace, allowed_dir=allowed_dir))
     registry.register(BashTool(
         working_dir=tool_workspace,
         timeout_ms=exec_timeout * 1000,
