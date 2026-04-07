@@ -1,13 +1,18 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import tempfile
 import unittest
 from pathlib import Path
 
 from auraeve.execution.host_ops import (
+    ShellCommandResult,
     execute_shell_command,
+    guard_shell_command,
+    posix_path_to_windows_path,
     read_file,
+    windows_path_to_posix_path,
     write_file,
 )
 
@@ -40,11 +45,24 @@ class HostOpsFsTests(unittest.TestCase):
             execute_shell_command(
                 command="echo hello",
                 working_dir="/app/workspace",
-                timeout=5,
+                timeout_ms=5_000,
             )
         )
-        self.assertIn("fallback", result)
-        self.assertNotIn("traceback", result.lower())
+        self.assertIsInstance(result, ShellCommandResult)
+        self.assertIn("fallback", result.stderr)
+        self.assertNotIn("traceback", result.stderr.lower())
+
+    def test_windows_path_roundtrip_for_git_bash(self) -> None:
+        original = r"D:\WorkProjects\auraeve\foo\bar.txt"
+        posix = windows_path_to_posix_path(original)
+
+        self.assertEqual(posix, "/d/WorkProjects/auraeve/foo/bar.txt")
+        self.assertEqual(posix_path_to_windows_path(posix), original)
+
+    def test_guard_shell_command_blocks_destructive_git_operations(self) -> None:
+        blocked = guard_shell_command("git reset --hard HEAD~1", os.getcwd())
+        self.assertIsNotNone(blocked)
+        self.assertIn("blocked", blocked or "")
 
 
 if __name__ == "__main__":

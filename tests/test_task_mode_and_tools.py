@@ -51,6 +51,8 @@ def test_build_tool_registry_registers_task_v2_tools_without_legacy_todo(tmp_pat
     assert registry.has("TaskGet")
     assert registry.has("TaskUpdate")
     assert registry.has("TaskList")
+    assert registry.has("Bash")
+    assert registry.has("exec") is False
     assert registry.has("todo") is False
 
 
@@ -70,6 +72,8 @@ def test_build_tool_registry_registers_legacy_todo_without_task_v2_tools(tmp_pat
     )
 
     assert registry.has("todo")
+    assert registry.has("Bash")
+    assert registry.has("exec") is False
     assert registry.has("TaskCreate") is False
     assert registry.has("TaskGet") is False
     assert registry.has("TaskUpdate") is False
@@ -109,13 +113,16 @@ def test_context_builder_uses_read_write_tool_names(tmp_path: Path) -> None:
     prompt = builder.build_system_prompt(
         channel="webui",
         chat_id="chat-1",
-        available_tools={"Read", "Write", "Edit", "exec", "message"},
+        available_tools={"Read", "Write", "Edit", "Bash", "message"},
     )
 
     assert "- Read: 读取文件内容" in prompt
     assert "- Write: 创建或覆盖文件" in prompt
     assert "- Edit: 精确编辑文件片段" in prompt
-    assert "高风险操作（exec / Write / Edit / browser）先用一句话说明再执行。" in prompt
+    assert "- Bash: 执行 Bash Shell 命令" in prompt
+    assert "高风险操作（Bash / Write / Edit / browser）先用一句话说明再执行。" in prompt
+    assert "有专用工具时，优先用专用工具而不是 Bash" in prompt
+    assert "需要长时间运行且不必立刻读取结果时，使用 run_in_background" in prompt
     assert "Read 读取该技能的 <location>" in prompt
     assert "使用 <location> 字段中的原始路径调用 Read" in prompt
     assert "用 Write 在" in prompt
@@ -125,3 +132,4 @@ def test_context_builder_uses_read_write_tool_names(tmp_path: Path) -> None:
     assert "read_file" not in prompt
     assert "write_file" not in prompt
     assert "edit_file" not in prompt
+    assert "exec" not in prompt

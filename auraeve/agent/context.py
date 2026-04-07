@@ -142,7 +142,7 @@ class ContextBuilder:
             "Read":           "读取文件内容",
             "Write":          "创建或覆盖文件",
             "Edit":           "精确编辑文件片段",
-            "exec":           "执行 Shell 命令",
+            "Bash":           "执行 Bash Shell 命令",
             "web_search":     "搜索网页（Brave + DuckDuckGo 降级）",
             "web_fetch":      "抓取 URL 可读内容（三层提取管道）",
             "browser":        "控制浏览器（导航、截图、交互）",
@@ -159,7 +159,7 @@ class ContextBuilder:
             "TaskList":       "列出当前任务列表",
         }
         TOOL_ORDER = [
-            "Read", "Write", "Edit", "exec",
+            "Read", "Write", "Edit", "Bash",
             "web_search", "web_fetch", "browser",
             "memory_search", "memory_get", "memory_status", "message", "agent", "cron",
             "TaskCreate", "TaskGet", "TaskUpdate", "TaskList", "todo",
@@ -214,12 +214,18 @@ class ContextBuilder:
             "- Edit 默认要求 old_string 在文件中唯一；若要替换全部匹配项，显式传 replace_all=true。",
             "- Edit 不用于 .ipynb；notebook 需使用专门的 notebook 编辑工具。",
             "",
+            "## Bash 约束",
+            "- 有专用工具时，优先用专用工具而不是 Bash。",
+            "- 读文件用 Read；创建/覆盖文件用 Write；精确修改文件用 Edit；网页检索与抓取用 web_search / web_fetch。",
+            "- 需要长时间运行且不必立刻读取结果时，使用 run_in_background=true，而不是在命令末尾手写 &。",
+            "- 需要稳定格式的命令输出时，优先一次执行一个明确命令，避免把不相关步骤串成超长 shell 脚本。",
+            "",
             "## 工具调用风格",
             "默认：直接调用，不要过度解释。读文件、搜索、列目录等低风险操作直接执行。",
-            "高风险操作（exec / Write / Edit / browser）先用一句话说明再执行。",
+            "高风险操作（Bash / Write / Edit / browser）先用一句话说明再执行。",
             "只在以下情况简要说明正在做什么：多步骤复杂操作、敏感操作（删除/覆盖）、用户明确要求。",
             "有专用工具时，直接调用工具，不要让用户自行运行命令。",
-            "长时间等待时，避免紧密轮询：用 exec 配合足够的等待时间，或用后台任务。",
+            "长时间等待时，避免紧密轮询：用 Bash 配合足够的等待时间，或用后台任务。",
             "",
             *task_guidance,
         ]
@@ -290,7 +296,7 @@ class ContextBuilder:
             workspace_lines.extend(
                 [
                     f"命令执行目录：{execution_path}",
-                    "在 exec/Read/Write/Edit 中优先使用命令执行目录路径。",
+                    "在 Bash/Read/Write/Edit 中优先使用命令执行目录路径。",
                 ]
             )
         workspace_lines.extend(
@@ -307,7 +313,7 @@ class ContextBuilder:
                 "",
                 "没有专用工具不代表无法完成任务——写脚本解决：",
                 f"- 用 Write 在 {script_base}/scripts/ 写 Python/Shell 脚本",
-                "- 用 exec 执行并读取输出",
+                "- 用 Bash 执行并读取输出",
                 "适合写脚本的场景：数据处理、API 调用、批量操作、格式转换、复杂计算。",
                 "",
                 "**严禁以\"我没有这个工具/能力\"为由直接拒绝。**",
@@ -372,7 +378,7 @@ class ContextBuilder:
             "- 发送网络图片 → message(content='', image_url='https://...')",
             "- 当你已经拿到公网图片 URL 时，禁止先下载到本地再发 file_path；必须直接使用 image_url 发送",
             "",
-            "用户说'发文件/图片给我'时：先用 exec 找到绝对路径，再调用 message。",
+            "用户说'发文件/图片给我'时：先用 Bash 找到绝对路径，再调用 message。",
             "**绝不能回复\"无法发送文件\"——这是已支持的功能。**",
             "",
             "## 任务完成规则",

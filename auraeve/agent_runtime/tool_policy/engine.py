@@ -17,7 +17,7 @@ _SUBAGENT_DENY: frozenset[str] = frozenset({"agent"})
 
 # 高副作用工具风险标签（用于 session 层策略参考）
 _HIGH_RISK_TOOLS: frozenset[str] = frozenset({
-    "exec", "Write", "write_file", "Edit", "browser",
+    "Bash", "Write", "write_file", "Edit", "browser",
 })
 
 
@@ -52,7 +52,7 @@ class ToolPolicyEngine:
             return "web"
         if tool_name in {"agent", "message", "todo", "cron", "TaskCreate", "TaskGet", "TaskUpdate", "TaskList"}:
             return "agent"
-        if tool_name in {"exec"}:
+        if tool_name in {"Bash"}:
             return "shell"
         return "general"
 

@@ -8,8 +8,8 @@ const TOOL_DISPLAY: Record<string, { icon: string; label: string }> = {
   read_file: { icon: '📄', label: 'Read' },
   grep: { icon: '🔍', label: 'Search' },
   glob: { icon: '🔍', label: 'Glob' },
+  Bash: { icon: '⚡', label: 'Bash' },
   bash: { icon: '⚡', label: 'Bash' },
-  exec: { icon: '⚡', label: 'Exec' },
   Edit: { icon: '✏️', label: 'Edit' },
   edit: { icon: '✏️', label: 'Edit' },
   Write: { icon: '📝', label: 'Write' },
@@ -37,8 +37,8 @@ function getToolSummary(toolName: string, args: unknown): string {
     case 'read':
     case 'read_file':
       return String(a.file_path ?? a.path ?? '')
+    case 'Bash':
     case 'bash':
-    case 'exec':
       return `$ ${truncate(firstLine(String(a.command ?? '')), 70)}`
     case 'grep':
       return `"${a.pattern ?? ''}" ${a.path ? `in ${a.path}` : ''}`
@@ -81,8 +81,9 @@ function getResultSummary(toolName: string, result: string, status: string): str
     case 'Edit':
     case 'grep':
     case 'glob':
+    case 'Bash':
     case 'bash':
-    case 'exec': {
+    {
       // 提取退出码
       const exitMatch = result.match(/ExitCode:\s*(\d+)/)
       if (exitMatch && exitMatch[1] !== '0') {

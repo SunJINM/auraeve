@@ -6,9 +6,9 @@ metadata: {"auraeve":{"emoji":"🧵","os":["darwin","linux"],"requires":{"bins":
 
 # tmux 技能
 
-仅在需要交互式 TTY 时使用 tmux。长时间运行的非交互任务，优先使用 exec 后台模式。
+仅在需要交互式 TTY 时使用 tmux。长时间运行的非交互任务，优先使用 Bash 后台模式。
 
-## 快速开始（独立 socket，exec 工具）
+## 快速开始（独立 socket，Bash 工具）
 
 ```bash
 SOCKET_DIR="${AURAEVE_TMUX_SOCKET_DIR:-${TMPDIR:-/tmp}/auraeve-tmux-sockets}"

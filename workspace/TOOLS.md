@@ -32,17 +32,24 @@ Edit(file_path: str, old_string: str, new_string: str, replace_all: bool = false
 
 ## Shell 执行
 
-### exec
-执行 Shell 命令并返回输出。
+### Bash
+执行 Bash Shell 命令并返回结果。
 ```
-exec(command: str, working_dir: str = None) -> str
+Bash(
+  command: str,
+  timeout: int = None,
+  description: str = None,
+  run_in_background: bool = False,
+  dangerouslyDisableSandbox: bool = False
+) -> str
 ```
 
 **说明：**
-- 命令有超时限制
+- Windows 上使用 Git Bash 运行
+- 命令有超时限制（毫秒）
 - 明显危险的命令会被拦截
-- 输出会截断，适合查看结果，不适合长时间刷屏
-- 相对路径默认相对于当前工作目录
+- 可以用 `run_in_background=true` 启动后台任务
+- 当前工作目录会在同一轮工具调用内持续跟踪
 
 ## 脚本策略
 
@@ -55,7 +62,7 @@ exec(command: str, working_dir: str = None) -> str
 
 **推荐做法：**
 1. 用 `Write` 将脚本写到当前工作区的 `scripts/`
-2. 用 `exec` 执行脚本
+2. 用 `Bash` 执行脚本
 3. 读取输出并继续处理
 
 **示例 1：处理 JSON 数据**
@@ -67,8 +74,8 @@ data = json.load(open("data.json", "r", encoding="utf-8"))
 result = [item for item in data if item["status"] == "active"]
 print(json.dumps(result, ensure_ascii=False, indent=2))
 ```
-```
-exec("python scripts/parse_data.py")
+```python
+Bash(command="python scripts/parse_data.py")
 ```
 
 **示例 2：多步 API 调用**
@@ -82,8 +89,8 @@ res = urllib.request.urlopen(url)
 data = json.loads(res.read())
 print(data["current_condition"][0]["weatherDesc"][0]["value"])
 ```
-```
-exec("python scripts/fetch_weather.py")
+```python
+Bash(command="python scripts/fetch_weather.py")
 ```
 
 **示例 3：批量文件处理**
@@ -97,8 +104,8 @@ for f in Path("data").glob("*.txt"):
     f.rename(f.parent / new_name)
     print(f"{f.name} -> {new_name}")
 ```
-```
-exec("python scripts/rename_files.py")
+```python
+Bash(command="python scripts/rename_files.py")
 ```
 
 **适合写脚本的场景：**

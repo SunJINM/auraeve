@@ -99,6 +99,29 @@ def test_collapse_readonly_activity_into_single_block(tmp_path: Path) -> None:
     assert model.blocks[1].type == "collapsed_activity"
 
 
+def test_bash_tool_use_is_not_collapsed_as_readonly_activity(tmp_path: Path) -> None:
+    sm = SessionManager(tmp_path / "sessions")
+    session = sm.get_or_create("webui:test-user")
+    session.add_message("user", "跑一下命令")
+    session.add_message(
+        "assistant",
+        "",
+        tool_calls=[
+            {
+                "id": "bash_1",
+                "type": "function",
+                "function": {"name": "Bash", "arguments": "{\"command\":\"pwd\"}"},
+            }
+        ],
+    )
+    session.add_message("tool", "/d/WorkProjects/auraeve", tool_call_id="bash_1", name="Bash")
+
+    blocks = project_history_into_transcript_blocks(session.messages)
+
+    assert [item["type"] for item in blocks] == ["user", "tool_use"]
+    assert blocks[1]["toolName"] == "Bash"
+
+
 def test_chat_transcript_event_schema_requires_valid_block_states() -> None:
     ChatTranscriptBlockEvent.model_validate(
         {

@@ -61,6 +61,7 @@ class TaskReadStateStore:
 class ToolRuntimeContext:
     file_reads: FileReadStateStore
     task_reads: TaskReadStateStore = field(default_factory=TaskReadStateStore)
+    shell_cwd: str | None = None
 
 
 _CURRENT_CONTEXT: ContextVar[ToolRuntimeContext | None] = ContextVar(

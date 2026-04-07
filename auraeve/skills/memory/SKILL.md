@@ -17,7 +17,7 @@ always: true
 grep -i "关键词" memory/HISTORY.md
 ```
 
-使用 `exec` 工具执行 grep。组合模式：`grep -iE "会议|截止日期" memory/HISTORY.md`
+使用 `Bash` 工具执行 grep。组合模式：`grep -iE "会议|截止日期" memory/HISTORY.md`
 
 ## 何时更新 MEMORY.md
 

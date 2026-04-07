@@ -14,7 +14,7 @@ from auraeve.agent.tools.task_get import TaskGetTool
 from auraeve.agent.tools.task_list import TaskListTool
 from auraeve.agent.tools.task_update import TaskUpdateTool
 from auraeve.agent.tools.registry import ToolRegistry
-from auraeve.agent.tools.shell import ExecTool
+from auraeve.agent.tools.shell import BashTool
 from auraeve.agent.tools.agent_tool import AgentTool
 from auraeve.agent.tools.web import WebFetchTool, WebSearchTool
 from auraeve.config.paths import resolve_state_dir
@@ -91,9 +91,9 @@ def build_tool_registry(
     registry.register(ReadTool(allowed_dir=allowed_dir, dispatcher=dispatcher))
     registry.register(WriteTool(allowed_dir=allowed_dir, dispatcher=dispatcher))
     registry.register(EditTool(allowed_dir=allowed_dir, dispatcher=dispatcher))
-    registry.register(ExecTool(
+    registry.register(BashTool(
         working_dir=tool_workspace,
-        timeout=exec_timeout,
+        timeout_ms=exec_timeout * 1000,
         restrict_to_workspace=restrict_to_workspace,
         dispatcher=dispatcher,
     ))

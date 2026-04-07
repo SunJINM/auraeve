@@ -6,6 +6,7 @@ from typing import Protocol
 
 from .host_ops import (
     DEFAULT_DENY_PATTERNS,
+    ShellCommandResult,
     execute_shell_command,
     read_file,
     write_file,
@@ -18,10 +19,12 @@ class ExecutionBackend(Protocol):
         *,
         command: str,
         working_dir: str | None,
-        timeout: int,
+        timeout_ms: int,
         deny_patterns: list[str] | None,
         restrict_to_workspace: bool,
-    ) -> str: ...
+        run_in_background: bool = False,
+        dangerously_disable_sandbox: bool = False,
+    ) -> ShellCommandResult: ...
 
     async def read_file(
         self,
@@ -46,16 +49,20 @@ class LocalExecutionBackend:
         *,
         command: str,
         working_dir: str | None,
-        timeout: int,
+        timeout_ms: int,
         deny_patterns: list[str] | None,
         restrict_to_workspace: bool,
-    ) -> str:
+        run_in_background: bool = False,
+        dangerously_disable_sandbox: bool = False,
+    ) -> ShellCommandResult:
         return await execute_shell_command(
             command=command,
-            timeout=timeout,
+            timeout_ms=timeout_ms,
             working_dir=working_dir,
             deny_patterns=deny_patterns,
             restrict_to_workspace=restrict_to_workspace,
+            run_in_background=run_in_background,
+            dangerously_disable_sandbox=dangerously_disable_sandbox,
         )
 
     async def read_file(
@@ -91,16 +98,20 @@ class ExecutionDispatcher:
         *,
         command: str,
         working_dir: str | None,
-        timeout: int,
+        timeout_ms: int,
         deny_patterns: list[str] | None = None,
         restrict_to_workspace: bool = False,
-    ) -> str:
+        run_in_background: bool = False,
+        dangerously_disable_sandbox: bool = False,
+    ) -> ShellCommandResult:
         return await self._backend.exec_command(
             command=command,
             working_dir=working_dir,
-            timeout=timeout,
+            timeout_ms=timeout_ms,
             deny_patterns=deny_patterns or list(DEFAULT_DENY_PATTERNS),
             restrict_to_workspace=restrict_to_workspace,
+            run_in_background=run_in_background,
+            dangerously_disable_sandbox=dangerously_disable_sandbox,
         )
 
     async def read_file(

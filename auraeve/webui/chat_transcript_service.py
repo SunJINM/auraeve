@@ -6,7 +6,7 @@ import json
 from typing import Any
 
 
-_READONLY_TOOL_NAMES = {"Read", "read", "read_file", "grep", "glob", "bash"}
+_READONLY_TOOL_NAMES = {"Read", "read", "read_file", "grep", "glob"}
 
 
 def project_history_into_transcript_blocks(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:

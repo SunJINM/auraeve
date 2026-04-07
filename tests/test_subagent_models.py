@@ -58,7 +58,7 @@ def test_progress_tracker_record():
     assert len(p.recent_activities) == 1
     # 超过5个时自动淘汰旧的
     for i in range(6):
-        p.record_activity("exec", {"cmd": f"cmd{i}"})
+        p.record_activity("Bash", {"cmd": f"cmd{i}"})
     assert len(p.recent_activities) == 5
 
 
