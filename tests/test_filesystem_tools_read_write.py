@@ -187,6 +187,27 @@ async def test_read_tool_returns_structured_image_content(
 
 
 @pytest.mark.asyncio
+async def test_read_tool_returns_image_text_when_router_converts_image(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    image_path = tmp_path / "chart.png"
+    image_path.write_bytes(b"\x89PNG\r\n\x1a\nfake")
+
+    class _FakeRouter:
+        async def read_file(self, file_path: str, **kwargs: object) -> ToolExecutionResult:
+            return ToolExecutionResult(
+                content="summary: chart",
+                data={"type": "image_text", "filePath": file_path},
+            )
+
+    monkeypatch.setattr("auraeve.agent.tools.filesystem.ReadRouter", lambda **kwargs: _FakeRouter())
+    tool = ReadTool(allowed_dir=tmp_path)
+    result = await tool.execute(file_path=str(image_path.resolve()))
+    assert result.data["type"] == "image_text"
+    assert result.content == "summary: chart"
+
+
+@pytest.mark.asyncio
 async def test_read_tool_requires_pages_for_large_pdf(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

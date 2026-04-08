@@ -11,6 +11,7 @@ from auraeve.agent.tools.base import ToolExecutionResult
 
 
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
+AUDIO_SUFFIXES = {".mp3", ".wav", ".ogg", ".m4a", ".aac", ".flac", ".amr", ".silk"}
 FILE_UNCHANGED_STUB = (
     "File unchanged since last read. The content from the earlier Read tool_result "
     "in this conversation is still current - refer to that instead of re-reading."
@@ -32,6 +33,15 @@ def format_text_with_line_numbers(text: str, offset: int | None, limit: int | No
     count = int(limit or min(len(lines), MAX_LINES_TO_READ))
     selected = lines[start : start + count]
     return "\n".join(f"{start + idx + 1}\t{line}" for idx, line in enumerate(selected))
+
+
+def read_text_file(path: Path, offset: int | None = None, limit: int | None = None) -> ToolExecutionResult:
+    raw = path.read_text(encoding="utf-8")
+    rendered = format_text_with_line_numbers(raw, offset, limit)
+    return ToolExecutionResult(
+        content=rendered,
+        data={"type": "text", "filePath": str(path), "offset": offset, "limit": limit},
+    )
 
 
 def parse_pdf_pages(pages: str | None, total_pages: int) -> list[int]:
@@ -100,7 +110,7 @@ def read_notebook_file(path: str) -> ToolExecutionResult:
 
 async def read_image_file(path: str) -> ToolExecutionResult:
     mime = mimetypes.guess_type(path)[0] or _mime_from_suffix(Path(path).suffix.lower())
-    data_url = _encode_image_for_llm(Path(path), mime)
+    data_url = encode_image_as_data_url(Path(path))
     return ToolExecutionResult(
         content=f"Image read successfully: {path}",
         extra_messages=[
@@ -248,6 +258,11 @@ def _render_pdf_pages_as_data_urls(path: str, page_indices: list[int]) -> list[s
         rendered[0].save(buf, format="PNG")
         urls.append(f"data:image/png;base64,{base64.b64encode(buf.getvalue()).decode('ascii')}")
     return urls
+
+
+def encode_image_as_data_url(path: Path) -> str:
+    mime = mimetypes.guess_type(str(path))[0] or _mime_from_suffix(path.suffix.lower())
+    return _encode_image_for_llm(path, mime)
 
 
 def _encode_image_for_llm(path: Path, mime: str) -> str:
