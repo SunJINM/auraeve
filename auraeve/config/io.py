@@ -8,8 +8,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from auraeve.observability import get_observability
-
 from .defaults import DEFAULTS, SENSITIVE_KEYS
 from .env_substitution import substitute_env
 from .includes import resolve_includes
@@ -135,6 +133,8 @@ def _append_config_audit(record: dict[str, Any]) -> None:
     event = dict(record)
     result = str(event.get("result") or "unknown")
     action = str(event.get("event") or "config.write")
+    from auraeve.observability.manager import get_observability
+
     get_observability().emit_audit(
         subsystem="config",
         action=action,

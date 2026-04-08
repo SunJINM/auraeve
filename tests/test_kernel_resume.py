@@ -1,95 +1,259 @@
-import asyncio
-import json
 from unittest.mock import AsyncMock, MagicMock
+
 import pytest
+
+from auraeve.agent_runtime.command_types import QueuedCommand
 from auraeve.agent_runtime.kernel import RuntimeKernel
 
 
-def _make_kernel():
+@pytest.mark.asyncio
+async def test_execute_command_projects_messages_and_delegates() -> None:
     kernel = object.__new__(RuntimeKernel)
-    kernel.sessions = MagicMock()
-    kernel.assembler = MagicMock()
-    kernel._orchestrator = MagicMock()
-    kernel.tools = MagicMock()
-    kernel.tools.tool_names = []
-    kernel.model = "claude-sonnet-4-6"
-    kernel.temperature = 0.7
-    kernel.max_tokens = 4096
-    kernel.engine = MagicMock()
-    kernel._bus = MagicMock()
+    kernel._mcp_runtime = MagicMock()
+    kernel._mcp_runtime.start = AsyncMock()
+    kernel._process_projected_command = AsyncMock(return_value="ok")
+
+    command = QueuedCommand(
+        id="cmd-1",
+        session_key="webui:chat-1",
+        source="webui",
+        mode="prompt",
+        priority="next",
+        payload={"content": "hello"},
+        origin={"kind": "user"},
+    )
+
+    result = await RuntimeKernel.execute_command(kernel, command)
+
+    assert result == "ok"
+    kernel._mcp_runtime.start.assert_awaited_once()
+    kernel._process_projected_command.assert_awaited_once()
+    projected = kernel._process_projected_command.await_args.args[1]
+    assert projected == [{"role": "user", "content": "hello"}]
+
+
+@pytest.mark.asyncio
+async def test_process_projected_command_passes_raw_command_fields() -> None:
+    kernel = object.__new__(RuntimeKernel)
+    kernel._process_message = AsyncMock(return_value="ok")
+
+    command = QueuedCommand(
+        id="cmd-2",
+        session_key="webui:chat-2",
+        source="webui",
+        mode="prompt",
+        priority="next",
+        payload={
+            "channel": "webui",
+            "sender_id": "u-1",
+            "chat_id": "chat-2",
+            "media": ["img://1"],
+            "attachments": ["att-1"],
+            "metadata": {"trace_id": "t-1"},
+        },
+        origin={"kind": "user"},
+    )
+
+    result = await RuntimeKernel._process_projected_command(
+        kernel,
+        command,
+        [{"role": "user", "content": "hello"}, {"role": "user", "content": "world"}],
+    )
+
+    assert result == "ok"
+    kernel._process_message.assert_awaited_once_with(
+        session_key="webui:chat-2",
+        channel="webui",
+        sender_id="u-1",
+        chat_id="chat-2",
+        content="hello\n\nworld",
+        media=["img://1"],
+        attachments=["att-1"],
+        metadata={"trace_id": "t-1", "command_mode": "prompt", "command_origin": {"kind": "user"}},
+    )
+
+
+@pytest.mark.asyncio
+async def test_process_projected_task_notification_uses_original_channel_route() -> None:
+    kernel = object.__new__(RuntimeKernel)
+    kernel._process_message = AsyncMock(return_value="ok")
+
+    command = QueuedCommand(
+        id="cmd-3",
+        session_key="webui:chat-3",
+        source="subagent",
+        mode="task-notification",
+        priority="later",
+        payload={
+            "channel": "webui",
+            "chat_id": "chat-3",
+            "metadata": {"trace_id": "t-3"},
+        },
+        origin={"kind": "task-notification"},
+    )
+
+    result = await RuntimeKernel._process_projected_command(
+        kernel,
+        command,
+        [{"role": "user", "content": "A background agent completed a task:\n- task_id: t-1"}],
+    )
+
+    assert result == "ok"
+    kernel._process_message.assert_awaited_once_with(
+        session_key="webui:chat-3",
+        channel="webui",
+        sender_id="subagent",
+        chat_id="chat-3",
+        content="A background agent completed a task:\n- task_id: t-1",
+        media=[],
+        attachments=[],
+        metadata={
+            "trace_id": "t-3",
+            "command_mode": "task-notification",
+            "command_origin": {"kind": "task-notification"},
+            "is_meta_event": True,
+            "meta_event_kind": "task-notification",
+        },
+    )
+
+
+def test_kernel_has_no_process_direct() -> None:
+    assert not hasattr(RuntimeKernel, "process_direct")
+
+
+def test_no_publish_inbound_call_sites_left() -> None:
+    import subprocess
+
+    result = subprocess.run(
+        ["rg", "-n", "publish_inbound\\(|consume_inbound\\(", "auraeve", "main.py"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+
+
+def test_kernel_no_longer_rewraps_commands_as_inbound_messages() -> None:
+    import subprocess
+
+    result = subprocess.run(
+        ["rg", "-n", "InboundMessage", "auraeve/agent_runtime/kernel.py"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+
+
+@pytest.mark.asyncio
+async def test_process_message_no_longer_builds_identity_context() -> None:
+    kernel = object.__new__(RuntimeKernel)
+    kernel._media_runtime = None
+    kernel._plan = MagicMock()
+    kernel._plan.clear_plan = MagicMock()
+    kernel._plan.format_for_prompt = MagicMock(return_value="")
     kernel._set_tool_context = MagicMock()
-    return kernel
+    kernel._set_media_understand_context = MagicMock()
+    kernel._extract_attachments_legacy = AsyncMock(return_value=None)
+    kernel._inject_plan_into_messages = MagicMock(side_effect=lambda messages, _: messages)
+    kernel._sanitize_assistant_output = RuntimeKernel._sanitize_assistant_output
+    kernel.sessions = MagicMock()
+    session = MagicMock()
+    session.key = "webui:chat-1"
+    session.get_history.return_value = []
+    kernel.sessions.get_or_create.return_value = session
+    kernel.assembler = MagicMock()
+    kernel.assembler.assemble = AsyncMock(
+        return_value=MagicMock(messages=[], compacted_messages=None, estimated_tokens=0)
+    )
+    kernel._orchestrator = MagicMock()
+    kernel._orchestrator.run = AsyncMock(
+        return_value=MagicMock(final_content="ok", tools_used=[], recovery_actions=[])
+    )
+    kernel.hooks = MagicMock(
+        run_session_start=AsyncMock(),
+        run_session_end=AsyncMock(),
+        run_message_sending=AsyncMock(return_value=MagicMock(cancel=False, content="ok")),
+    )
+    kernel.engine = MagicMock(after_turn=AsyncMock())
+    kernel.memory_lifecycle = None
+    kernel.tools = MagicMock(tool_names=[])
+    kernel.model = "model"
+    kernel.temperature = 0.0
+    kernel.max_tokens = 1000
+
+    await RuntimeKernel._process_message(
+        kernel,
+        session_key="webui:chat-1",
+        channel="webui",
+        sender_id="user-1",
+        chat_id="chat-1",
+        content="hello",
+        metadata={},
+    )
+
+    assemble_kwargs = kernel.assembler.assemble.await_args.kwargs
+    assert "identity_context" not in assemble_kwargs
 
 
 @pytest.mark.asyncio
-async def test_resume_with_subagent_result_sends_outbound():
-    kernel = _make_kernel()
-
+async def test_process_message_task_notification_does_not_persist_fake_user_turn() -> None:
+    kernel = object.__new__(RuntimeKernel)
+    kernel._media_runtime = None
+    kernel._plan = MagicMock()
+    kernel._plan.clear_plan = MagicMock()
+    kernel._plan.format_for_prompt = MagicMock(return_value="")
+    kernel._set_tool_context = MagicMock()
+    kernel._set_media_understand_context = MagicMock()
+    kernel._extract_attachments_legacy = AsyncMock(return_value=None)
+    kernel._inject_plan_into_messages = MagicMock(side_effect=lambda messages, _: messages)
+    kernel._sanitize_assistant_output = RuntimeKernel._sanitize_assistant_output
+    kernel.sessions = MagicMock()
     session = MagicMock()
-    session.get_history.return_value = [
-        {"role": "user", "content": "帮我分析"},
-        {"role": "assistant", "content": "已派出子体"},
-    ]
+    session.key = "webui:chat-4"
+    session.get_history.return_value = []
     kernel.sessions.get_or_create.return_value = session
+    kernel.assembler = MagicMock()
+    kernel.assembler.assemble = AsyncMock(
+        return_value=MagicMock(messages=[], compacted_messages=None, estimated_tokens=0)
+    )
+    kernel._orchestrator = MagicMock()
+    kernel._orchestrator.run = AsyncMock(
+        return_value=MagicMock(final_content="汇总结果", tools_used=[], recovery_actions=[])
+    )
+    kernel.hooks = MagicMock(
+        run_session_start=AsyncMock(),
+        run_session_end=AsyncMock(),
+        run_message_sending=AsyncMock(return_value=MagicMock(cancel=False, content="汇总结果")),
+    )
+    kernel.engine = MagicMock(after_turn=AsyncMock())
+    kernel.memory_lifecycle = MagicMock(record_turn=AsyncMock())
+    kernel.tools = MagicMock(tool_names=[])
+    kernel.model = "model"
+    kernel.temperature = 0.0
+    kernel.max_tokens = 1000
 
-    assemble_result = MagicMock()
-    assemble_result.messages = session.get_history.return_value + [
-        {"role": "assistant", "content": None, "tool_calls": [{"id": "call_x", "type": "function", "function": {"name": "subagent_result", "arguments": "{}"}}]},
-        {"role": "tool", "tool_call_id": "call_x", "name": "subagent_result", "content": "{}"},
-    ]
-    assemble_result.compacted_messages = None
-    kernel.assembler.assemble = AsyncMock(return_value=assemble_result)
-
-    run_result = MagicMock()
-    run_result.final_content = "分析完成，结果如下..."
-    run_result.tools_used = []
-    run_result.recovery_actions = []
-    kernel._orchestrator.run = AsyncMock(return_value=run_result)
-    kernel.engine.after_turn = AsyncMock()
-
-    outbound = await kernel._resume_with_subagent_result(
-        session_key="webui:chat1",
+    result = await RuntimeKernel._process_message(
+        kernel,
+        session_key="webui:chat-4",
         channel="webui",
-        chat_id="chat1",
-        synthetic_messages=[
-            {"role": "assistant", "content": None, "tool_calls": [{"id": "call_x", "type": "function", "function": {"name": "subagent_result", "arguments": "{}"}}]},
-            {"role": "tool", "tool_call_id": "call_x", "name": "subagent_result", "content": "{}"},
-        ],
-        runtime_instruction="若已告知用户处理中，直接给出结果。",
+        sender_id="subagent",
+        chat_id="chat-4",
+        content="A background agent completed a task:\n- task_id: t-4",
+        metadata={
+            "command_mode": "task-notification",
+            "is_meta_event": True,
+            "meta_event_kind": "task-notification",
+        },
     )
 
-    assert outbound is not None
-    assert outbound.channel == "webui"
-    assert outbound.chat_id == "chat1"
-    assert "分析完成" in outbound.content
-    session.add_message.assert_called()
-    kernel.sessions.save.assert_called_once_with(session)
-
-
-@pytest.mark.asyncio
-async def test_resume_with_compacted_messages_calls_replace_history():
-    kernel = _make_kernel()
-
-    session = MagicMock()
-    session.get_history.return_value = [{"role": "user", "content": "hello"}]
-    kernel.sessions.get_or_create.return_value = session
-
-    compacted = [{"role": "user", "content": "compacted"}]
-    assemble_result = MagicMock()
-    assemble_result.messages = compacted
-    assemble_result.compacted_messages = compacted  # 触发 replace_history 分支
-    kernel.assembler.assemble = AsyncMock(return_value=assemble_result)
-
-    run_result = MagicMock()
-    run_result.final_content = "ok"
-    kernel._orchestrator.run = AsyncMock(return_value=run_result)
-    kernel.engine.after_turn = AsyncMock()
-
-    await kernel._resume_with_subagent_result(
-        session_key="webui:chat1",
-        channel="webui",
-        chat_id="chat1",
-        synthetic_messages=[],
+    assert result.content == "汇总结果"
+    assert session.add_message.call_count == 1
+    session.add_message.assert_called_once_with(
+        "assistant",
+        "汇总结果",
+        tools_used=None,
     )
-
-    session.replace_history.assert_called_once_with(compacted)
+    kernel.memory_lifecycle.record_turn.assert_not_called()

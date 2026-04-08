@@ -1,87 +1,69 @@
-"""ReAct 循环核心：观察→规划→执行→反思。
+"""子智能体 ReAct 执行循环。
 
-本地子体和远程子体共用此模块。通过 TaskReporter 接口上报进度。
+简化版：去掉审批、能力注册、经验提取、本地记忆。
+保留核心的 LLM 工具循环 + 进度上报 + 超时/取消处理。
 """
-
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
-import uuid
-from typing import TYPE_CHECKING
+from datetime import datetime, timezone
 
-from loguru import logger
+from auraeve.subagents.data.models import Task, ProgressTracker
+from .reporter import TaskReporter
 
-if TYPE_CHECKING:
-    from auraeve.providers.base import LLMProvider
-    from auraeve.agent.tools.registry import ToolRegistry
-    from auraeve.subagents.data.models import Task
-    from auraeve.subagents.runtime.reporter import TaskReporter
-    from auraeve.subagents.runtime.local_memory import LocalMemoryStore
-    from auraeve.agent_runtime.tool_policy.engine import ToolPolicyEngine
-    from auraeve.agent_runtime.run_orchestrator import RunOrchestrator
-    from auraeve.agent_runtime.session_attempt import SessionAttemptRunner
+logger = logging.getLogger(__name__)
 
 
 class ReActLoop:
-    """子体 ReAct 执行循环。
-
-    复用现有 SessionAttemptRunner + RunOrchestrator 作为 LLM 执行内核，
-    在外层包装 reporter 上报和反思经验提取。
-    """
+    """子智能体 ReAct 执行循环。"""
 
     def __init__(
         self,
-        provider: "LLMProvider",
-        tools: "ToolRegistry",
-        reporter: "TaskReporter",
-        memory: "LocalMemoryStore",
-        policy: "ToolPolicyEngine",
-        model: str = "",
-        temperature: float = 0.7,
-        max_tokens: int = 4096,
-        max_iterations: int = 50,
-        thinking_budget_tokens: int | None = None,
-        steer_queue: asyncio.Queue | None = None,
+        *,
+        provider,
+        tools,
+        policy,
+        model: str,
+        temperature: float = 0.0,
+        max_tokens: int = 16384,
+        max_iterations: int = 200,
+        thinking_budget_tokens: int = 0,
+        reporter: TaskReporter | None = None,
     ) -> None:
         self._provider = provider
         self._tools = tools
-        self._reporter = reporter
-        self._memory = memory
         self._policy = policy
-        self._model = model or provider.get_default_model()
+        self._model = model
         self._temperature = temperature
         self._max_tokens = max_tokens
         self._max_iterations = max_iterations
         self._thinking_budget_tokens = thinking_budget_tokens
-        self._steer_queue = steer_queue or asyncio.Queue()
-        self._paused = asyncio.Event()
-        self._paused.set()  # 初始未暂停
+        self._reporter = reporter
+        self._task: asyncio.Task | None = None
+        self.progress = ProgressTracker()
+        self.messages: list[dict] = []
 
-    async def run(self, task: "Task") -> str:
-        """执行完整 ReAct 循环，返回最终结果文本。"""
+    async def run(self, task: Task) -> str:
+        """执行完整的 ReAct 循环。"""
         from auraeve.agent_runtime.session_attempt import SessionAttemptRunner
         from auraeve.agent_runtime.run_orchestrator import RunOrchestrator
         from auraeve.plugins import PluginRegistry
 
-        start_time = time.time()
-        task_id = task.task_id
-        budget = task.budget
+        system_prompt = self._build_system_prompt(task)
 
-        # 等待暂停恢复（如果已暂停）
-        await self._paused.wait()
-
-        hooks = PluginRegistry().build_hook_runner()
-        effective_max_steps = min(self._max_iterations, budget.max_steps)
-        # 将 budget.max_tool_calls 映射到 RuntimeExecutionConfig
-        # max_tool_calls_per_turn 设为总量的 1/4（至少4），避免单轮并发过多耗尽 turns
-        max_tc = budget.max_tool_calls
+        effective_max_steps = min(self._max_iterations, task.budget.max_steps)
+        max_tc = task.budget.max_tool_calls
         per_turn = max(4, max_tc // 4)
         runtime_execution = {
             "maxTurns": effective_max_steps,
             "maxToolCallsTotal": max_tc,
             "maxToolCallsPerTurn": per_turn,
         }
+
+        hooks = PluginRegistry().build_hook_runner()
+
         runner = SessionAttemptRunner(
             provider=self._provider,
             tools=self._tools,
@@ -91,6 +73,7 @@ class ReActLoop:
             thinking_budget_tokens=self._thinking_budget_tokens,
             runtime_execution=runtime_execution,
         )
+
         orchestrator = RunOrchestrator(
             runner=runner,
             provider=self._provider,
@@ -98,155 +81,82 @@ class ReActLoop:
             is_subagent=True,
         )
 
-        system_prompt = self._build_system_prompt(task)
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": task.goal},
         ]
 
-        await self._reporter.report_progress(task_id, 0, "开始执行任务")
+        start_time = time.monotonic()
 
         try:
-            # 使用预算时长作为超时限制
-            timeout = budget.max_duration_s if budget.max_duration_s > 0 else None
+            timeout = task.budget.max_duration_s if task.budget.max_duration_s > 0 else None
             coro = orchestrator.run(
                 messages=messages,
                 model=self._model,
                 temperature=self._temperature,
                 max_tokens=self._max_tokens,
-                thread_id=f"sub:{task_id}",
-                steer_queue=self._steer_queue,
+                thread_id=f"sub:{task.task_id}",
             )
             if timeout:
                 result = await asyncio.wait_for(coro, timeout=timeout)
             else:
                 result = await coro
 
-            final_content = result.final_content or "任务已完成。"
-            duration = time.time() - start_time
+            elapsed_ms = int((time.monotonic() - start_time) * 1000)
+            self.progress.duration_ms = elapsed_ms
+            final_content = result.final_content or ""
 
-            experience = self._extract_experience(task, final_content, duration, success=True)
-            await self._reporter.report_done(
-                task_id=task_id,
-                success=True,
-                result=final_content,
-                experience=experience,
-            )
+            if self._reporter:
+                await self._reporter.report_done(
+                    task_id=task.task_id,
+                    success=True,
+                    result=final_content,
+                )
+
             return final_content
 
         except asyncio.TimeoutError:
-            duration = time.time() - start_time
-            error_msg = f"任务执行超时（预算 {budget.max_duration_s}s，实际 {duration:.0f}s）"
-            logger.warning(f"[react_loop] 任务 {task_id} 超时: {error_msg}")
-            await self._reporter.report_done(
-                task_id=task_id, success=False, result=error_msg,
-            )
-            return error_msg
-
-        except asyncio.CancelledError:
-            await self._reporter.report_done(
-                task_id=task_id, success=False, result="任务被取消",
-            )
+            logger.warning("子智能体超时: %s (budget=%ds)", task.task_id, task.budget.max_duration_s)
+            if self._reporter:
+                await self._reporter.report_done(
+                    task_id=task.task_id,
+                    success=False,
+                    result=f"执行超时（{task.budget.max_duration_s}秒）",
+                )
             raise
 
-        except Exception as e:
-            duration = time.time() - start_time
-            error_msg = f"执行出错: {e}"
-            logger.error(f"[react_loop] 任务 {task_id} 失败: {e}")
-
-            experience = self._extract_experience(task, error_msg, duration, success=False)
-            await self._reporter.report_done(
-                task_id=task_id, success=False, result=error_msg,
-                experience=experience,
-            )
-            return error_msg
-
-        finally:
-            self._memory.clear_working()
-
-    def pause(self) -> None:
-        self._paused.clear()
-
-    def resume(self) -> None:
-        self._paused.set()
+        except asyncio.CancelledError:
+            logger.info("子智能体被取消: %s", task.task_id)
+            if self._reporter:
+                await self._reporter.report_done(
+                    task_id=task.task_id,
+                    success=False,
+                    result="任务被取消",
+                )
+            raise
 
     def cancel(self) -> None:
-        # 取消通过外层 asyncio.Task.cancel() 实现
-        pass
+        if self._task and not self._task.done():
+            self._task.cancel()
 
-    def _build_system_prompt(self, task: "Task") -> str:
-        import os
-        from datetime import datetime
-        from zoneinfo import ZoneInfo
+    def _build_system_prompt(self, task: Task) -> str:
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+        parts = [
+            f"当前时间: {now}",
+            "",
+            "你正在作为子智能体执行任务。",
+            f"执行预算: 最多 {task.budget.max_steps} 步, "
+            f"最多 {task.budget.max_tool_calls} 次工具调用, "
+            f"最长 {task.budget.max_duration_s} 秒。",
+            "",
+            "执行约束:",
+            "- 专注于你的任务目标，不要偏离",
+            "- 高效使用工具，避免重复操作",
+            "- 完成后输出清晰、结构化的结果",
+            "- 如果发现任务无法完成，说明原因并返回已有成果",
+        ]
 
-        tz_name = os.getenv("AURAEVE_TIMEZONE") or os.getenv("TZ") or "Asia/Shanghai"
-        try:
-            tz = ZoneInfo(tz_name)
-        except Exception:
-            tz = ZoneInfo("Asia/Shanghai")
-        now = datetime.now(tz).strftime("%Y-%m-%d %H:%M")
+        if task.role_prompt:
+            parts.extend(["", "角色配置:", task.role_prompt])
 
-        long_ctx = self._memory.get_long_memory_context()
-        memory_section = f"\n\n## 节点记忆\n{long_ctx}" if long_ctx else ""
-
-        budget_info = (
-            f"步数上限: {task.budget.max_steps}, "
-            f"时长上限: {task.budget.max_duration_s}s, "
-            f"工具调用上限: {task.budget.max_tool_calls}"
-        )
-
-        # 节点身份说明
-        node_id = task.assigned_node_id or ""
-        if node_id and node_id != "local":
-            node_section = (
-                f"\n\n## 执行节点\n"
-                f"你正在远程节点 `{node_id}` 上运行。\n"
-                f"你的所有工具（exec、read_file、write_file 等）都直接操作本节点的文件系统和 Shell。\n"
-                f"**不要使用 SSH 连接到其他机器**——你已经在目标节点上，直接执行命令即可。"
-            )
-        else:
-            node_section = ""
-
-        role_section = f"\n\n## 角色配置\n{task.role_prompt.strip()}" if task.role_prompt.strip() else ""
-
-        return (
-            f"# 子体执行环境\n\n"
-            f"## 当前时间\n{now}\n\n"
-            f"## 任务预算\n{budget_info}\n\n"
-            f"## 执行约束\n"
-            f"你是被派生的子体，只负责当前任务。\n"
-            f"完成后给出清晰结论，不要求用户二次确认。\n"
-            f"若收到 [引导消息]，立即调整执行方向。\n"
-            f"高风险操作会触发审批流程，请等待审批结果。\n"
-            f"{node_section}"
-            f"{role_section}"
-            f"{memory_section}"
-        )
-
-    def _extract_experience(
-        self, task: "Task", result: str, duration: float, success: bool
-    ) -> dict | None:
-        """从执行结果中提取结构化经验。"""
-        domain = self._infer_domain(task.goal)
-        if not domain:
-            return None
-        return {
-            "type": "experience",
-            "domain": domain,
-            "lesson": result[:200] if not success else f"成功完成: {task.goal[:100]}",
-            "confidence": 0.8 if success else 0.6,
-            "duration_s": round(duration, 1),
-            "success": success,
-        }
-
-    def _infer_domain(self, goal: str) -> str:
-        goal_lower = goal.lower()
-        if any(k in goal_lower for k in ("shell", "命令", "执行", "运行", "安装")):
-            return "shell"
-        if any(k in goal_lower for k in ("文件", "读取", "写入", "编辑", "目录")):
-            return "file_ops"
-        if any(k in goal_lower for k in ("搜索", "网页", "爬取", "api", "http")):
-            return "web"
-        if any(k in goal_lower for k in ("分析", "数据", "统计", "计算")):
-            return "data_processing"
-        return "general"
+        return "\n".join(parts)

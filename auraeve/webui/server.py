@@ -15,10 +15,11 @@ from loguru import logger
 
 import auraeve.config as cfg
 from auraeve.webui.auth import verify_token
+from auraeve.webui.chat_transcript_service import project_history_into_transcript_blocks
 from auraeve.webui.chat_service import ChatService
+from auraeve.webui.chat_console_service import ChatConsoleService
 from auraeve.webui.config_service import ConfigService
 from auraeve.webui.mcp_service import MCPWebService
-from auraeve.webui.node_service import NodeWebService
 from auraeve.webui.plugin_service import PluginWebService
 from auraeve.webui.log_service import LogWebService
 from auraeve.webui.skill_service import SkillWebService
@@ -27,7 +28,9 @@ from auraeve.webui.profile_service import ProfileWebService
 from auraeve.webui.schemas import (
     ChatAbortRequest,
     ChatAbortResponse,
+    ChatConsoleSnapshotResponse,
     ChatHistoryResponse,
+    ChatTranscriptHistoryResponse,
     ChatSendRequest,
     ChatSendResponse,
     ConfigGetResponse,
@@ -102,7 +105,7 @@ class WebUIServer:
         mcp_events_provider: Callable[[], list[dict[str, Any]]] | None = None,
         mcp_reconnect_provider: Callable[[str], Awaitable[dict[str, Any]]] | None = None,
         restart_callback: Callable[[], Awaitable[None]] | None = None,
-        orchestrator: Any | None = None,
+        subagent_executor: Any | None = None,
     ) -> None:
         self._chat = chat_service
         self._config = config_service
@@ -123,7 +126,12 @@ class WebUIServer:
             if mcp_status_provider and mcp_events_provider and mcp_reconnect_provider
             else None
         )
-        self._nodes = NodeWebService(orchestrator) if orchestrator else None
+        self._nodes = None
+        self._chat_console = ChatConsoleService(
+            chat_service,
+            getattr(subagent_executor, "_store", None),
+            task_base_dir=cfg.resolve_state_dir() / "tasks",
+        )
         self._server: uvicorn.Server | None = None
         self._restart_callback = restart_callback
         self._upload = UploadWebService()
@@ -174,6 +182,26 @@ class WebUIServer:
             msgs = self._chat.get_history(sessionKey, limit)
             return ChatHistoryResponse(sessionKey=sessionKey, messages=msgs)
 
+        @app.get("/api/webui/chat/transcript", response_model=ChatTranscriptHistoryResponse, dependencies=[auth])
+        async def chat_transcript(
+            sessionKey: str = Query(min_length=1, max_length=200),
+            limit: int = Query(default=200, ge=1, le=1000),
+        ) -> ChatTranscriptHistoryResponse:
+            if hasattr(self._chat, "get_transcript_messages"):
+                raw_messages = self._chat.get_transcript_messages(sessionKey, limit)  # type: ignore[attr-defined]
+            else:
+                raw_messages = self._chat.get_history(sessionKey, limit)
+            blocks = project_history_into_transcript_blocks(raw_messages)
+            run = self._chat.get_runtime_status(sessionKey)
+            return ChatTranscriptHistoryResponse(sessionKey=sessionKey, run=run, blocks=blocks)
+
+        @app.get("/api/webui/chat/runtime", response_model=ChatConsoleSnapshotResponse, dependencies=[auth])
+        async def chat_runtime(
+            sessionKey: str = Query(min_length=1, max_length=200),
+            limit: int = Query(default=100, ge=1, le=500),
+        ) -> ChatConsoleSnapshotResponse:
+            return ChatConsoleSnapshotResponse(**self._chat_console.get_snapshot(sessionKey, limit=limit))
+
         @app.post("/api/webui/chat/send", response_model=ChatSendResponse, dependencies=[auth])
         async def chat_send(req: ChatSendRequest) -> ChatSendResponse:
             run_id, status = await self._chat.send(
@@ -192,6 +220,25 @@ class WebUIServer:
 
         @app.get("/api/webui/chat/events", dependencies=[auth])
         async def chat_events(
+            sessionKey: str = Query(min_length=1, max_length=200),
+        ) -> StreamingResponse:
+            async def _stream():
+                async for event in self._chat.subscribe(sessionKey):
+                    data = json.dumps(event, ensure_ascii=False)
+                    yield f"data: {data}\n\n"
+
+            return StreamingResponse(
+                _stream(),
+                media_type="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "X-Accel-Buffering": "no",
+                    "Connection": "keep-alive",
+                },
+            )
+
+        @app.get("/api/webui/chat/transcript/events", dependencies=[auth])
+        async def chat_transcript_events(
             sessionKey: str = Query(min_length=1, max_length=200),
         ) -> StreamingResponse:
             async def _stream():

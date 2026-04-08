@@ -14,7 +14,6 @@ def build_defaults() -> dict[str, Any]:
         "NAPCAT_ENABLED": True,
         "NAPCAT_WS_URL": "ws://127.0.0.1:3001",
         "NAPCAT_ACCESS_TOKEN": "",
-        "NAPCAT_OWNER_QQ": "",
         "NAPCAT_ALLOW_FROM": [],
         "NAPCAT_ALLOW_GROUPS": [],
         "STT_ENABLED": True,
@@ -163,7 +162,6 @@ def build_defaults() -> dict[str, Any]:
         "WEBUI_HOST": "0.0.0.0",
         "WEBUI_PORT": 8080,
         "WEBUI_TOKEN": "",
-        "WEBUI_OWNER_USER_ID": "",
         "LOGGING": {
             "enabled": True,
             "level": "info",
@@ -184,7 +182,6 @@ def build_defaults() -> dict[str, Any]:
         "HEARTBEAT_INTERVAL_S": 1800,
         "MAX_GLOBAL_SUBAGENT_CONCURRENT": 10,
         "MAX_SESSION_SUBAGENT_CONCURRENT": 8,
-        "OWNER_QQ": "",
     }
 
 

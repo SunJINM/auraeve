@@ -358,7 +358,6 @@ _SCHEMA_GROUPS: list[tuple[str, str, list[str]]] = [
             "NAPCAT_ENABLED",
             "NAPCAT_WS_URL",
             "NAPCAT_ACCESS_TOKEN",
-            "NAPCAT_OWNER_QQ",
             "NAPCAT_ALLOW_FROM",
             "NAPCAT_ALLOW_GROUPS",
             "CHANNEL_USERS",
@@ -422,7 +421,6 @@ _SCHEMA_GROUPS: list[tuple[str, str, list[str]]] = [
             "WEBUI_HOST",
             "WEBUI_PORT",
             "WEBUI_TOKEN",
-            "WEBUI_OWNER_USER_ID",
         ],
     ),
     (
@@ -482,7 +480,6 @@ _SCHEMA_GROUPS: list[tuple[str, str, list[str]]] = [
             "GIT_USERNAME",
             "GIT_TOKEN",
             "MEDIA_UNDERSTANDING",
-            "OWNER_QQ",
         ],
     ),
 ]
@@ -509,7 +506,6 @@ HOT_KEYS = {
     "NAPCAT_ACCESS_TOKEN",
     "NAPCAT_ALLOW_FROM",
     "NAPCAT_ALLOW_GROUPS",
-    "NAPCAT_OWNER_QQ",
     "STT_ENABLED",
     "STT_DEFAULT_LANGUAGE",
     "STT_TIMEOUT_MS",
@@ -572,7 +568,6 @@ _LABEL_OVERRIDES = {
     "NAPCAT_ENABLED": "启用 NapCat",
     "NAPCAT_WS_URL": "NapCat WebSocket 地址",
     "NAPCAT_ACCESS_TOKEN": "NapCat 访问令牌",
-    "NAPCAT_OWNER_QQ": "NapCat 主人 QQ",
     "NAPCAT_ALLOW_FROM": "NapCat 允许来源",
     "NAPCAT_ALLOW_GROUPS": "NapCat 允许群组",
     "CHANNEL_USERS": "渠道用户映射",
@@ -612,7 +607,6 @@ _LABEL_OVERRIDES = {
     "WEBUI_HOST": "监听地址",
     "WEBUI_PORT": "监听端口",
     "WEBUI_TOKEN": "访问令牌",
-    "WEBUI_OWNER_USER_ID": "管理员用户 ID",
     # MCP
     "MCP": "MCP 配置",
     # 存储与路径
@@ -647,7 +641,6 @@ _LABEL_OVERRIDES = {
     "GIT_USERNAME": "Git 用户名",
     "GIT_TOKEN": "Git 令牌",
     "MEDIA_UNDERSTANDING": "多媒体理解",
-    "OWNER_QQ": "主人 QQ 号",
 }
 
 _DESCRIPTION_OVERRIDES = {
@@ -680,7 +673,6 @@ _DESCRIPTION_OVERRIDES = {
     "NAPCAT_ENABLED": "是否启用 NapCat (QQ) 渠道。",
     "NAPCAT_WS_URL": "NapCat 的 WebSocket 连接地址。",
     "NAPCAT_ACCESS_TOKEN": "NapCat 的访问令牌。",
-    "NAPCAT_OWNER_QQ": "机器人主人的 QQ 号码，拥有最高权限。",
     "NAPCAT_ALLOW_FROM": "允许接收私聊消息的 QQ 号码列表。",
     "NAPCAT_ALLOW_GROUPS": "允许接收群消息的 QQ 群号列表。",
     "CHANNEL_USERS": "渠道 ID 到内部用户 ID 的映射关系（JSON 对象）。",
@@ -720,7 +712,6 @@ _DESCRIPTION_OVERRIDES = {
     "WEBUI_HOST": "WebUI 监听的网络地址，0.0.0.0 表示所有接口。",
     "WEBUI_PORT": "WebUI 监听的端口号。",
     "WEBUI_TOKEN": "访问 WebUI 所需的认证令牌。",
-    "WEBUI_OWNER_USER_ID": "WebUI 管理员的用户 ID。",
     # MCP
     "MCP": "MCP 运行时配置（服务器列表、重载策略、超时等，JSON 对象）。",
     # 存储与路径
@@ -755,7 +746,6 @@ _DESCRIPTION_OVERRIDES = {
     "GIT_USERNAME": "Git 操作使用的用户名。",
     "GIT_TOKEN": "Git 操作使用的认证令牌。",
     "MEDIA_UNDERSTANDING": "多媒体理解配置（图片/音频/视频/文件，JSON 对象）。",
-    "OWNER_QQ": "机器人主人的 QQ 号码。",
 }
 
 

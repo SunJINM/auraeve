@@ -5,8 +5,9 @@ from typing import Any
 
 from loguru import logger
 
-from auraeve.bus.events import FileAttachment, InboundMessage, OutboundMessage
-from auraeve.bus.queue import MessageBus
+from auraeve.agent_runtime.command_queue import RuntimeCommandQueue
+from auraeve.agent_runtime.command_types import QueuedCommand
+from auraeve.bus.events import FileAttachment, OutboundMessage
 
 
 class BaseChannel(ABC):
@@ -14,9 +15,9 @@ class BaseChannel(ABC):
 
     name: str = "base"
 
-    def __init__(self, config: Any, bus: MessageBus):
+    def __init__(self, config: Any, command_queue: RuntimeCommandQueue):
         self.config = config
-        self.bus = bus
+        self.command_queue = command_queue
         self._running = False
 
     @abstractmethod
@@ -61,16 +62,24 @@ class BaseChannel(ABC):
             )
             return
 
-        msg = InboundMessage(
-            channel=self.name,
-            sender_id=str(sender_id),
-            chat_id=str(chat_id),
-            content=content,
-            media=media or [],
-            attachments=attachments or [],
-            metadata=metadata or {}
+        self.command_queue.enqueue_command(
+            QueuedCommand(
+                session_key=f"{self.name}:{chat_id}",
+                source=self.name,
+                mode="prompt",
+                priority="next",
+                payload={
+                    "content": content,
+                    "channel": self.name,
+                    "sender_id": str(sender_id),
+                    "chat_id": str(chat_id),
+                    "media": media or [],
+                    "attachments": attachments or [],
+                    "metadata": metadata or {},
+                },
+                origin={"kind": "user"},
+            )
         )
-        await self.bus.publish_inbound(msg)
 
     @property
     def is_running(self) -> bool:

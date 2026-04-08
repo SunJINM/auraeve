@@ -32,6 +32,7 @@ _SUB_OVERLOAD_BACKOFF = [3, 8, 15, 30, 60]
 class OrchestratorResult:
     final_content: str | None
     tools_used: list[str] = field(default_factory=list)
+    messages: list[dict[str, Any]] = field(default_factory=list)
     error_class: str | None = None
     recovery_actions: list[str] = field(default_factory=list)
     trace: dict[str, Any] | None = None
@@ -62,6 +63,7 @@ class RunOrchestrator:
         temperature: float,
         max_tokens: int,
         thread_id: str,
+        tools=None,
         channel: str | None = None,
         chat_id: str | None = None,
         steer_queue: asyncio.Queue | None = None,
@@ -86,6 +88,7 @@ class RunOrchestrator:
                     model=model,
                     temperature=temperature,
                     max_tokens=max_tokens,
+                    tools=tools,
                     thread_id=thread_id,
                     channel=channel,
                     chat_id=chat_id,
@@ -95,6 +98,7 @@ class RunOrchestrator:
                 return OrchestratorResult(
                     final_content=result.final_content,
                     tools_used=result.tools_used,
+                    messages=result.messages,
                     recovery_actions=recovery_actions,
                     trace=result.trace,
                 )

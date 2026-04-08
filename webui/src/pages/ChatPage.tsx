@@ -1,89 +1,111 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { v4 as uuid } from 'uuid'
-import { chatApi, type ChatMessage, type ChatEvent } from '../api/client'
+
+import type { ChatRuntimeMainTask, ChatRuntimeSnapshotResp } from '../api/client'
+import { ChatComposer } from '../components/chat/ChatComposer'
+import { ChatTranscript } from '../components/chat/transcript/ChatTranscript'
+import { useChatTranscript } from '../components/chat/transcript/useChatTranscript'
+import type { ChatTranscriptEvent } from '../components/chat/transcript/types'
+import { chatApi } from '../api/client'
 import { useAppStore } from '../store/app'
-import { motion } from 'framer-motion'
-import clsx from 'clsx'
 
 export function ChatPage() {
   const { sessionKey, setSessionKey } = useAppStore()
-  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const { blocks, run, loading, load, applyEvent } = useChatTranscript(sessionKey)
+  const [runtimeSnapshot, setRuntimeSnapshot] = useState<ChatRuntimeSnapshotResp | null>(null)
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
-  const [runId, setRunId] = useState<string | null>(null)
-  const [status, setStatus] = useState<'idle' | 'waiting' | 'error'>('idle')
   const [errorMsg, setErrorMsg] = useState('')
+  const [runId, setRunId] = useState<string | null>(null)
+  const [tasksExpanded, setTasksExpanded] = useState(true)
   const bottomRef = useRef<HTMLDivElement>(null)
-  const unsubRef = useRef<(() => void) | null>(null)
 
-  const scrollToBottom = () =>
+  const loadRuntimeSnapshot = useCallback(async () => {
+    const snapshot = await chatApi.runtime(sessionKey)
+    setRuntimeSnapshot(snapshot)
+  }, [sessionKey])
+
+  const scrollToBottom = useCallback(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-
-  // 加载历史
-  const loadHistory = useCallback(async () => {
-    try {
-      const resp = await chatApi.history(sessionKey, 200)
-      setMessages(resp.messages)
-      setTimeout(scrollToBottom, 100)
-    } catch {
-      setStatus('error')
-      setErrorMsg('加载历史失败，请检查连接或 Token')
-    }
-  }, [sessionKey])
-
-  // SSE 订阅
-  const subscribe = useCallback(() => {
-    unsubRef.current?.()
-    unsubRef.current = chatApi.events(sessionKey, (e: ChatEvent) => {
-      if (e.type === 'chat.final') {
-        setMessages((prev) => [
-          ...prev,
-          { role: 'assistant', content: e.content || '', timestamp: new Date().toISOString() },
-        ])
-        setSending(false)
-        setRunId(null)
-        setStatus('idle')
-        setTimeout(scrollToBottom, 80)
-      } else if (e.type === 'chat.error') {
-        setStatus('error')
-        setErrorMsg(e.error || '处理出错')
-        setSending(false)
-      } else if (e.type === 'chat.aborted') {
-        setSending(false)
-        setStatus('idle')
-        setRunId(null)
-      }
-    })
-  }, [sessionKey])
+  }, [])
 
   useEffect(() => {
-    const timer = window.setTimeout(() => {
-      void loadHistory()
-    }, 0)
-    subscribe()
-    return () => {
-      window.clearTimeout(timer)
-      unsubRef.current?.()
+    void load()
+    void loadRuntimeSnapshot()
+
+    const unsubscribe = chatApi.transcriptEvents(sessionKey, (event: ChatTranscriptEvent) => {
+      applyEvent(event)
+      void loadRuntimeSnapshot()
+
+      if (event.type === 'transcript.block' && event.block.type === 'run_status') {
+        setSending(event.block.status === 'started' || event.block.status === 'running')
+      }
+
+      if (event.type === 'transcript.done') {
+        setSending(false)
+        void load()
+      }
+    })
+
+    return unsubscribe
+  }, [applyEvent, load, loadRuntimeSnapshot, sessionKey])
+
+  useEffect(() => {
+    const shouldPoll = sending || run?.status === 'running'
+    if (!shouldPoll) {
+      return
     }
-  }, [loadHistory, subscribe])
+
+    const timer = window.setInterval(() => {
+      void loadRuntimeSnapshot()
+    }, 1500)
+
+    return () => window.clearInterval(timer)
+  }, [loadRuntimeSnapshot, run?.status, sending])
+
+  useEffect(() => {
+    scrollToBottom()
+  }, [blocks, scrollToBottom, sending])
+
+  useEffect(() => {
+    if (run?.runId) {
+      setRunId(run.runId)
+    }
+    if (run?.status === 'idle' || run?.status === 'completed' || run?.status === 'aborted') {
+      setSending(false)
+    }
+  }, [run])
+
+  const mainTasks = runtimeSnapshot?.mainTasks ?? []
+  const hasMainTasks = mainTasks.length > 0
 
   const send = async () => {
     const text = input.trim()
     if (!text || sending) return
-    const ikey = uuid()
-    const userMsg: ChatMessage = { role: 'user', content: text, timestamp: new Date().toISOString() }
-    setMessages((prev) => [...prev, userMsg])
-    setInput('')
-    setSending(true)
-    setStatus('waiting')
+
+    const idempotencyKey = uuid()
     setErrorMsg('')
-    setTimeout(scrollToBottom, 80)
+    setSending(true)
+    setInput('')
+
+    applyEvent({
+      type: 'transcript.block',
+      sessionKey,
+      seq: Date.now(),
+      op: 'append',
+      block: {
+        id: `local-user:${idempotencyKey}`,
+        type: 'user',
+        content: text,
+        timestamp: new Date().toISOString(),
+      },
+    })
+
     try {
-      const resp = await chatApi.send(sessionKey, text, ikey)
+      const resp = await chatApi.send(sessionKey, text, idempotencyKey)
       setRunId(resp.runId)
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err)
-      setStatus('error')
       setErrorMsg(msg)
       setSending(false)
     }
@@ -94,101 +116,222 @@ export function ChatPage() {
     await chatApi.abort(sessionKey, runId)
   }
 
-  const onKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      send()
-    }
-  }
+  const statusLine = buildStatusLine(run?.status, errorMsg, blocks.length, sending)
 
   return (
-    <div className="flex flex-col h-full">
-      {/* 会话栏 */}
-      <div className="flex items-center gap-2 px-4 py-2 border-b" style={{ borderColor: 'var(--glass-border)' }}>
-        <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>会话：</span>
-        <input
-          className="text-sm px-2 py-1 rounded-lg border focus:outline-none"
-          style={{ background: 'var(--input-bg)', color: 'var(--text-primary)', borderColor: 'var(--glass-border)' }}
-          value={sessionKey}
-          onChange={(e) => setSessionKey(e.target.value)}
-          onBlur={loadHistory}
-          placeholder="会话 key"
-        />
-        <div className="ml-auto flex items-center gap-1 text-xs" style={{ color: 'var(--text-secondary)' }}>
-          {status === 'waiting' && <><span className="cursor-blink">●</span> 处理中</>}
-          {status === 'error' && <span style={{ color: 'var(--danger)' }}>⚠ {errorMsg}</span>}
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="border-b px-4 py-3" style={{ borderColor: 'var(--glass-border)' }}>
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
+          <div className="min-w-0 flex-1">
+            <div className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Agent Console</div>
+            <div className="mt-1 text-xs" style={{ color: 'var(--text-secondary)' }}>
+              智能体回复、工具过程和子体运行统一展示在一条消息流中。
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>会话</span>
+            <input
+              className="rounded-xl border px-3 py-2 text-sm focus:outline-none"
+              style={{ background: 'var(--input-bg)', color: 'var(--text-primary)', borderColor: 'var(--glass-border)' }}
+              value={sessionKey}
+              onChange={(e) => setSessionKey(e.target.value)}
+              onBlur={() => void load()}
+              placeholder="会话 key"
+            />
+          </div>
+        </div>
+
+        <div className="mt-3 flex flex-wrap gap-2 text-xs">
+          {statusLine.map((item) => (
+            <span
+              key={item.text}
+              className="rounded-full border px-3 py-1"
+              style={{ borderColor: 'var(--glass-border)', color: item.color || 'var(--text-secondary)' }}
+            >
+              {item.text}
+            </span>
+          ))}
         </div>
       </div>
 
-      {/* 消息列表 */}
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
-        {messages.map((msg, i) => (
-          <motion.div
-            key={i}
-            className={clsx('flex', msg.role === 'user' ? 'justify-end' : 'justify-start')}
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.2 }}
-          >
-            <div
-              className="max-w-[75%] px-4 py-3 rounded-2xl text-sm whitespace-pre-wrap leading-relaxed"
-              style={{
-                background: msg.role === 'user' ? 'var(--msg-user)' : 'var(--msg-agent)',
-                color: 'var(--text-primary)',
-                border: '1px solid var(--glass-border)',
-              }}
-            >
-              {msg.content}
-            </div>
-          </motion.div>
-        ))}
-        {sending && (
-          <div className="flex justify-start">
-            <div
-              className="px-4 py-3 rounded-2xl text-sm"
-              style={{ background: 'var(--msg-agent)', color: 'var(--text-secondary)', border: '1px solid var(--glass-border)' }}
-            >
-              <span className="cursor-blink">▍</span>
+      <div className="flex min-h-0 flex-1 flex-col p-3">
+        {hasMainTasks && (
+          <RealtimeTaskListCard
+            tasks={mainTasks}
+            expanded={tasksExpanded}
+            onToggle={() => setTasksExpanded((prev) => !prev)}
+          />
+        )}
+
+        <section
+          className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[22px] border"
+          style={{ borderColor: 'var(--glass-border)', background: 'color-mix(in srgb, var(--surface-1) 92%, transparent)' }}
+        >
+          <div className="border-b px-4 py-3" style={{ borderColor: 'var(--glass-border)' }}>
+            <div className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>聊天主线</div>
+            <div className="mt-1 text-xs" style={{ color: 'var(--text-secondary)' }}>
+              结果与运行过程统一展示在一条消息流中。
             </div>
           </div>
-        )}
-        <div ref={bottomRef} />
-      </div>
 
-      {/* 输入区 */}
-      <div
-        className="p-4 border-t flex gap-2 items-end"
-        style={{ borderColor: 'var(--glass-border)', background: 'var(--glass-bg)', backdropFilter: 'blur(12px)' }}
-      >
-        <textarea
-          className="flex-1 resize-none rounded-xl px-4 py-3 text-sm focus:outline-none"
-          style={{ background: 'var(--input-bg)', color: 'var(--text-primary)', border: '1px solid var(--glass-border)', minHeight: '44px', maxHeight: '140px' }}
-          placeholder="输入消息，Enter 发送，Shift+Enter 换行..."
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={onKeyDown}
-          rows={1}
-          disabled={sending}
-        />
-        {sending ? (
-          <button
-            onClick={abort}
-            className="px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200"
-            style={{ background: 'var(--danger)', color: '#fff' }}
-          >
-            停止
-          </button>
-        ) : (
-          <button
-            onClick={send}
-            disabled={!input.trim()}
-            className="px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200 disabled:opacity-40"
-            style={{ background: 'var(--accent)', color: '#fff' }}
-          >
-            发送
-          </button>
-        )}
+          <div className="flex-1 overflow-y-auto px-4 py-4">
+            {!loading && blocks.length === 0 ? (
+              <div
+                className="mx-auto mt-10 max-w-2xl rounded-[28px] border px-6 py-6"
+                style={{ borderColor: 'var(--glass-border)', background: 'rgba(255,255,255,0.22)' }}
+              >
+                <div className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>欢迎来到 AuraEve Agent Console</div>
+                <div className="mt-2 text-sm leading-7" style={{ color: 'var(--text-secondary)' }}>
+                  这里会把最终回复、工具活动和子体过程统一整理到主消息流里，帮助你直接看清智能体的运行过程。
+                </div>
+              </div>
+            ) : (
+              <ChatTranscript blocks={blocks} />
+            )}
+            <div ref={bottomRef} />
+          </div>
+
+          <ChatComposer value={input} sending={sending} onChange={setInput} onSubmit={() => void send()} onAbort={() => void abort()} />
+        </section>
       </div>
     </div>
   )
+}
+
+function buildStatusLine(
+  runStatus: 'idle' | 'running' | 'completed' | 'aborted' | undefined,
+  errorMsg: string,
+  blockCount: number,
+  sending: boolean,
+): Array<{ text: string; color?: string }> {
+  const items: Array<{ text: string; color?: string }> = []
+
+  if (sending || runStatus === 'running') items.push({ text: '处理中', color: 'var(--accent)' })
+  if (runStatus === 'aborted') items.push({ text: '已中止', color: 'var(--danger)' })
+  if (errorMsg) items.push({ text: `错误: ${errorMsg}`, color: 'var(--danger)' })
+  if (blockCount > 0) items.push({ text: `${blockCount} 个运行块` })
+  if (items.length === 0) items.push({ text: '当前空闲，可直接开始新一轮任务' })
+
+  return items
+}
+
+function RealtimeTaskListCard({
+  tasks,
+  expanded,
+  onToggle,
+}: {
+  tasks: ChatRuntimeMainTask[]
+  expanded: boolean
+  onToggle: () => void
+}) {
+  const currentTask = pickCurrentTask(tasks)
+  const visibleTasks = expanded ? tasks : (currentTask ? [currentTask] : [])
+
+  return (
+    <section
+      className="mb-3 rounded-[22px] border px-4 py-3"
+      style={{
+        borderColor: 'var(--glass-border)',
+        background: 'color-mix(in srgb, var(--surface-1) 96%, transparent)',
+      }}
+    >
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <div className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>实时任务</div>
+          <div className="mt-1 text-xs" style={{ color: 'var(--text-secondary)' }}>
+            {expanded ? `${tasks.length} 个任务` : buildCollapsedSummary(currentTask)}
+          </div>
+        </div>
+        <button
+          type="button"
+          className="rounded-full border px-3 py-1 text-xs"
+          style={{
+            borderColor: 'var(--glass-border)',
+            color: 'var(--text-secondary)',
+            background: 'transparent',
+          }}
+          onClick={onToggle}
+          aria-label={expanded ? '折叠任务列表' : '展开任务列表'}
+        >
+          {expanded ? '折叠' : '展开'}
+        </button>
+      </div>
+
+      <div className="mt-3 space-y-2">
+        {visibleTasks.map((task) => (
+          <div
+            key={task.taskId}
+            className="flex items-start gap-3 rounded-2xl px-3 py-2"
+            style={{
+              background: task.status === 'in_progress'
+                ? 'rgba(116, 185, 255, 0.10)'
+                : 'rgba(148, 163, 184, 0.08)',
+            }}
+          >
+            <span
+              className="mt-1 inline-block h-3 w-3 rounded-sm border"
+              style={{
+                borderColor: task.status === 'completed' ? 'var(--success)' : 'var(--glass-border)',
+                background:
+                  task.status === 'completed'
+                    ? 'var(--success)'
+                    : task.status === 'in_progress'
+                      ? 'var(--accent)'
+                      : 'transparent',
+              }}
+            />
+            <div className="min-w-0 flex-1">
+              <div
+                className="text-sm"
+                style={{
+                  color: task.status === 'completed' ? 'var(--text-tertiary)' : 'var(--text-primary)',
+                  textDecoration: task.status === 'completed' ? 'line-through' : 'none',
+                }}
+              >
+                {formatTaskLabel(task)}
+              </div>
+              {expanded && (
+                <div className="mt-1 text-xs" style={{ color: 'var(--text-secondary)' }}>
+                  {task.status === 'in_progress' ? task.activeForm : formatTaskStatus(task.status)}
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function pickCurrentTask(tasks: ChatRuntimeMainTask[]): ChatRuntimeMainTask | null {
+  return (
+    tasks.find((task) => task.status === 'in_progress')
+    ?? tasks.find((task) => task.status !== 'completed')
+    ?? tasks[0]
+    ?? null
+  )
+}
+
+function buildCollapsedSummary(task: ChatRuntimeMainTask | null): string {
+  if (!task) return '暂无进行中的任务'
+  return `${task.status === 'in_progress' ? '进行中' : '待处理'}: ${formatTaskLabel(task)}`
+}
+
+function formatTaskLabel(task: ChatRuntimeMainTask): string {
+  return `Task ${task.taskId}: ${task.subject}`
+}
+
+function formatTaskStatus(status: string): string {
+  switch (status) {
+    case 'completed':
+      return '已完成'
+    case 'in_progress':
+      return '进行中'
+    case 'pending':
+      return '待开始'
+    case 'cancelled':
+      return '已取消'
+    default:
+      return status
+  }
 }

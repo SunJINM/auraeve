@@ -11,8 +11,8 @@ from typing import Any
 from loguru import logger
 import httpx
 
+from auraeve.agent_runtime.command_queue import RuntimeCommandQueue
 from auraeve.bus.events import FileAttachment, OutboundMessage
-from auraeve.bus.queue import MessageBus
 from auraeve.channels.base import BaseChannel
 
 try:
@@ -87,10 +87,10 @@ class DingTalkChannel(BaseChannel):
     def __init__(
         self,
         config: DingTalkConfig,
-        bus: MessageBus,
+        command_queue: RuntimeCommandQueue,
         workspace: Path | None = None,
     ):
-        super().__init__(config, bus)
+        super().__init__(config, command_queue)
         self.config: DingTalkConfig = config
         self._client: Any = None
         self._http: httpx.AsyncClient | None = None
@@ -414,7 +414,7 @@ class DingTalkChannel(BaseChannel):
             file_path = self._media_dir / "files" / f"{int(time.time())}_{safe_name}"
             file_path.write_bytes(file_bytes)
             logger.info(f"文件已保存：{file_path}（{len(file_bytes)} 字节）")
-            return f"[文件: {file_name}，已保存至 {file_path}，可用 read_file 读取内容]"
+            return f"[文件: {file_name}，已保存至 {file_path}，可用 Read 读取内容]"
 
         return f"[文件: {file_name}，{len(file_bytes)} 字节，未保存（未配置工作区）]"
 

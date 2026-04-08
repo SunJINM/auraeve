@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from auraeve.providers.base import LLMProvider
 
 from auraeve.agent.engines.base import CompactResult
+from auraeve.providers.base import backfill_tool_context_start
 
 # ── 常量 ─────────────────────────────────────────────────────
 
@@ -139,13 +140,18 @@ def estimate_tokens(messages: list[dict]) -> int:
             content = " ".join(
                 c.get("text", "") for c in content if isinstance(c, dict)
             )
+        # 计算 tool_calls 字段（assistant 消息中工具调用的 JSON 内容）
+        tool_calls = msg.get("tool_calls")
+        tool_calls_text = json.dumps(tool_calls, ensure_ascii=False) if tool_calls else ""
+
+        combined = content + tool_calls_text
         if enc:
             try:
-                total += len(enc.encode(content))
+                total += len(enc.encode(combined))
             except Exception:
-                total += len(content) // 4
+                total += len(combined) // 4
         else:
-            total += len(content) // 4
+            total += len(combined) // 4
         total += 128  # role + metadata 开销
     return total
 
@@ -285,8 +291,10 @@ async def compact_messages(
     if len(messages) <= keep_count:
         return CompactResult(ok=False, compacted=False, reason="消息数量不足以压缩")
 
-    to_summarize = messages[:-keep_count]
-    to_keep = messages[-keep_count:]
+    keep_start = max(len(messages) - keep_count, 0)
+    keep_start = backfill_tool_context_start(messages, keep_start)
+    to_summarize = messages[:keep_start]
+    to_keep = messages[keep_start:]
     tokens_before = estimate_tokens(messages)
 
     identifier_instruction = IDENTIFIER_PRESERVATION

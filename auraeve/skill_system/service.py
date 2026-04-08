@@ -643,7 +643,7 @@ def build_skills_prompt(
         skills_xml = "<skills>\n" + "\n".join(lines) + "\n</skills>"
         parts.append(
             "# Available Skills\n"
-            "Before replying, scan skill descriptions and read at most one matching SKILL.md via read_file.\n\n"
+            "Before replying, scan skill descriptions and read at most one matching SKILL.md via Read.\n\n"
             + skills_xml
         )
 
@@ -659,7 +659,7 @@ def build_skills_prompt(
         if skills_xml:
             parts_trimmed.append(
                 "# Available Skills\n"
-                "Before replying, scan skill descriptions and read at most one matching SKILL.md via read_file.\n\n"
+                "Before replying, scan skill descriptions and read at most one matching SKILL.md via Read.\n\n"
                 + skills_xml
             )
         block = "\n\n---\n\n".join(parts_trimmed)

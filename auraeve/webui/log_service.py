@@ -11,8 +11,9 @@ from auraeve.observability import get_observability
 
 
 class LogWebService:
-    def __init__(self) -> None:
-        self._obs = get_observability()
+    @property
+    def _obs(self):
+        return get_observability()
 
     def tail(self, cursor: int | None, limit: int, max_bytes: int) -> dict[str, Any]:
         return self._obs.tail(cursor=cursor, limit=limit, max_bytes=max_bytes)

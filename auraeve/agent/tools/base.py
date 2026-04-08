@@ -1,7 +1,20 @@
 """Agent 工具的抽象基类。"""
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
 from typing import Any
+
+
+@dataclass(slots=True)
+class ToolExecutionResult:
+    """Structured tool result with optional supplemental context messages."""
+
+    content: Any
+    extra_messages: list[dict[str, Any]] = field(default_factory=list)
+    data: Any = None
+
+    def __str__(self) -> str:
+        return str(self.content)
 
 
 class Tool(ABC):
@@ -32,7 +45,7 @@ class Tool(ABC):
         pass
 
     @abstractmethod
-    async def execute(self, **kwargs: Any) -> str:
+    async def execute(self, **kwargs: Any) -> Any:
         pass
 
     @property

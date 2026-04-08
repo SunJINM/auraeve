@@ -104,7 +104,6 @@ class VectorContextEngine(ContextEngine):
         session_id: str,
         messages: list[dict],
         current_query: str,
-        identity_context: str | None = None,
         channel: str | None = None,
         chat_id: str | None = None,
         media: list[str] | None = None,

@@ -3,12 +3,12 @@ from pathlib import Path
 
 from auraeve.bus.events import FileAttachment
 from auraeve.bus.events import OutboundMessage
-from auraeve.bus.queue import MessageBus
+from auraeve.bus.queue import OutboundDispatcher
 from auraeve.channels.napcat import NapCatChannel, NapCatConfig
 
 
 def _build_channel() -> NapCatChannel:
-    return NapCatChannel(NapCatConfig(), MessageBus())
+    return NapCatChannel(NapCatConfig(), OutboundDispatcher())
 
 
 def test_extract_image_url_from_file_field() -> None:

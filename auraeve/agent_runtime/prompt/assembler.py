@@ -56,7 +56,6 @@ class PromptAssembler:
         session_id: str,
         messages: list[dict],
         current_query: str,
-        identity_context: str | None = None,
         channel: str | None = None,
         chat_id: str | None = None,
         media: list[str] | None = None,
@@ -96,9 +95,6 @@ class PromptAssembler:
                 )
         except Exception as e:
             logger.error(f"[assembler] before_prompt_build hook 失败：{e}")
-
-
-        prepend_context = _merge_contexts(identity_context, prepend_context)
 
         # ── Step 2: engine.assemble()（含压缩逻辑）────────────────────────
         assemble_result: AssembleResult = await self._engine.assemble(

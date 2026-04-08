@@ -12,13 +12,21 @@ from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 
+from auraeve.agent.tools.base import ToolExecutionResult
 from auraeve.observability import get_observability
 from auraeve.agent_runtime.tool_policy.contracts import PolicyContext
+from auraeve.agent_runtime.tool_runtime_context import (
+    FileReadStateStore,
+    TaskReadStateStore,
+    ToolRuntimeContext,
+    use_tool_runtime_context,
+)
 from auraeve.plugins.base import (
     HookAfterToolCallEvent,
     HookBeforeModelResolveEvent,
     HookBeforeToolCallEvent,
 )
+from auraeve.providers.base import normalize_tool_call_requests
 
 from .budget import ExecutionBudget, normalize_runtime_execution_config
 from .trace import RunTrace
@@ -87,6 +95,7 @@ class SessionAttemptRunner:
         tools: "ToolRegistry",
         policy: "ToolPolicyEngine",
         hooks: "HookRunner",
+        checkpoint_drain=None,
         max_iterations: int = 100,
         thinking_budget_tokens: int | None = None,
         runtime_execution: dict[str, Any] | None = None,
@@ -96,6 +105,7 @@ class SessionAttemptRunner:
         self._tools = tools
         self._policy = policy
         self._hooks = hooks
+        self._checkpoint_drain = checkpoint_drain
         self._max_iterations = max_iterations
         self._thinking_budget_tokens = thinking_budget_tokens
         self._execution_cfg = normalize_runtime_execution_config(
@@ -128,6 +138,7 @@ class SessionAttemptRunner:
         model: str,
         temperature: float,
         max_tokens: int,
+        tools: "ToolRegistry | None" = None,
         thread_id: str = "",
         channel: str | None = None,
         chat_id: str | None = None,
@@ -135,9 +146,16 @@ class SessionAttemptRunner:
         steer_queue: asyncio.Queue | None = None,
     ) -> AttemptResult:
         msgs = list(messages)
+        active_tools = tools or self._tools
         final_content: str | None = None
         tools_used: list[str] = []
         recent_fingerprints: list[str] = []
+        transcript_messages: list[dict[str, Any]] = []
+        file_reads = FileReadStateStore()
+        runtime_context = ToolRuntimeContext(
+            file_reads=file_reads,
+            task_reads=TaskReadStateStore(),
+        )
 
         budget = ExecutionBudget(self._execution_cfg)
         trace = RunTrace(session_id=thread_id, is_subagent=is_subagent)
@@ -167,16 +185,7 @@ class SessionAttemptRunner:
                             max_tokens=max_tokens,
                             tools=[],
                         )
-                        final_content = (
-                            summary_response.get("content")
-                            or summary_response.get("text")
-                            or ""
-                        )
-                        if not final_content:
-                            # fallback: 尝试从 choices 结构取
-                            choices = summary_response.get("choices") or []
-                            if choices:
-                                final_content = (choices[0].get("message") or {}).get("content") or ""
+                        final_content = summary_response.content or ""
                     except Exception as exc:
                         logger.warning(f"[session_attempt] 子体预算耗尽汇总失败: {exc}")
                         final_content = None
@@ -209,10 +218,17 @@ class SessionAttemptRunner:
                 )
             )
             effective_model = model_override or model
+            if self._checkpoint_drain is not None:
+                drained_messages = self._checkpoint_drain(
+                    thread_id=thread_id,
+                    is_subagent=is_subagent,
+                )
+                if drained_messages:
+                    msgs.extend(drained_messages)
 
             response = await self._provider.chat(
                 messages=msgs,
-                tools=self._tools.get_definitions(),
+                tools=active_tools.get_definitions(),
                 model=effective_model,
                 temperature=temperature,
                 max_tokens=max_tokens,
@@ -220,12 +236,23 @@ class SessionAttemptRunner:
             )
 
             if not response.has_tool_calls:
+                if response.content is None or not str(response.content).strip():
+                    logger.warning(
+                        "[session_attempt] empty assistant response without tool calls; "
+                        f"finish_reason={response.finish_reason} "
+                        f"reasoning_content={bool(response.reasoning_content)}"
+                    )
+                    final_content = None
+                    trace.stop_reason = "empty_response"
+                    trace.add("empty_response", finish_reason=response.finish_reason)
+                    break
                 final_content = response.content
                 trace.stop_reason = "model_completed"
                 trace.add("model_completed", finish_reason=response.finish_reason)
                 break
 
-            fp = _tool_fingerprint(response.tool_calls)
+            tool_calls = normalize_tool_call_requests(list(response.tool_calls))
+            fp = _tool_fingerprint(tool_calls)
             recent_fingerprints.append(fp)
             window = int(self._loop_guard_cfg["fingerprintWindow"])
             repeat_threshold = int(self._loop_guard_cfg["repeatBlockThreshold"])
@@ -242,10 +269,14 @@ class SessionAttemptRunner:
                 if mode == "slowdown":
                     await asyncio.sleep(int(self._loop_guard_cfg["slowdownBackoffMs"]) / 1000)
                 elif mode == "block_tools":
-                    tool_call_dicts = _make_tool_call_dicts(response.tool_calls)
+                    tool_call_dicts = _make_tool_call_dicts(tool_calls)
+                    before_len = len(msgs)
                     msgs = _add_assistant_msg(msgs, response.content, tool_call_dicts, response.reasoning_content)
-                    for tc in response.tool_calls:
+                    transcript_messages.extend(msgs[before_len:])
+                    for tc in tool_calls:
+                        before_len = len(msgs)
                         msgs = _add_tool_result(msgs, tc.id, tc.name, "[工具调用被跳过：检测到重复循环]")
+                        transcript_messages.extend(msgs[before_len:])
                     msgs.append(
                         {
                             "role": "user",
@@ -261,7 +292,6 @@ class SessionAttemptRunner:
                         }
                     )
 
-            tool_calls = list(response.tool_calls)
             admitted = budget.admit_tool_calls(len(tool_calls))
             if admitted <= 0:
                 trace.stop_reason = "max_tool_calls_exhausted"
@@ -285,15 +315,7 @@ class SessionAttemptRunner:
                             max_tokens=max_tokens,
                             tools=[],
                         )
-                        final_content = (
-                            summary_response.get("content")
-                            or summary_response.get("text")
-                            or ""
-                        )
-                        if not final_content:
-                            choices = summary_response.get("choices") or []
-                            if choices:
-                                final_content = (choices[0].get("message") or {}).get("content") or ""
+                        final_content = summary_response.content or ""
                     except Exception as exc:
                         logger.warning(f"[session_attempt] 子体预算耗尽汇总失败: {exc}")
                         final_content = None
@@ -308,19 +330,35 @@ class SessionAttemptRunner:
                 tool_calls = tool_calls[:admitted]
 
             tool_call_dicts = _make_tool_call_dicts(tool_calls)
+            before_len = len(msgs)
             msgs = _add_assistant_msg(msgs, response.content, tool_call_dicts, response.reasoning_content)
+            transcript_messages.extend(msgs[before_len:])
+            if response.content and str(response.content).strip():
+                self._obs.emit(
+                    level="info",
+                    kind="event",
+                    subsystem="runtime/assistant",
+                    message="assistant_text",
+                    attrs={
+                        "content": response.content,
+                        "contentLength": len(str(response.content)),
+                        "isSubagent": bool(is_subagent),
+                    },
+                    session_key=thread_id,
+                    channel=channel,
+                )
             for tc in tool_calls:
                 tools_used.append(tc.name)
 
             semaphore = asyncio.Semaphore(self._execution_cfg.tool_concurrency)
             tool_timeout_s = self._execution_cfg.tool_timeout_ms / 1000
 
-            async def _exec(tc: Any) -> tuple[Any, str, dict[str, Any]]:
+            async def _exec(tc: Any) -> tuple[Any, Any, dict[str, Any]]:
                 async with semaphore:
                     args_str = _safe_json(tc.arguments)
                     logger.info(f"[attempt] tool={tc.name} args={args_str[:200]}")
                     started_at = time.perf_counter()
-                    tool_meta = self._tools.get_metadata(tc.name)
+                    tool_meta = active_tools.get_metadata(tc.name)
                     meta_group = None
                     if isinstance(tool_meta, dict):
                         meta_group = tool_meta.get("group")
@@ -425,9 +463,10 @@ class SessionAttemptRunner:
                     if before_result.params is not None:
                         effective_args = before_result.params
 
-                    async def _run_tool() -> str:
+                    async def _run_tool() -> Any:
                         try:
-                            result = await self._tools.execute(tc.name, effective_args)
+                            with use_tool_runtime_context(runtime_context):
+                                result = await active_tools.execute(tc.name, effective_args)
                         except Exception as exc:  # noqa: BLE001
                             result = f"工具执行出错：{exc}"
                         asyncio.create_task(
@@ -435,25 +474,27 @@ class SessionAttemptRunner:
                                 HookAfterToolCallEvent(
                                     tool_name=tc.name,
                                     params=effective_args,
-                                    result=result,
+                                    result=_tool_result_text(result),
                                     session_id=thread_id,
                                     channel=channel,
                                     chat_id=chat_id,
                                 )
                             )
                         )
-                        return str(result)
+                        return result
 
                     status = "success"
                     error_kind = ""
                     try:
-                        result_text = await asyncio.wait_for(_run_tool(), timeout=tool_timeout_s)
+                        raw_result = await asyncio.wait_for(_run_tool(), timeout=tool_timeout_s)
                     except asyncio.TimeoutError:
                         status = "timeout"
                         error_kind = "timeout"
-                        result_text = f"工具执行超时：{self._execution_cfg.tool_timeout_ms}ms"
+                        raw_result = f"工具执行超时：{self._execution_cfg.tool_timeout_ms}ms"
                     else:
-                        status, error_kind = _classify_tool_result(result_text)
+                        status, error_kind = _classify_tool_result(_tool_result_text(raw_result))
+
+                    result_text = _tool_result_text(raw_result)
 
                     duration_ms = int((time.perf_counter() - started_at) * 1000)
                     self._obs.emit(
@@ -475,7 +516,7 @@ class SessionAttemptRunner:
                         channel=channel,
                     )
 
-                    return tc, result_text, {
+                    return tc, raw_result, {
                         "status": status,
                         "errorKind": error_kind,
                         "durationMs": duration_ms,
@@ -507,14 +548,18 @@ class SessionAttemptRunner:
             )
 
             for tc, result, meta in results:
-                compact_result = _compact_tool_result(tc.name, result)
+                compact_result = _compact_tool_result(tc.name, _tool_result_content(result))
+                before_len = len(msgs)
                 msgs = _add_tool_result(msgs, tc.id, tc.name, compact_result)
+                transcript_messages.extend(msgs[before_len:])
                 if meta.get("status") != "success":
                     msgs[-1] = {
                         **msgs[-1],
                         "error_kind": meta.get("errorKind") or None,
                         "duration_ms": meta.get("durationMs"),
                     }
+                if isinstance(result, ToolExecutionResult) and result.extra_messages:
+                    msgs.extend(result.extra_messages)
 
             if self._execution_cfg.tool_failure_policy == "fail_fast" and failed_count > 0:
                 final_content = f"任务中止：工具批次失败（{failed_count}/{len(results)}）。"
@@ -525,7 +570,7 @@ class SessionAttemptRunner:
         return AttemptResult(
             final_content=final_content,
             tools_used=tools_used,
-            messages=msgs,
+            messages=transcript_messages,
             trace=trace.to_dict(),
         )
 
@@ -560,7 +605,7 @@ def _add_tool_result(
     messages: list[dict[str, Any]],
     tool_call_id: str,
     tool_name: str,
-    result: str,
+    result: Any,
 ) -> list[dict[str, Any]]:
     messages.append(
         {
@@ -602,7 +647,19 @@ def _classify_tool_result(result_text: str) -> tuple[str, str]:
     return "success", ""
 
 
-def _compact_tool_result(tool_name: str, result_text: str) -> str:
+def _tool_result_content(result: Any) -> Any:
+    if isinstance(result, ToolExecutionResult):
+        return result.content
+    return result
+
+
+def _tool_result_text(result: Any) -> str:
+    return str(_tool_result_content(result) or "")
+
+
+def _compact_tool_result(tool_name: str, result_text: Any) -> Any:
+    if isinstance(result_text, list):
+        return result_text
     text = str(result_text or "")
     text = _replace_embedded_binary(text)
     if len(text) <= _MAX_TOOL_RESULT_CHARS:

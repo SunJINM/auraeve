@@ -14,7 +14,7 @@
 |------|------|
 | `cron` | 设置提醒和定期任务 |
 | `github` | 使用 `gh` CLI 与 GitHub 交互 |
-| `memory` | 双层记忆系统，支持 grep 检索历史 |
+| `memory` | 双层记忆系统，支持 Grep 检索历史 |
 | `skill-creator` | 创建或更新 Agent 技能 |
 | `summarize` | 摘要 URL、文件和 YouTube 视频 |
 | `tmux` | 远程操控 tmux 会话（仅限 Linux/macOS） |

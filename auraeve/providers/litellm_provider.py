@@ -8,7 +8,13 @@ from typing import Any
 import litellm
 from litellm import acompletion
 
-from auraeve.providers.base import LLMProvider, LLMResponse, ToolCallRequest
+from auraeve.providers.base import (
+    LLMProvider,
+    LLMResponse,
+    ToolCallRequest,
+    normalize_tool_call_ids_in_messages,
+    normalize_tool_call_requests,
+)
 from auraeve.providers.registry import find_by_model, find_gateway
 
 
@@ -93,7 +99,7 @@ class LiteLLMProvider(LLMProvider):
 
         kwargs: dict[str, Any] = {
             "model": model,
-            "messages": messages,
+            "messages": normalize_tool_call_ids_in_messages(messages),
             "max_tokens": max_tokens,
             "temperature": temperature,
         }
@@ -134,6 +140,7 @@ class LiteLLMProvider(LLMProvider):
                     name=tc.function.name,
                     arguments=args,
                 ))
+            tool_calls = normalize_tool_call_requests(tool_calls)
 
         usage = {}
         if hasattr(response, "usage") and response.usage:

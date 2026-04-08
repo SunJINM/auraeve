@@ -16,6 +16,12 @@ class ToolRegistry:
         self._tools[tool.name] = tool
         self._meta[tool.name] = dict(getattr(tool, "metadata", {}) or {})
 
+    def clone(self) -> "ToolRegistry":
+        cloned = ToolRegistry()
+        cloned._tools = dict(self._tools)
+        cloned._meta = {name: dict(meta) for name, meta in self._meta.items()}
+        return cloned
+
     def unregister(self, name: str) -> None:
         self._tools.pop(name, None)
         self._meta.pop(name, None)
@@ -42,7 +48,7 @@ class ToolRegistry:
     def get_definitions(self) -> list[dict[str, Any]]:
         return [tool.to_schema() for tool in self._tools.values()]
 
-    async def execute(self, name: str, params: dict[str, Any]) -> str:
+    async def execute(self, name: str, params: dict[str, Any]) -> Any:
         tool = self.get(name)
         if not tool:
             return f"错误：工具 '{name}' 不存在"

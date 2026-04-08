@@ -179,63 +179,68 @@ def _migrate_legacy_mcp_keys(raw_obj: dict[str, Any]) -> tuple[dict[str, Any], l
 
 
 def run_config_doctor(*, fix: bool = False) -> dict[str, Any]:
-    snapshot = read_config_snapshot()
-    if snapshot.valid:
-        return {
-            "ok": True,
-            "fixed": False,
-            "path": str(snapshot.path),
-            "issues": [],
-            "warnings": [*snapshot.warnings],
-        }
+    try:
+        snapshot = read_config_snapshot()
+        if snapshot.valid:
+            return {
+                "ok": True,
+                "fixed": False,
+                "path": str(snapshot.path),
+                "issues": [],
+                "warnings": [*snapshot.warnings],
+            }
 
-    issues = [*snapshot.issues]
-    warnings = [*snapshot.warnings]
-    if not fix:
-        return {
-            "ok": False,
-            "fixed": False,
-            "path": str(snapshot.path),
-            "issues": issues,
-            "warnings": warnings,
-        }
+        issues = [*snapshot.issues]
+        warnings = [*snapshot.warnings]
+        if not fix:
+            return {
+                "ok": False,
+                "fixed": False,
+                "path": str(snapshot.path),
+                "issues": issues,
+                "warnings": warnings,
+            }
 
-    path = resolve_config_path()
-    raw_obj = _load_raw_object(path)
-    if raw_obj is None:
-        # cannot parse, preserve a corrupt copy then reset to defaults
-        if path.exists():
-            corrupt = path.with_suffix(path.suffix + f".corrupt-{int(datetime.now(timezone.utc).timestamp())}")
-            path.replace(corrupt)
-        ok, next_snapshot, changed, requires_restart, write_issues = write_config(dict(DEFAULTS))
+        path = resolve_config_path()
+        raw_obj = _load_raw_object(path)
+        if raw_obj is None:
+            # cannot parse, preserve a corrupt copy then reset to defaults
+            if path.exists():
+                corrupt = path.with_suffix(path.suffix + f".corrupt-{int(datetime.now(timezone.utc).timestamp())}")
+                path.replace(corrupt)
+            ok, next_snapshot, changed, requires_restart, write_issues = write_config(dict(DEFAULTS))
+            return {
+                "ok": bool(ok),
+                "fixed": bool(ok),
+                "path": str(next_snapshot.path),
+                "issues": write_issues,
+                "warnings": next_snapshot.warnings,
+                "changed": changed,
+                "requiresRestart": requires_restart,
+            }
+
+        raw_obj, migration_notes = _migrate_legacy_mcp_keys(raw_obj)
+
+        # prune unknown keys; keep META if present
+        allowed = set(DEFAULTS.keys()) | {"META"}
+        cleaned = {k: v for k, v in raw_obj.items() if k in allowed}
+        # remove known bad types by falling back to default value
+        for issue in issues:
+            path_key = issue.get("path", "")
+            if path_key in DEFAULTS:
+                cleaned[path_key] = DEFAULTS[path_key]
+
+        ok, next_snapshot, changed, requires_restart, write_issues = write_config(cleaned)
         return {
             "ok": bool(ok),
             "fixed": bool(ok),
             "path": str(next_snapshot.path),
             "issues": write_issues,
-            "warnings": next_snapshot.warnings,
+            "warnings": [*next_snapshot.warnings, *({"path": "MCP", "message": n} for n in migration_notes)],
             "changed": changed,
             "requiresRestart": requires_restart,
         }
+    finally:
+        from auraeve.observability.manager import close_observability
 
-    raw_obj, migration_notes = _migrate_legacy_mcp_keys(raw_obj)
-
-    # prune unknown keys; keep META if present
-    allowed = set(DEFAULTS.keys()) | {"META"}
-    cleaned = {k: v for k, v in raw_obj.items() if k in allowed}
-    # remove known bad types by falling back to default value
-    for issue in issues:
-        path_key = issue.get("path", "")
-        if path_key in DEFAULTS:
-            cleaned[path_key] = DEFAULTS[path_key]
-
-    ok, next_snapshot, changed, requires_restart, write_issues = write_config(cleaned)
-    return {
-        "ok": bool(ok),
-        "fixed": bool(ok),
-        "path": str(next_snapshot.path),
-        "issues": write_issues,
-        "warnings": [*next_snapshot.warnings, *({"path": "MCP", "message": n} for n in migration_notes)],
-        "changed": changed,
-        "requiresRestart": requires_restart,
-    }
+        close_observability()

@@ -1,46 +1,20 @@
-from unittest.mock import AsyncMock, MagicMock
-
-import pytest
-
-from auraeve.agent.tools.subagent_task import SubAgentTaskTool
+from auraeve.agent_runtime.command_queue import RuntimeCommandQueue
 from auraeve.agent_runtime.kernel import RuntimeKernel
-from auraeve.subagents.data.models import Task
+from auraeve.agent_runtime.runtime_scheduler import RuntimeScheduler
 
 
-def test_kernel_registers_resume_callback_on_init():
+def test_kernel_initialize_command_runtime_exposes_queue_and_scheduler() -> None:
     kernel = object.__new__(RuntimeKernel)
-    kernel._resume_with_subagent_result = AsyncMock()
-    kernel._task_orchestrator = MagicMock()
 
-    kernel._register_subagent_resume()
+    RuntimeKernel._initialize_command_runtime(kernel)
 
-    kernel._task_orchestrator.register_kernel_resume.assert_called_once_with(
-        kernel._resume_with_subagent_result
-    )
+    assert isinstance(kernel.command_queue, RuntimeCommandQueue)
+    assert isinstance(kernel.scheduler, RuntimeScheduler)
 
 
-@pytest.mark.asyncio
-async def test_subagent_spawn_passes_agent_name_to_submit_task():
-    orchestrator = MagicMock()
-    orchestrator.submit_task = AsyncMock(
-        return_value=Task(task_id="task_1", goal="分析数据")
-    )
-    tool = SubAgentTaskTool(orchestrator)
-    tool.set_context("webui", "chat-1")
+def test_kernel_initialize_command_runtime_uses_execute_command_callback() -> None:
+    kernel = object.__new__(RuntimeKernel)
 
-    await tool.execute(
-        action="spawn",
-        goal="分析数据",
-        priority=7,
-        assigned_node_id="local",
-        agent_name="data_analyst_agent",
-    )
+    RuntimeKernel._initialize_command_runtime(kernel)
 
-    orchestrator.submit_task.assert_awaited_once_with(
-        goal="分析数据",
-        priority=7,
-        origin_channel="webui",
-        origin_chat_id="chat-1",
-        assigned_node_id="local",
-        agent_name="data_analyst_agent",
-    )
+    assert kernel.scheduler._run_command == kernel.execute_command

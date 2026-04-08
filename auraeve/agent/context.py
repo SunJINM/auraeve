@@ -28,7 +28,7 @@ class ContextBuilder:
     """构建 Agent 的上下文（系统提示词 + 消息列表）。"""
 
     # 工作区启动配置文件（按顺序加载，注入到 Project Context）
-    BOOTSTRAP_FILES = ["AGENTS.md", "SOUL.md", "USER.md", "TOOLS.md", "IDENTITY.md"]
+    BOOTSTRAP_FILES = ["AGENTS.md", "SOUL.md", "USER.md", "TOOLS.md"]
 
     def __init__(self, workspace: Path, execution_workspace: str | None = None):
         self.workspace = workspace
@@ -62,8 +62,7 @@ class ContextBuilder:
 
         sections: list[str] = []
 
-        # 身份行
-        sections.append(self._identity_line())
+        sections.append(self._assistant_line())
 
         # 规则优先级声明（系统规则 > Project Context）
         sections.append("\n".join(self._section_protocol_priority()))
@@ -89,8 +88,8 @@ class ContextBuilder:
         # 工作区信息
         sections.append("\n".join(self._section_workspace()))
 
-        # 子智能体使用规范（条件：subagent 工具可用 + 非 minimal）
-        if not is_minimal and "subagent" in tools:
+        # 子智能体使用规范（条件：agent 工具可用 + 非 minimal）
+        if not is_minimal and "agent" in tools:
             sections.append("\n".join(self._section_subagent_protocol()))
 
         # 消息工具使用规范（条件：message 工具可用 + 非 minimal）
@@ -124,14 +123,14 @@ class ContextBuilder:
     # Section 构建函数（每个返回 list[str]，空列表 = 跳过）
     # =========================================================================
 
-    def _identity_line(self) -> str:
+    def _assistant_line(self) -> str:
         return "你是 Eve，运行在聊天渠道中的个人助手。默认以自然口语交流，避免生硬的 AI 说明式表达。"
 
     def _section_protocol_priority(self) -> list[str]:
         """规则优先级声明，避免系统规则与 Project Context 冲突。"""
         return [
             "## 规则优先级",
-            "当系统规则与 Project Context（AGENTS.md / SOUL.md / USER.md / TOOLS.md / IDENTITY.md）冲突时，优先遵循系统规则。",
+            "当系统规则与 Project Context（AGENTS.md / SOUL.md / USER.md / TOOLS.md）冲突时，优先遵循系统规则。",
             "Project Context 用于补充风格与业务偏好，不得覆盖安全、工具策略与输出协议。",
             "",
         ]
@@ -140,27 +139,32 @@ class ContextBuilder:
         """工具目录 + 工具调用风格规范。"""
         # 核心工具描述映射
         CORE_TOOL_SUMMARIES: dict[str, str] = {
-            "read_file":      "读取文件内容",
-            "write_file":     "创建或覆盖文件",
-            "edit_file":      "精确编辑文件片段",
-            "list_dir":       "列出目录内容",
-            "exec":           "执行 Shell 命令",
+            "Read":           "读取文件内容",
+            "Write":          "创建或覆盖文件",
+            "Edit":           "精确编辑文件片段",
+            "Grep":           "搜索文件内容（ripgrep）",
+            "Glob":           "按模式匹配文件路径",
+            "Bash":           "执行 Bash Shell 命令",
             "web_search":     "搜索网页（Brave + DuckDuckGo 降级）",
             "web_fetch":      "抓取 URL 可读内容（三层提取管道）",
             "browser":        "控制浏览器（导航、截图、交互）",
-            "pdf":            "处理 PDF 文件（提取文本/表格/LLM 分析）",
             "memory_search":  "语义搜索历史记忆（向量 + BM25 混合检索）",
             "memory_get":     "按路径读取记忆文件片段（行范围）",
             "memory_status":  "查看记忆索引状态与降级信息",
             "message":        "发送消息、文件、图片到渠道",
-            "subagent":       "子体任务全生命周期管理（spawn/dag/list/status/steer/pause/resume/cancel/approve），支持本地与远程节点调度",
+            "agent":          "启动子智能体执行复杂多步骤任务，支持查询和管理已创建的子智能体",
             "cron":           "管理定时任务和唤醒事件（用于提醒；设置提醒时，写入自然语言描述以便触发时读起来像提醒）",
             "todo":           "管理当前任务规划列表",
+            "TaskCreate":     "创建任务项",
+            "TaskGet":        "读取单个任务详情",
+            "TaskUpdate":     "增量更新任务状态与字段",
+            "TaskList":       "列出当前任务列表",
         }
         TOOL_ORDER = [
-            "read_file", "write_file", "edit_file", "list_dir", "exec",
-            "web_search", "web_fetch", "browser", "pdf",
-            "memory_search", "memory_get", "memory_status", "message", "subagent", "cron", "todo",
+            "Read", "Write", "Edit", "Grep", "Glob", "Bash",
+            "web_search", "web_fetch", "browser",
+            "memory_search", "memory_get", "memory_status", "message", "agent", "cron",
+            "TaskCreate", "TaskGet", "TaskUpdate", "TaskList", "todo",
         ]
 
         enabled = [t for t in TOOL_ORDER if t in tools]
@@ -175,22 +179,64 @@ class ContextBuilder:
             summary = CORE_TOOL_SUMMARIES.get(t)
             tool_lines.append(f"- {t}: {summary}" if summary else f"- {t}")
 
+        task_guidance: list[str] = []
+        if {"TaskCreate", "TaskGet", "TaskUpdate", "TaskList"} & tools:
+            task_guidance = [
+                "## 任务管理",
+                "复杂任务（3 步以上）或非平凡工作，使用 TaskCreate / TaskGet / TaskUpdate / TaskList 管理进度；纯对话或简单单步任务通常不需要。",
+                "推荐流程：先用 TaskList 看概览，再用 TaskGet 获取某个将要处理的任务详情；开始时用 TaskUpdate 标记 in_progress，完成后立刻标记 completed。",
+                "完成一个任务后，优先再次调用 TaskList 查看下一项可执行工作，而不是反复读取同一个任务。",
+                "",
+            ]
+        elif "todo" in tools:
+            task_guidance = [
+                "## 计划与自检",
+                "复杂任务（3 步以上）先调用 todo 建立计划，并保持同一时刻仅一个 in_progress。",
+                "如果当前工作确实适合计划跟踪，再使用 todo；如果不相关就不要为了形式而更新。",
+                "每完成一步立即更新状态，结束前自检：交付物是否齐全、是否已完成必要消息发送、是否还需用户确认。",
+                "",
+            ]
+
         return [
             "## 工具目录",
             "工具名区分大小写，调用时请完全匹配。",
             "\n".join(tool_lines),
             "",
+            "## Read / Write 约束",
+            "- Read 的 file_path 必须是绝对路径。",
+            f"- Read 默认最多读取 {2000} 行文本；需要更精确范围时使用 offset 和 limit。",
+            "- 需要“完整读”时，直接只传 file_path；不要附带 offset、limit 或空字符串 pages。",
+            "- Read 可读取图片、PDF 和 Jupyter notebook。",
+            "- 读取超过 10 页的 PDF 时，必须提供 pages；单次最多读取 20 页。",
+            "- 如果文件自上次完整 Read 后未变化，再次 Read 会返回 unchanged stub，而不是重复发送同一内容。",
+            "- Write 必须提供完整文件内容。",
+            "- 对已存在文件执行 Write 前，必须先用 Read 完整读取该文件；partial Read 不够。",
+            "- 如果文件在 Read 之后发生变化，必须重新 Read 后才能 Write。",
+            "- Edit 的 file_path 必须是绝对路径。",
+            "- 对已存在文件执行 Edit 前，必须先用 Read 完整读取该文件；partial Read 不够。",
+            "- Edit 默认要求 old_string 在文件中唯一；若要替换全部匹配项，显式传 replace_all=true。",
+            "- Edit 不用于 .ipynb；notebook 需使用专门的 notebook 编辑工具。",
+            "",
+            "## Grep / Glob 约束",
+            "- 内容搜索优先用 Grep，按文件名/路径模式查找优先用 Glob。",
+            "- 有 Grep/Glob 时，不要用 Bash 调用 rg、grep、find 或 dir 来替代。",
+            "- Grep 默认适合探索式搜索；当结果很多时，优先缩小 path、glob、type 或使用 head_limit / offset 分页。",
+            "- Glob 返回文件路径；Grep 可返回匹配文件、匹配内容或匹配计数。",
+            "",
+            "## Bash 约束",
+            "- 有专用工具时，优先用专用工具而不是 Bash。",
+            "- 读文件用 Read；创建/覆盖文件用 Write；精确修改文件用 Edit；内容搜索用 Grep；路径匹配用 Glob；网页检索与抓取用 web_search / web_fetch。",
+            "- 需要长时间运行且不必立刻读取结果时，使用 run_in_background=true，而不是在命令末尾手写 &。",
+            "- 需要稳定格式的命令输出时，优先一次执行一个明确命令，避免把不相关步骤串成超长 shell 脚本。",
+            "",
             "## 工具调用风格",
             "默认：直接调用，不要过度解释。读文件、搜索、列目录等低风险操作直接执行。",
-            "高风险操作（exec / write_file / edit_file / browser）先用一句话说明再执行。",
+            "高风险操作（Bash / Write / Edit / browser）先用一句话说明再执行。",
             "只在以下情况简要说明正在做什么：多步骤复杂操作、敏感操作（删除/覆盖）、用户明确要求。",
             "有专用工具时，直接调用工具，不要让用户自行运行命令。",
-            "长时间等待时，避免紧密轮询：用 exec 配合足够的等待时间，或用后台任务。",
+            "长时间等待时，避免紧密轮询：用 Bash 配合足够的等待时间，或用后台任务。",
             "",
-            "## 计划与自检",
-            "复杂任务（3 步以上）先调用 todo 建立计划，并保持同一时刻仅一个 in_progress。",
-            "每完成一步立即更新状态，结束前自检：交付物是否齐全、是否已完成必要消息发送、是否还需用户确认。",
-            "",
+            *task_guidance,
         ]
 
     def _section_safety(self) -> list[str]:
@@ -211,10 +257,10 @@ class ContextBuilder:
         return [
             "## 技能（必须遵守）",
             "回复前扫描技能列表中的 <description> 条目：",
-            "- 恰好一个技能明确适用：用 read_file 读取该技能的 <location> 字段所指定的完整路径，然后严格遵照执行。",
+            "- 恰好一个技能明确适用：用 Read 读取该技能的 <location> 字段所指定的完整路径，然后严格遵照执行。",
             "- 多个可能适用：选择最具体的一个，读取其 <location> 路径并遵照执行。",
             "- 没有明确适用：不读任何 SKILL.md。",
-            "重要：必须使用 <location> 字段中的原始路径调用 read_file，不得自行猜测或拼接路径。",
+            "重要：必须使用 <location> 字段中的原始路径调用 Read，不得自行猜测或拼接路径。",
             "限制：一次最多读一个技能；只在选定后才读取。",
             "当技能涉及外部 API 写入时，优先进行少量大批量写操作，避免单项紧密循环，遇到 429/Retry-After 时串行化请求。",
             skills_prompt,
@@ -259,7 +305,7 @@ class ContextBuilder:
             workspace_lines.extend(
                 [
                     f"命令执行目录：{execution_path}",
-                    "在 exec/read_file/write_file/edit_file/list_dir 中优先使用命令执行目录路径。",
+                    "在 Bash/Read/Write/Edit 中优先使用命令执行目录路径。",
                 ]
             )
         workspace_lines.extend(
@@ -275,8 +321,8 @@ class ContextBuilder:
                 "3. 只有真正卡住才向用户提问",
                 "",
                 "没有专用工具不代表无法完成任务——写脚本解决：",
-                f"- 用 write_file 在 {script_base}/scripts/ 写 Python/Shell 脚本",
-                "- 用 exec 执行并读取输出",
+                f"- 用 Write 在 {script_base}/scripts/ 写 Python/Shell 脚本",
+                "- 用 Bash 执行并读取输出",
                 "适合写脚本的场景：数据处理、API 调用、批量操作、格式转换、复杂计算。",
                 "",
                 "**严禁以\"我没有这个工具/能力\"为由直接拒绝。**",
@@ -287,36 +333,45 @@ class ContextBuilder:
         return workspace_lines
 
     def _section_subagent_protocol(self) -> list[str]:
-        """子智能体使用规范（条件：subagent 工具可用 + 非 minimal）。"""
+        """子智能体使用规范（条件：agent 工具可用 + 非 minimal）。"""
         return [
             "## 子智能体协议",
-            "**何时派发子体**：满足以下任一条件时考虑使用子体：",
-            "- 任务预计需要多步工具调用且耗时较长（> ~30s）",
-            "- 存在多个可并行执行的独立子任务",
-            "- 需要不同专业角色分别分析同一问题（如法律 + 舆情 + 行业）",
-            "- 需要大量搜索/抓取后汇总，适合后台异步处理",
+            "子智能体适合并行执行独立查询、保护主上下文不被大量原始输出淹没。但不要过度使用。",
             "",
-            "**何时不用子体**：以下情况直接执行，不要派发子体：",
-            "- 简单问答或单步工具调用（子体开销不值得）",
+            "**何时派发子智能体**：",
+            "- 存在多个可并行执行的独立子任务（并行是你的核心优势）",
+            "- 需要大量搜索/抓取后汇总，结果塞入主上下文意义不大",
+            "- 需要不同专业角色分别分析同一问题（如法律 + 舆情 + 行业）",
+            "- 复杂多步骤任务，子智能体执行比在主上下文中逐步执行更清晰",
+            "",
+            "**何时不用子智能体**：",
+            "- 单次读取、单次搜索、单次工具调用——直接用工具，子智能体开销不值得",
             "- 当前上下文已有足够信息可直接回答",
             "- 需要与用户实时交互、反复确认的任务",
-            "- 只需调用一两个工具即可完成的操作",
+            "- 已派发子智能体在做某项工作——不要自己也做同样的搜索（避免重复劳动）",
             "",
-            "**派发后无需轮询**：调用 `subagent(action=spawn)` 后立即结束本轮，不要反复调用 `subagent(action=status)` 等待结果。"
-            "子体完成后系统会自动将结果注入你的上下文并唤醒你。",
+            "**并行是你的超能力**：独立任务务必并行——在同一轮次内连续调用多个 agent，不要串行等待。"
+            "调研任务尤其如此：多个角度同时覆盖，不要一个一个来。",
             "",
-            "**role_prompt 角色配置**：spawn 时通过 `role_prompt` 给子体设定身份、背景知识、输出格式要求。"
-            "越具体越好，例如：角色定位、专业领域、要引用哪些依据、结论需要包含哪些字段、语气风格。"
-            "不填则子体使用通用执行模式，适合简单任务；复杂分析或专业任务务必填写。",
+            "**派发后**：调用 agent 后立即结束本轮，告知用户一次正在处理（如「正在并行分析，稍等」），不要反复刷进度，不要预测结果。"
+            "子智能体完成后系统会自动注入结果并唤醒你。",
             "",
-            "**并行任务判断**：需要多个子体协作时，在同一轮次内连续调用多个 `spawn`，每个 spawn 一个 goal。"
-            "不要串行等待前一个完成再派下一个。",
+            "**完成通知语义**：子智能体完成后你会收到一条 `task-notification`，包含字段：",
+            "- `status`：completed / failed / killed",
+            "- `result`：子智能体的输出内容",
+            "这是系统注入的内部信号，不是用户新的发言——不要打招呼，不要回复“收到”，直接处理结果。"
+            "有新信息到达就向用户更新进展，不必等全部子智能体完成。",
             "",
-            "**回调时的回复决策**：收到子体结果回调时（subagent_result），检查 [子体批次状态] 提示：",
-            "- 若还有其他子体未完成：可先向用户说明进展，或等待剩余结果再给完整答复——由你根据已有信息的充分程度决定。",
-            "- 若全部子体已完成：整合所有结果，给用户完整、统一的一次回复，不要多次碎片化输出。",
+            "**失败处理**：status=failed 时，已有的部分结果仍可参考；失败原因属于内部细节，不要原样透传给用户。",
             "",
-            "**进度告知**：派发子体后如需让用户知道正在处理，仅告知一次（如「正在并行分析，稍等」），不要反复刷状态。",
+            "**综合——你最重要的职责**：收到子智能体结果后，你负责理解、判断、综合——不是把子智能体原话拼在一起转述给用户。"
+            "你是终端决策者，不是中继。",
+            "永远不要写「根据你的调查结果」或「基于上述研究」——这是把理解委托给子智能体，而不是你自己做。"
+            "写出能证明你理解了的 prompt：说清楚问题是什么、已经知道什么、还要它补什么、最后按什么格式汇报。",
+            "",
+            "**写好 prompt**：子智能体看不到你的对话历史，每个 prompt 必须自包含。"
+            "像向刚走进房间的聪明同事简报一样：说清楚目标、已知背景、你已排除的方向、期望的输出格式。"
+            "简短的命令式 prompt 只会得到肤浅的结果。",
             "",
         ]
 
@@ -327,18 +382,19 @@ class ContextBuilder:
             "文字回复：直接用文字响应，不要调用 message 工具。",
             "以下情况必须调用 message 工具：",
             "- 发送文件 → message(content='', file_path='/绝对路径/文件名')",
-            "- 任务产出了文件（write_file 写入）→ 任务完成前主动调用 message(file_path=...) 发送",
+            "- 任务产出了文件（Write 写入）→ 任务完成前主动调用 message(file_path=...) 发送",
             "- 主动推送通知 → message(content='通知内容')",
             "- 发送网络图片 → message(content='', image_url='https://...')",
             "- 当你已经拿到公网图片 URL 时，禁止先下载到本地再发 file_path；必须直接使用 image_url 发送",
             "",
-            "用户说'发文件/图片给我'时：先用 exec 或 list_dir 找到绝对路径，再调用 message。",
+            "用户说'发文件/图片给我'时：先用 Bash 找到绝对路径，再调用 message。",
             "**绝不能回复\"无法发送文件\"——这是已支持的功能。**",
             "",
             "## 任务完成规则",
-            "调用 todo([]) 仅表示计划已清空，不等于自动结束回复流程。",
+            "更新任务状态或清空 legacy todo 仅表示任务跟踪已同步，不等于自动结束回复流程。",
             "若任务产出了文件，先调用 message(file_path=...) 发送文件。",
-            "若当前轮次仅完成工具动作且无额外用户可见信息，允许最终回复 __SILENT__。",
+            "只有在内部 meta 事件（如 heartbeat / cron / task-notification）且确实无需对用户说任何话时，才允许最终回复 __SILENT__。",
+            "对正常用户消息，绝不能用 __SILENT__ 结束本轮；即使结果很少，也要给出简短可见回复。",
             "若有结果、结论、提醒或下一步建议需要用户感知，必须给出正常文字回复。",
             "",
         ]
@@ -347,10 +403,11 @@ class ContextBuilder:
         """静默令牌规则（非 minimal 模式）。"""
         return [
             "## 静默回复",
-            f"当你没有任何需要说的内容时，回复且仅回复：{SILENT_REPLY_TOKEN}",
+            f"仅当当前输入属于内部 meta 事件，且你没有任何需要对用户说的内容时，回复且仅回复：{SILENT_REPLY_TOKEN}",
             "",
             "规则：",
             f"- 必须是你的完整消息——不能附加其他内容",
+            "- 普通用户消息禁止使用该令牌",
             f'- 不能拼接到正常回复末尾（永远不要在真实回复中包含 "{SILENT_REPLY_TOKEN}"）',
             "- 不要用 markdown 或代码块包裹",
             "",
