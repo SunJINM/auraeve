@@ -16,6 +16,10 @@ from auraeve.providers.openai_provider import _classify_openai_error
 from auraeve.providers.openai_provider import OpenAICompatibleProvider
 
 
+def _run(coro):
+    return asyncio.run(coro)
+
+
 def test_classify_openai_error_maps_413_to_context_overflow() -> None:
     error = Exception(
         "<html><head><title>413 Request Entity Too Large</title></head><body></body></html>"
@@ -46,9 +50,7 @@ def test_consume_stream_assembles_content() -> None:
             usage=SimpleNamespace(prompt_tokens=10, completion_tokens=5, total_tokens=15),
         )
 
-    result = asyncio.get_event_loop().run_until_complete(
-        provider._consume_stream(fake_stream())
-    )
+    result = _run(provider._consume_stream(fake_stream()))
     assert result.content == "Hello world!"
     assert result.usage["total_tokens"] == 15
 
@@ -67,9 +69,7 @@ def test_consume_stream_logs_warning_for_empty_response() -> None:
         )
 
     with patch("auraeve.providers.openai_provider.logger.warning") as warning_mock:
-        result = asyncio.get_event_loop().run_until_complete(
-            provider._consume_stream(fake_stream())
-        )
+        result = _run(provider._consume_stream(fake_stream()))
 
     assert result.content is None
     warning_mock.assert_called_once()
@@ -97,8 +97,6 @@ def test_consume_stream_assembles_reasoning_content() -> None:
             usage=None,
         )
 
-    result = asyncio.get_event_loop().run_until_complete(
-        provider._consume_stream(fake_stream())
-    )
+    result = _run(provider._consume_stream(fake_stream()))
     assert result.content == "answer"
     assert result.reasoning_content == "thinking..."
