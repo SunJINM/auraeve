@@ -69,7 +69,7 @@ class ChatConsoleService:
         if self._task_base_dir is None:
             return []
         store = TaskStore(base_dir=self._task_base_dir, task_list_id=session_key)
-        tasks = store.list_tasks()
+        tasks = store.list_active_tasks()
         return [
             {
                 "taskId": task.id,

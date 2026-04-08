@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from auraeve.providers.base import LLMProvider
 
 from auraeve.agent.engines.base import CompactResult
+from auraeve.providers.base import backfill_tool_context_start
 
 # ── 常量 ─────────────────────────────────────────────────────
 
@@ -290,8 +291,10 @@ async def compact_messages(
     if len(messages) <= keep_count:
         return CompactResult(ok=False, compacted=False, reason="消息数量不足以压缩")
 
-    to_summarize = messages[:-keep_count]
-    to_keep = messages[-keep_count:]
+    keep_start = max(len(messages) - keep_count, 0)
+    keep_start = backfill_tool_context_start(messages, keep_start)
+    to_summarize = messages[:keep_start]
+    to_keep = messages[keep_start:]
     tokens_before = estimate_tokens(messages)
 
     identifier_instruction = IDENTIFIER_PRESERVATION

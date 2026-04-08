@@ -363,7 +363,10 @@ async def main(terminal_mode: bool = False) -> None:
         try:
             event_loop.add_signal_handler(sig, handler)
         except NotImplementedError:
-            pass
+            # Windows 不支持 add_signal_handler，使用 signal.signal 作为 fallback
+            def _win_handler(signum, frame, _h=handler, _loop=event_loop):
+                _loop.call_soon_threadsafe(_h)
+            signal.signal(sig, _win_handler)
 
     # SIGUSR1?Unix?
     if hasattr(signal, "SIGUSR1"):

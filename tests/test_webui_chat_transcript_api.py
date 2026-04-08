@@ -3,10 +3,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from unittest.mock import MagicMock
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
 from auraeve.agent_runtime.command_queue import RuntimeCommandQueue
+from auraeve.agent.tasks import TaskStore
 from auraeve.session.manager import SessionManager
 from auraeve.webui.chat_service import ChatService
 from auraeve.webui.server import WebUIServer
@@ -93,3 +95,33 @@ def test_chat_transcript_events_route_streams_transcript_events(tmp_path: Path) 
     event = json.loads(first_line[6:])
     assert event["type"] == "transcript.done"
     assert event["sessionKey"] == "webui:test"
+
+
+def test_chat_runtime_route_reads_main_tasks_from_state_tasks_dir(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir(parents=True, exist_ok=True)
+    state_dir = tmp_path / ".auraeve"
+    sessions_dir = state_dir / "agents" / "default" / "sessions"
+    sessions_dir.mkdir(parents=True, exist_ok=True)
+
+    task_store = TaskStore(base_dir=state_dir / "tasks", task_list_id="webui:test")
+    task_store.create_task(
+        subject="验证实时任务卡片",
+        description="确认 chat/runtime 会返回主线程任务",
+        active_form="正在验证实时任务卡片",
+    )
+
+    chat = ChatService(session_manager=SessionManager(sessions_dir), command_queue=RuntimeCommandQueue())
+    with patch("auraeve.webui.server.cfg.resolve_state_dir", return_value=state_dir):
+        client = _build_server(chat, workspace=workspace)
+
+    response = client.get(
+        "/api/webui/chat/runtime",
+        params={"sessionKey": "webui:test"},
+        headers={"X-WEBUI-TOKEN": "secret"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload["mainTasks"]) == 1
+    assert payload["mainTasks"][0]["subject"] == "验证实时任务卡片"

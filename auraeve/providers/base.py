@@ -107,6 +107,7 @@ def normalize_tool_call_requests(tool_calls: list[ToolCallRequest]) -> list[Tool
 def normalize_tool_call_ids_in_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     normalized_messages: list[dict[str, Any]] = []
     pending_tool_call_ids: list[str] = []
+    seen_tool_call_ids: set[str] = set()
 
     for message_index, message in enumerate(messages):
         normalized_message = dict(message)
@@ -135,21 +136,19 @@ def normalize_tool_call_ids_in_messages(messages: list[dict[str, Any]]) -> list[
                     tool_call["function"] = function
                 normalized_calls.append(tool_call)
                 pending_tool_call_ids.append(call_id)
+                seen_tool_call_ids.add(call_id)
             normalized_message["tool_calls"] = normalized_calls
         elif role == "tool":
             tool_call_id = str(normalized_message.get("tool_call_id") or "").strip()
             if not tool_call_id:
                 if pending_tool_call_ids:
                     tool_call_id = pending_tool_call_ids.pop(0)
+                    normalized_message["tool_call_id"] = tool_call_id
                 else:
-                    tool_call_id = ensure_tool_call_id(
-                        "",
-                        fallback_key=f"message:{message_index}:tool_result",
-                        tool_name=str(normalized_message.get("name") or ""),
-                        arguments={"content": str(normalized_message.get("content") or "")},
-                    )
-                normalized_message["tool_call_id"] = tool_call_id
-            elif tool_call_id in pending_tool_call_ids:
+                    continue
+            if tool_call_id not in seen_tool_call_ids:
+                continue
+            if tool_call_id in pending_tool_call_ids:
                 pending_tool_call_ids.remove(tool_call_id)
         else:
             pending_tool_call_ids = []
@@ -157,6 +156,43 @@ def normalize_tool_call_ids_in_messages(messages: list[dict[str, Any]]) -> list[
         normalized_messages.append(normalized_message)
 
     return normalized_messages
+
+
+def backfill_tool_context_start(messages: list[dict[str, Any]], start_index: int) -> int:
+    start = max(0, min(start_index, len(messages)))
+    while start > 0 and start < len(messages):
+        current = messages[start]
+        if str(current.get("role") or "") != "tool":
+            break
+        tool_call_id = str(current.get("tool_call_id") or "").strip()
+        if not tool_call_id:
+            break
+        match_index = _find_matching_assistant_tool_call(messages, tool_call_id, start)
+        if match_index is None:
+            break
+        start = match_index
+    return start
+
+
+def _find_matching_assistant_tool_call(
+    messages: list[dict[str, Any]],
+    tool_call_id: str,
+    before_index: int,
+) -> int | None:
+    for index in range(before_index - 1, -1, -1):
+        message = messages[index]
+        if str(message.get("role") or "") != "assistant":
+            continue
+        tool_calls = message.get("tool_calls")
+        if not isinstance(tool_calls, list):
+            continue
+        for raw_tool_call in tool_calls:
+            if not isinstance(raw_tool_call, dict):
+                continue
+            call_id = str(raw_tool_call.get("id") or "").strip()
+            if call_id == tool_call_id:
+                return index
+    return None
 
 
 def _coerce_tool_call_arguments(raw_arguments: Any) -> dict[str, Any]:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from pathlib import Path
 
 import pytest
@@ -112,6 +113,55 @@ def test_chat_console_snapshot_includes_main_thread_task_v2_snapshot(tmp_path: P
     assert snapshot["mainTasks"][0]["status"] == "in_progress"
     assert snapshot["summary"]["runningMainTasks"] == 1
     assert snapshot["toolCalls"] == []
+
+
+def test_chat_console_snapshot_keeps_completed_main_tasks_briefly_before_hiding(tmp_path: Path) -> None:
+    sessions_dir = tmp_path / "sessions"
+    task_store = TaskStore(base_dir=tmp_path / "tasks", task_list_id="webui:test-user")
+    task_store.create_task(
+        subject="运行验证",
+        description="确认完成任务会短暂保留在实时卡片中",
+        active_form="正在运行验证",
+    )
+    task_store.update_task("1", status=MainTaskStatus.COMPLETED)
+
+    sm = SessionManager(sessions_dir)
+    chat = ChatService(sm, RuntimeCommandQueue())
+    service = ChatConsoleService(chat_service=chat, store=None, task_base_dir=tmp_path / "tasks")
+
+    snapshot = service.get_snapshot("webui:test-user")
+
+    assert len(snapshot["mainTasks"]) == 1
+    assert snapshot["mainTasks"][0]["status"] == "completed"
+    assert snapshot["summary"]["runningMainTasks"] == 0
+
+
+def test_chat_console_snapshot_hides_and_clears_completed_main_task_list_after_ttl(
+    tmp_path: Path,
+) -> None:
+    sessions_dir = tmp_path / "sessions"
+    task_store = TaskStore(base_dir=tmp_path / "tasks", task_list_id="webui:test-user")
+    task_store.create_task(
+        subject="运行验证",
+        description="确认完成任务会在展示窗口后消失",
+        active_form="正在运行验证",
+    )
+    task_store.update_task("1", status=MainTaskStatus.COMPLETED)
+
+    task_path = task_store.directory / "1.json"
+    payload = json.loads(task_path.read_text(encoding="utf-8"))
+    payload["updated_at"] = "2020-01-01T00:00:00+00:00"
+    task_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    sm = SessionManager(sessions_dir)
+    chat = ChatService(sm, RuntimeCommandQueue())
+    service = ChatConsoleService(chat_service=chat, store=None, task_base_dir=tmp_path / "tasks")
+
+    snapshot = service.get_snapshot("webui:test-user")
+
+    assert snapshot["mainTasks"] == []
+    assert snapshot["summary"]["runningMainTasks"] == 0
+    assert task_store.list_tasks() == []
 
 
 @pytest.mark.asyncio

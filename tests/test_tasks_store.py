@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from auraeve.agent.tasks import TaskStatus, TaskStore
@@ -67,3 +68,51 @@ def test_task_store_reloads_from_disk(tmp_path: Path) -> None:
 
     assert task is not None
     assert task.subject == "持久化"
+
+
+def test_task_store_list_active_tasks_keeps_recently_completed_list(tmp_path: Path) -> None:
+    store = TaskStore(base_dir=tmp_path / "tasks", task_list_id="webui_chat_1")
+    created = store.create_task(subject="完成项", description="最近完成")
+    store.update_task(created.id, status=TaskStatus.COMPLETED)
+
+    active_tasks = store.list_active_tasks()
+
+    assert [task.id for task in active_tasks] == ["1"]
+    assert active_tasks[0].status == TaskStatus.COMPLETED
+
+
+def test_task_store_list_active_tasks_clears_expired_completed_list(tmp_path: Path) -> None:
+    store = TaskStore(base_dir=tmp_path / "tasks", task_list_id="webui_chat_1")
+    created = store.create_task(subject="完成项", description="过期完成")
+    store.update_task(created.id, status=TaskStatus.COMPLETED)
+
+    task_path = store.directory / f"{created.id}.json"
+    payload = json.loads(task_path.read_text(encoding="utf-8"))
+    payload["updated_at"] = "2020-01-01T00:00:00+00:00"
+    task_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    active_tasks = store.list_active_tasks()
+
+    assert active_tasks == []
+    assert store.list_tasks() == []
+
+    next_task = store.create_task(subject="新任务", description="确认高水位保留")
+    assert next_task.id == "2"
+
+
+def test_task_store_list_active_tasks_prunes_legacy_stale_open_tasks(tmp_path: Path) -> None:
+    store = TaskStore(base_dir=tmp_path / "tasks", task_list_id="webui_chat_1")
+    stale = store.create_task(subject="旧进行中", description="历史残留")
+    store.update_task(stale.id, status=TaskStatus.IN_PROGRESS)
+    fresh = store.create_task(subject="新完成项", description="当前批次")
+    store.update_task(fresh.id, status=TaskStatus.COMPLETED)
+
+    stale_path = store.directory / f"{stale.id}.json"
+    stale_payload = json.loads(stale_path.read_text(encoding="utf-8"))
+    stale_payload["updated_at"] = "2020-01-01T00:00:00+00:00"
+    stale_path.write_text(json.dumps(stale_payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    active_tasks = store.list_active_tasks()
+
+    assert [task.id for task in active_tasks] == ["2"]
+    assert store.get_task("1") is None

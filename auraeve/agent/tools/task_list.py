@@ -30,7 +30,7 @@ class TaskListTool(Tool):
 
     async def execute(self, **kwargs: Any) -> ToolExecutionResult:
         all_tasks = [
-            task for task in self._store.list_tasks() if not task.metadata.get("_internal")
+            task for task in self._store.list_active_tasks() if not task.metadata.get("_internal")
         ]
         resolved_ids = {task.id for task in all_tasks if task.status.value == "completed"}
         tasks = [

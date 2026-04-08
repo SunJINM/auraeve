@@ -58,7 +58,7 @@ def _should_emit_turn_based_reminder(turns_since_management: int | None) -> bool
 def _format_task_summary(task_base_dir: Path | None, session_key: str) -> str:
     if task_base_dir is None:
         return ""
-    tasks = TaskStore(base_dir=task_base_dir, task_list_id=session_key).list_tasks()
+    tasks = TaskStore(base_dir=task_base_dir, task_list_id=session_key).list_active_tasks()
     if not tasks:
         return ""
     lines = [

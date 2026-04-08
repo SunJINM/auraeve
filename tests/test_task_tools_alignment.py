@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -101,3 +102,26 @@ async def test_task_create_returns_short_confirmation_payload(
     assert isinstance(result, ToolExecutionResult)
     assert result.data["task"]["subject"] == "实现功能"
     assert "created successfully" in result.content.lower()
+
+
+@pytest.mark.asyncio
+async def test_task_create_starts_a_fresh_list_after_completed_tasks(
+    tmp_path: Path,
+) -> None:
+    store = TaskStore(base_dir=tmp_path / "tasks", task_list_id="webui:chat-1")
+    store.create_task(subject="旧任务", description="上一轮任务")
+    store.update_task("1", status=TaskStatus.COMPLETED)
+    task_path = store.directory / "1.json"
+    payload = json.loads(task_path.read_text(encoding="utf-8"))
+    payload["updated_at"] = "2020-01-01T00:00:00+00:00"
+    task_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    tool = TaskCreateTool(store)
+
+    result = await tool.execute(subject="新任务", description="下一轮任务")
+
+    assert isinstance(result, ToolExecutionResult)
+    assert result.data["task"]["id"] == "2"
+    tasks = store.list_tasks()
+    assert len(tasks) == 1
+    assert tasks[0].id == "2"
+    assert tasks[0].subject == "新任务"

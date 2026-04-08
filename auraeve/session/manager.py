@@ -8,6 +8,7 @@ from typing import Any
 
 from loguru import logger
 
+from auraeve.providers.base import backfill_tool_context_start
 from auraeve.utils.helpers import ensure_dir, safe_filename
 
 
@@ -35,9 +36,11 @@ class Session:
     def get_history(self, max_messages: int = 500) -> list[dict[str, Any]]:
         """获取最近的消息，供 LLM 使用。保留 tool 调用相关字段以维持消息完整性。"""
         _KEEP_KEYS = {"role", "content", "tool_calls", "tool_call_id", "name"}
+        start_index = max(len(self.messages) - max_messages, 0)
+        start_index = backfill_tool_context_start(self.messages, start_index)
         return [
             {k: v for k, v in m.items() if k in _KEEP_KEYS}
-            for m in self.messages[-max_messages:]
+            for m in self.messages[start_index:]
         ]
 
     def replace_history(self, messages: list[dict]) -> None:

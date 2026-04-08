@@ -5,6 +5,8 @@ import pytest
 import auraeve.config  # noqa: F401
 
 from auraeve.agent.tools.base import ToolExecutionResult
+from auraeve.agent.engines.vector.compaction import compact_messages
+from auraeve.session.manager import Session
 from auraeve.agent_runtime.session_attempt import SessionAttemptRunner
 from auraeve.providers.base import LLMResponse, ToolCallRequest, normalize_tool_call_ids_in_messages
 
@@ -70,6 +72,79 @@ def test_normalize_tool_call_ids_preserves_structured_tool_content() -> None:
 
     assert isinstance(normalized[1]["content"], list)
     assert normalized[1]["content"][1]["type"] == "image_url"
+
+
+def test_normalize_tool_call_ids_drops_orphan_tool_messages() -> None:
+    messages = [
+        {"role": "tool", "tool_call_id": "call_missing", "name": "Read", "content": "stale"},
+        {"role": "assistant", "content": "hello"},
+    ]
+
+    normalized = normalize_tool_call_ids_in_messages(messages)
+
+    assert normalized == [{"role": "assistant", "content": "hello"}]
+
+
+def test_session_get_history_backfills_matching_assistant_tool_call() -> None:
+    session = Session(key="webui:test")
+    session.add_message("user", "first")
+    session.add_message(
+        "assistant",
+        "",
+        tool_calls=[
+            {
+                "id": "call_1",
+                "type": "function",
+                "function": {"name": "Read", "arguments": "{\"file_path\":\"README.md\"}"},
+            }
+        ],
+    )
+    session.add_message("tool", "content", tool_call_id="call_1", name="Read")
+    session.add_message("assistant", "done")
+
+    history = session.get_history(max_messages=2)
+
+    assert history[0]["role"] == "assistant"
+    assert history[0]["tool_calls"][0]["id"] == "call_1"
+    assert history[1]["role"] == "tool"
+    assert history[1]["tool_call_id"] == "call_1"
+    assert history[2]["role"] == "assistant"
+
+
+@pytest.mark.asyncio
+async def test_compact_messages_backfills_tool_call_context_into_kept_tail() -> None:
+    provider = MagicMock()
+    provider.chat = AsyncMock(return_value=LLMResponse(content="summary"))
+
+    messages = []
+    for idx in range(40):
+        messages.append({"role": "user", "content": f"user-{idx}"})
+    messages.append(
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {
+                    "id": "call_tail",
+                    "type": "function",
+                    "function": {"name": "Read", "arguments": "{\"file_path\":\"tail.txt\"}"},
+                }
+            ],
+        }
+    )
+    messages.append({"role": "tool", "tool_call_id": "call_tail", "name": "Read", "content": "tail-content"})
+    for idx in range(9):
+        messages.append({"role": "assistant", "content": f"tail-{idx}"})
+
+    result = await compact_messages(messages, 80_000, provider)
+
+    assert result.compacted is True
+    compacted = result.compacted_messages or []
+    assistant_index = next(i for i, item in enumerate(compacted) if item.get("role") == "assistant")
+    tool_index = next(i for i, item in enumerate(compacted) if item.get("role") == "tool")
+    assert assistant_index < tool_index
+    assert compacted[assistant_index]["tool_calls"][0]["id"] == "call_tail"
+    assert compacted[tool_index]["tool_call_id"] == "call_tail"
 
 
 @pytest.mark.asyncio

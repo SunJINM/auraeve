@@ -107,6 +107,18 @@ export interface ChatRuntimeTask {
   updatedAt: number
 }
 
+export interface ChatRuntimeMainTask {
+  taskId: string
+  subject: string
+  description: string
+  activeForm: string
+  status: 'pending' | 'in_progress' | 'completed' | 'cancelled' | string
+  owner: string
+  blockedBy: string[]
+  blocks: string[]
+  updatedAt: number
+}
+
 export interface ChatRuntimeApproval {
   approvalId: string
   taskId: string
@@ -146,11 +158,13 @@ export interface ChatRuntimeSnapshotResp {
   }
   toolCalls: ChatRuntimeToolCall[]
   tasks: ChatRuntimeTask[]
+  mainTasks: ChatRuntimeMainTask[]
   approvals: ChatRuntimeApproval[]
   nodes: ChatRuntimeNode[]
   timeline: ChatRuntimeTimelineItem[]
   summary: {
     runningTasks: number
+    runningMainTasks: number
     pendingApprovals: number
     toolCalls: number
     onlineNodes: number

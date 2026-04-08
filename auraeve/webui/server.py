@@ -130,7 +130,7 @@ class WebUIServer:
         self._chat_console = ChatConsoleService(
             chat_service,
             getattr(subagent_executor, "_store", None),
-            task_base_dir=cfg.resolve_state_dir() / "agents" / "default" / "tasks",
+            task_base_dir=cfg.resolve_state_dir() / "tasks",
         )
         self._server: uvicorn.Server | None = None
         self._restart_callback = restart_callback
