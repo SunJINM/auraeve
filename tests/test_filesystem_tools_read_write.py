@@ -153,6 +153,40 @@ def test_build_tool_registry_registers_read_write_without_legacy_names(
     assert registry.has("pdf") is False
 
 
+def test_build_stt_runtime_reads_new_asr_config_shape() -> None:
+    from auraeve.stt.runtime import build_stt_runtime_from_config
+
+    runtime = build_stt_runtime_from_config(
+        {
+            "ASR": {
+                "enabled": True,
+                "defaultLanguage": "zh-CN",
+                "timeoutMs": 15000,
+                "maxConcurrency": 4,
+                "retryCount": 1,
+                "failoverEnabled": True,
+                "cacheEnabled": True,
+                "cacheTtlSeconds": 600,
+                "providers": [
+                    {
+                        "id": "openai",
+                        "enabled": True,
+                        "priority": 100,
+                        "type": "openai",
+                        "model": "gpt-4o-mini-transcribe",
+                        "apiBase": "",
+                        "apiKey": "",
+                        "formats": ["wav"],
+                        "timeoutMs": 15000,
+                    }
+                ],
+            }
+        }
+    )
+
+    assert runtime is not None
+
+
 @pytest.mark.asyncio
 async def test_read_tool_returns_structured_image_content(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
