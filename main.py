@@ -24,7 +24,7 @@ from auraeve.webui.chat_service import ChatService
 from auraeve.webui.config_service import ConfigService
 from auraeve.webui.server import WebUIServer
 from auraeve.stt import build_runtime_from_config
-from auraeve.media_understanding import build_media_runtime_from_config
+from auraeve.llm.model_registry import ModelRegistry
 from auraeve.runtime_bootstrap import bootstrap_workspace_from_template
 from auraeve.memory_lifecycle import MemoryLifecycleService
 from auraeve.runtime_hot_reload import (
@@ -51,12 +51,13 @@ class _OpenAIEmbedder:
 def _build_provider():
     """Build OpenAI-compatible provider from loaded config values."""
     from auraeve.providers.openai_provider import OpenAICompatibleProvider
+    primary = ModelRegistry(list(cfg.export_config(mask_sensitive=False).get("LLM_MODELS") or [])).primary()
 
     return OpenAICompatibleProvider(
-        api_key=cfg.LLM_API_KEY,
-        api_base=cfg.LLM_API_BASE or None,
-        default_model=cfg.LLM_MODEL,
-        extra_headers=cfg.LLM_EXTRA_HEADERS or {},
+        api_key=primary.api_key,
+        api_base=primary.api_base,
+        default_model=primary.model,
+        extra_headers=primary.extra_headers,
     )
 
 
@@ -113,13 +114,8 @@ async def main(terminal_mode: bool = False) -> None:
     # 消息分发
     bus = OutboundDispatcher()
     provider = _build_provider()
+    primary_model = ModelRegistry(list(cfg.export_config(mask_sensitive=False).get("LLM_MODELS") or [])).primary()
     stt_runtime = build_runtime_from_config(cfg.export_config(mask_sensitive=False))
-    media_runtime = build_media_runtime_from_config(
-        config=cfg.export_config(mask_sensitive=False),
-        workspace=workspace,
-        stt_runtime=stt_runtime,
-        llm_provider=provider,
-    )
     execution_workspace = str(workspace.expanduser().resolve())
 
     # memory
@@ -128,7 +124,7 @@ async def main(terminal_mode: bool = False) -> None:
     if engine_type == "vector":
         from auraeve.agent.engines.vector.engine import VectorContextEngine
         embedder = _OpenAIEmbedder(
-            api_key=getattr(cfg, "EMBEDDING_API_KEY", cfg.LLM_API_KEY),
+            api_key=getattr(cfg, "EMBEDDING_API_KEY", primary_model.api_key),
             api_base=getattr(cfg, "EMBEDDING_API_BASE", None),
             model=getattr(cfg, "EMBEDDING_MODEL", "text-embedding-3-small"),
         )
@@ -189,13 +185,12 @@ async def main(terminal_mode: bool = False) -> None:
     agent = RuntimeKernel(
         bus=bus,
         provider=provider,
-        media_runtime=media_runtime,
         workspace=workspace,
         sessions_dir=sessions_dir,
         engine=engine,
-        model=cfg.LLM_MODEL,
-        temperature=cfg.LLM_TEMPERATURE,
-        max_tokens=cfg.LLM_MAX_TOKENS,
+        model=primary_model.model,
+        temperature=primary_model.temperature,
+        max_tokens=primary_model.max_tokens,
         max_iterations=cfg.LLM_MAX_TOOL_ITERATIONS,
         runtime_execution=getattr(cfg, "RUNTIME_EXECUTION", None),
         runtime_loop_guard=getattr(cfg, "RUNTIME_LOOP_GUARD", None),
@@ -206,7 +201,7 @@ async def main(terminal_mode: bool = False) -> None:
         cron_service=cron_service,
         channel_users=getattr(cfg, "CHANNEL_USERS", {}),
         notify_channel=getattr(cfg, "NOTIFY_CHANNEL", ""),
-        thinking_budget_tokens=getattr(cfg, "LLM_THINKING_BUDGET_TOKENS", 0) or None,
+        thinking_budget_tokens=primary_model.thinking_budget_tokens or None,
         plugin_registry=plugin_registry,
         token_budget=getattr(cfg, "TOKEN_BUDGET", 120_000),
         global_deny_tools=set(getattr(cfg, "GLOBAL_DENY_TOOLS", []) or []),
@@ -217,7 +212,7 @@ async def main(terminal_mode: bool = False) -> None:
         memory_lifecycle=MemoryLifecycleService(
             workspace=workspace,
             provider=provider,
-            model=cfg.LLM_MODEL,
+            model=primary_model.model,
             timezone=os.getenv("AURAEVE_TIMEZONE") or os.getenv("TZ") or "Asia/Shanghai",
             on_memory_file_changed=memory_file_change_notifier,
         ),
@@ -289,7 +284,6 @@ async def main(terminal_mode: bool = False) -> None:
             agent=agent,
             heartbeat=heartbeat,
             stt_runtime=stt_runtime,
-            media_runtime=media_runtime,
             engine=engine,
             workspace=workspace,
             plugin_registry=plugin_registry,
@@ -375,8 +369,8 @@ async def main(terminal_mode: bool = False) -> None:
         except NotImplementedError:
             pass
 
-    logger.info(f"    : {cfg.LLM_MODEL}")
-    logger.info(f"API     : {cfg.LLM_API_BASE or ' (OpenAI)'}")
+    logger.info(f"    : {primary_model.model}")
+    logger.info(f"API     : {primary_model.api_base or ' (OpenAI)'}")
     logger.info(f"? : {workspace}")
     logger.info(f": {sessions_dir}")
 

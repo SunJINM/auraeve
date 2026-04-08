@@ -24,7 +24,6 @@ from auraeve.agent.engines.base import ContextEngine
 from auraeve.agent.legacy_todo_state import extract_latest_todos
 from auraeve.agent.tools.registry import ToolRegistry
 from auraeve.agent.tools.message import MessageTool
-from auraeve.agent.tools.media_understand import MediaUnderstandTool
 from auraeve.agent.tools.agent_tool import AgentTool
 from auraeve.agent.tools.cron import CronTool
 from auraeve.agent.tools.plan import TodoTool
@@ -45,7 +44,6 @@ from .tool_policy.engine import ToolPolicyEngine
 
 if TYPE_CHECKING:
     from auraeve.cron.service import CronService
-    from auraeve.media_understanding.runtime import MediaUnderstandingRuntime
     from auraeve.memory_lifecycle import MemoryLifecycleService
 
 
@@ -58,7 +56,6 @@ class RuntimeKernel:
         self,
         bus: OutboundDispatcher,
         provider: LLMProvider,
-        media_runtime: "MediaUnderstandingRuntime | None",
         workspace: Path,
         sessions_dir: Path,
         engine: ContextEngine,
@@ -87,7 +84,6 @@ class RuntimeKernel:
     ) -> None:
         self.bus = bus
         self.provider = provider
-        self._media_runtime = media_runtime
         self.workspace = workspace
         self.engine = engine
         self.model = model or provider.get_default_model()
@@ -162,7 +158,6 @@ class RuntimeKernel:
                 thread_id=f"sub:{task.task_id}",
                 engine=self.engine,
                 execution_workspace=task.worktree_path or self._execution_workspace,
-                media_runtime=self._media_runtime,
                 task_mode="legacy_todo",
                 task_session_key=f"sub:{task.task_id}",
                 task_base_dir=self._task_base_dir,
@@ -345,7 +340,6 @@ class RuntimeKernel:
             cron_service=self.cron_service,
             engine=self.engine,
             execution_workspace=self._execution_workspace,
-            media_runtime=self._media_runtime,
             task_mode="none",
             task_base_dir=self._task_base_dir,
         )
@@ -422,22 +416,6 @@ class RuntimeKernel:
         todo_tool = tools.get("todo")
         if todo_tool is not None and isinstance(todo_tool, TodoTool):
             todo_tool.set_thread_id(thread_id)
-
-    def _set_media_understand_context(
-        self,
-        tools: ToolRegistry,
-        *,
-        content: str,
-        media: list[str] | None,
-        attachments,
-    ) -> None:
-        media_tool = tools.get("media_understand")
-        if media_tool is not None and isinstance(media_tool, MediaUnderstandTool):
-            media_tool.set_context(
-                content=content,
-                media=media,
-                attachments=attachments,
-            )
 
     def _resolve_runtime_tools(self, channel: str, chat_id: str, thread_id: str) -> ToolRegistry:
         base_tools = getattr(self, "tools", None)
@@ -579,31 +557,7 @@ class RuntimeKernel:
 
         current_message = content
 
-        extracted_attachments = None
-        if self._media_runtime is not None:
-            try:
-                media_result = await self._media_runtime.preprocess_inbound(
-                    content=current_message,
-                    model=self.model,
-                    media=media if media else None,
-                    attachments=attachments if attachments else None,
-                )
-                current_message = media_result.content
-                media = list(media_result.media or [])
-                if media_result.attachments is not None:
-                    extracted_attachments = list(media_result.attachments)
-            except Exception as exc:
-                logger.warning(f"[media] 预处理失败，已回退原始流程: {exc}")
-                extracted_attachments = await self._extract_attachments_legacy(attachments)
-        else:
-            extracted_attachments = await self._extract_attachments_legacy(attachments)
-
-        self._set_media_understand_context(
-            runtime_tools,
-            content=current_message,
-            media=media if media else None,
-            attachments=attachments if attachments else None,
-        )
+        extracted_attachments = await self._extract_attachments_legacy(attachments)
 
         # PromptAssembler (includes before_prompt_build hook)
         runtime_instruction = build_task_runtime_instruction(

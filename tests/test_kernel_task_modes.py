@@ -47,9 +47,7 @@ def test_resolve_runtime_tools_uses_legacy_todo_for_non_interactive_channel(tmp_
 @pytest.mark.asyncio
 async def test_process_message_uses_runtime_tool_registry_without_plan_injection(tmp_path: Path) -> None:
     kernel = object.__new__(RuntimeKernel)
-    kernel._media_runtime = None
     kernel._plan = MagicMock()
-    kernel._set_media_understand_context = MagicMock()
     kernel._extract_attachments_legacy = AsyncMock(return_value=None)
     kernel._inject_plan_into_messages = MagicMock(side_effect=AssertionError("should not inject plan"))
     kernel._sanitize_assistant_output = RuntimeKernel._sanitize_assistant_output
@@ -100,9 +98,7 @@ async def test_process_message_uses_runtime_tool_registry_without_plan_injection
 @pytest.mark.asyncio
 async def test_process_message_persists_tool_transcript_messages(tmp_path: Path) -> None:
     kernel = object.__new__(RuntimeKernel)
-    kernel._media_runtime = None
     kernel._plan = MagicMock()
-    kernel._set_media_understand_context = MagicMock()
     kernel._extract_attachments_legacy = AsyncMock(return_value=None)
     kernel._sanitize_assistant_output = RuntimeKernel._sanitize_assistant_output
     kernel.sessions = SessionManager(tmp_path / "sessions")

@@ -25,10 +25,8 @@ def test_sanitize_exact_heartbeat_becomes_none() -> None:
 @pytest.mark.asyncio
 async def test_prompt_message_does_not_silently_drop_control_token(tmp_path: Path) -> None:
     kernel = object.__new__(RuntimeKernel)
-    kernel._media_runtime = None
     kernel._plan = MagicMock()
     kernel._set_tool_context = MagicMock()
-    kernel._set_media_understand_context = MagicMock()
     kernel._extract_attachments_legacy = AsyncMock(return_value=None)
     kernel._sanitize_assistant_output = RuntimeKernel._sanitize_assistant_output
     kernel.sessions = MagicMock()
@@ -79,10 +77,8 @@ async def test_prompt_message_does_not_silently_drop_control_token(tmp_path: Pat
 @pytest.mark.asyncio
 async def test_heartbeat_meta_event_can_stay_silent(tmp_path: Path) -> None:
     kernel = object.__new__(RuntimeKernel)
-    kernel._media_runtime = None
     kernel._plan = MagicMock()
     kernel._set_tool_context = MagicMock()
-    kernel._set_media_understand_context = MagicMock()
     kernel._extract_attachments_legacy = AsyncMock(return_value=None)
     kernel._sanitize_assistant_output = RuntimeKernel._sanitize_assistant_output
     kernel.sessions = MagicMock()
