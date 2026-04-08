@@ -271,3 +271,13 @@ class OpenAICompatibleProvider(LLMProvider):
         except Exception as e:
             logger.error(f"音频转录失败：{e}")
             return None
+
+
+def build_openai_provider_from_model_card(card: dict[str, Any]) -> OpenAICompatibleProvider:
+    api_base = card.get("apiBase")
+    return OpenAICompatibleProvider(
+        api_key=str(card.get("apiKey") or ""),
+        api_base=api_base.strip() if isinstance(api_base, str) and api_base.strip() else None,
+        default_model=str(card.get("model") or ""),
+        extra_headers=dict(card.get("extraHeaders") or {}),
+    )

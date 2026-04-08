@@ -153,12 +153,89 @@ def test_build_tool_registry_registers_read_write_without_legacy_names(
     assert registry.has("pdf") is False
 
 
+def test_build_stt_runtime_reads_new_asr_config_shape() -> None:
+    from auraeve.stt.runtime import build_stt_runtime_from_config
+
+    runtime = build_stt_runtime_from_config(
+        {
+            "ASR": {
+                "enabled": True,
+                "defaultLanguage": "zh-CN",
+                "timeoutMs": 15000,
+                "maxConcurrency": 4,
+                "retryCount": 1,
+                "failoverEnabled": True,
+                "cacheEnabled": True,
+                "cacheTtlSeconds": 600,
+                "providers": [
+                    {
+                        "id": "openai",
+                        "enabled": True,
+                        "priority": 100,
+                        "type": "openai",
+                        "model": "gpt-4o-mini-transcribe",
+                        "apiBase": "",
+                        "apiKey": "",
+                        "formats": ["wav"],
+                        "timeoutMs": 15000,
+                    }
+                ],
+            }
+        }
+    )
+
+    assert runtime is not None
+
+
 @pytest.mark.asyncio
 async def test_read_tool_returns_structured_image_content(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     image_path = tmp_path / "demo.png"
     image_path.write_bytes(b"fake")
+    monkeypatch.setattr(
+        "auraeve.agent.tools.filesystem.cfg.export_config",
+        lambda mask_sensitive=False: {
+            "LLM_MODELS": [
+                {
+                    "id": "main",
+                    "label": "Main",
+                    "enabled": True,
+                    "isPrimary": True,
+                    "model": "gpt-4o-mini",
+                    "apiBase": None,
+                    "apiKey": "test-key",
+                    "extraHeaders": {},
+                    "maxTokens": 4096,
+                    "temperature": 0.2,
+                    "thinkingBudgetTokens": 0,
+                    "capabilities": {
+                        "imageInput": True,
+                        "audioInput": False,
+                        "documentInput": True,
+                        "toolCalling": True,
+                        "streaming": True,
+                    },
+                }
+            ],
+            "READ_ROUTING": {
+                "imageFallbackEnabled": True,
+                "failWhenNoImageModel": True,
+                "imageToTextPrompt": "describe image",
+            },
+            "ASR": {
+                "enabled": True,
+                "defaultLanguage": "zh-CN",
+                "timeoutMs": 15000,
+                "maxConcurrency": 4,
+                "retryCount": 1,
+                "failoverEnabled": True,
+                "cacheEnabled": True,
+                "cacheTtlSeconds": 600,
+                "providers": [],
+            },
+        },
+    )
 
     async def _fake_image_reader(_path: str):
         return ToolExecutionResult(
@@ -184,6 +261,27 @@ async def test_read_tool_returns_structured_image_content(
     assert isinstance(result, ToolExecutionResult)
     assert result.data["type"] == "image"
     assert result.extra_messages[0]["content"][1]["type"] == "image_url"
+
+
+@pytest.mark.asyncio
+async def test_read_tool_returns_image_text_when_router_converts_image(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    image_path = tmp_path / "chart.png"
+    image_path.write_bytes(b"\x89PNG\r\n\x1a\nfake")
+
+    class _FakeRouter:
+        async def read_file(self, file_path: str, **kwargs: object) -> ToolExecutionResult:
+            return ToolExecutionResult(
+                content="summary: chart",
+                data={"type": "image_text", "filePath": file_path},
+            )
+
+    monkeypatch.setattr("auraeve.agent.tools.filesystem.ReadRouter", lambda **kwargs: _FakeRouter())
+    tool = ReadTool(allowed_dir=tmp_path)
+    result = await tool.execute(file_path=str(image_path.resolve()))
+    assert result.data["type"] == "image_text"
+    assert result.content == "summary: chart"
 
 
 @pytest.mark.asyncio

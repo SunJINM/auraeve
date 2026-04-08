@@ -157,7 +157,11 @@ def _normalize_provider_profile(raw: Any) -> ProviderProfile | None:
 
 
 def runtime_config_from_dict(config: dict[str, Any]) -> RuntimeConfig:
-    providers_raw = config.get("STT_PROVIDERS") or []
+    asr = config.get("ASR") or {}
+    if not isinstance(asr, dict):
+        asr = {}
+
+    providers_raw = asr.get("providers") or []
     providers: list[ProviderProfile] = []
     if isinstance(providers_raw, list):
         for item in providers_raw:
@@ -166,20 +170,24 @@ def runtime_config_from_dict(config: dict[str, Any]) -> RuntimeConfig:
                 providers.append(profile)
 
     return RuntimeConfig(
-        enabled=bool(config.get("STT_ENABLED", True)),
-        default_language=str(config.get("STT_DEFAULT_LANGUAGE") or "zh-CN"),
-        timeout_ms=int(config.get("STT_TIMEOUT_MS", 15000)),
-        max_concurrency=int(config.get("STT_MAX_CONCURRENCY", 4)),
-        retry_count=int(config.get("STT_RETRY_COUNT", 1)),
-        failover_enabled=bool(config.get("STT_FAILOVER_ENABLED", True)),
-        cache_enabled=bool(config.get("STT_CACHE_ENABLED", True)),
-        cache_ttl_s=int(config.get("STT_CACHE_TTL_S", 600)),
+        enabled=bool(asr.get("enabled", True)),
+        default_language=str(asr.get("defaultLanguage") or "zh-CN"),
+        timeout_ms=int(asr.get("timeoutMs", 15000)),
+        max_concurrency=int(asr.get("maxConcurrency", 4)),
+        retry_count=int(asr.get("retryCount", 1)),
+        failover_enabled=bool(asr.get("failoverEnabled", True)),
+        cache_enabled=bool(asr.get("cacheEnabled", True)),
+        cache_ttl_s=int(asr.get("cacheTtlSeconds", 600)),
         providers=providers,
     )
 
 
-def build_runtime_from_config(config: dict[str, Any] | None = None) -> STTRuntime:
+def build_stt_runtime_from_config(config: dict[str, Any] | None = None) -> STTRuntime:
     payload = dict(config or cfg.export_config(mask_sensitive=False))
     runtime_config = runtime_config_from_dict(payload)
     return STTRuntime(runtime_config=runtime_config)
+
+
+def build_runtime_from_config(config: dict[str, Any] | None = None) -> STTRuntime:
+    return build_stt_runtime_from_config(config)
 

@@ -33,17 +33,8 @@ CHANNEL_KEYS = {
     "NOTIFY_CHANNEL",
 }
 STT_KEYS = {
-    "STT_ENABLED",
-    "STT_DEFAULT_LANGUAGE",
-    "STT_TIMEOUT_MS",
-    "STT_MAX_CONCURRENCY",
-    "STT_RETRY_COUNT",
-    "STT_FAILOVER_ENABLED",
-    "STT_CACHE_ENABLED",
-    "STT_CACHE_TTL_S",
-    "STT_PROVIDERS",
+    "ASR",
 }
-MEDIA_KEYS = {"MEDIA_UNDERSTANDING"}
 PLUGIN_KEYS = {
     "PLUGINS_AUTO_DISCOVERY_ENABLED",
     "PLUGINS_ENABLED",
@@ -86,7 +77,6 @@ class RuntimeHotApplyService:
         agent,
         heartbeat,
         stt_runtime,
-        media_runtime,
         engine,
         workspace,
         plugin_registry,
@@ -100,7 +90,6 @@ class RuntimeHotApplyService:
         self.agent = agent
         self.heartbeat = heartbeat
         self.stt_runtime = stt_runtime
-        self.media_runtime = media_runtime
         self.engine = engine
         self.workspace = workspace
         self.plugin_registry = plugin_registry
@@ -161,16 +150,6 @@ class RuntimeHotApplyService:
                 restart.update(stt_patch_keys)
                 issues.append({"code": "stt_hot_reload_failed", "message": str(exc)})
             remaining -= stt_patch_keys
-
-        media_patch_keys = {key for key in remaining if key in MEDIA_KEYS}
-        if media_patch_keys:
-            try:
-                self.media_runtime.reload_config(self.export_config())
-                applied.update(media_patch_keys)
-            except Exception as exc:
-                restart.update(media_patch_keys)
-                issues.append({"code": "media_hot_reload_failed", "message": str(exc)})
-            remaining -= media_patch_keys
 
         await self._apply_channel_changes(new_config, remaining, applied, restart, issues)
         remaining -= {key for key in remaining if key in CHANNEL_KEYS}

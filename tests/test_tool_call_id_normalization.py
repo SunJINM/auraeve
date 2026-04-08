@@ -4,11 +4,29 @@ import pytest
 
 import auraeve.config  # noqa: F401
 
+from auraeve.agent.tools.assembler import build_tool_registry
 from auraeve.agent.tools.base import ToolExecutionResult
 from auraeve.agent.engines.vector.compaction import compact_messages
 from auraeve.session.manager import Session
 from auraeve.agent_runtime.session_attempt import SessionAttemptRunner
 from auraeve.providers.base import LLMResponse, ToolCallRequest, normalize_tool_call_ids_in_messages
+
+
+def test_build_tool_registry_no_longer_registers_media_understand(tmp_path) -> None:
+    registry = build_tool_registry(
+        profile="main",
+        workspace=tmp_path,
+        restrict_to_workspace=False,
+        exec_timeout=5,
+        brave_api_key=None,
+        bus_publish_outbound=AsyncMock(),
+        provider=MagicMock(),
+        model="test-model",
+        plan_manager=MagicMock(),
+        task_mode="none",
+    )
+
+    assert registry.has("media_understand") is False
 
 
 def test_normalize_tool_call_ids_in_messages_repairs_empty_ids() -> None:

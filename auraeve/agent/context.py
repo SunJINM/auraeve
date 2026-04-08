@@ -18,10 +18,16 @@ from pathlib import Path
 from typing import Any
 
 from auraeve.agent.skills import SkillsLoader
+from auraeve.llm.model_registry import ModelRegistry
 
 # ── 全局令牌常量（在 loop.py 中消费） ────────────────────────────────────────
 SILENT_REPLY_TOKEN = "__SILENT__"
 HEARTBEAT_OK = "HEARTBEAT_OK"
+
+
+def _resolve_primary_model_name(config: dict[str, Any]) -> str:
+    registry = ModelRegistry(list(config.get("LLM_MODELS") or []))
+    return registry.primary().model
 
 
 class ContextBuilder:

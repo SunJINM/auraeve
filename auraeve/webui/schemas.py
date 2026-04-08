@@ -157,6 +157,7 @@ class ChatConsoleSnapshotResponse(BaseModel):
 
 
 class ConfigGetResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     config: dict[str, Any]
     baseHash: str
     valid: bool = True

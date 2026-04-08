@@ -6,14 +6,19 @@ import time
 from pathlib import Path
 from typing import Any
 
+import auraeve.config as cfg
 from auraeve.agent.tools import file_read_support
 from auraeve.agent.tools import file_edit_support
+from auraeve.agent.tools.image_to_text_service import ImageToTextService
+from auraeve.agent.tools.read_router import ReadRouter
 from auraeve.agent.tools.base import Tool, ToolExecutionResult
 from auraeve.agent_runtime.tool_runtime_context import (
     FileReadSnapshot,
     get_current_tool_runtime_context,
 )
 from auraeve.execution.dispatcher import ExecutionDispatcher
+from auraeve.llm.model_registry import ModelRegistry
+from auraeve.stt.runtime import build_runtime_from_config
 
 
 class _FsToolBase(Tool):
@@ -108,13 +113,7 @@ class ReadTool(_FsToolBase):
             raw_text_for_state: str | None = None
             encoding: str | None = None
             line_endings: str | None = None
-            if suffix in file_read_support.IMAGE_SUFFIXES:
-                result = await file_read_support.read_image_file(str(resolved))
-                content_type = "image"
-            elif suffix == ".pdf":
-                result = await file_read_support.read_pdf_file(str(resolved), normalized_pages)
-                content_type = "pdf"
-            elif suffix == ".ipynb":
+            if suffix == ".ipynb":
                 result = file_read_support.read_notebook_file(str(resolved))
                 content_type = "notebook"
                 notebook_meta = file_edit_support.read_text_file_with_metadata(str(resolved))
@@ -122,24 +121,28 @@ class ReadTool(_FsToolBase):
                 encoding = notebook_meta.encoding
                 line_endings = notebook_meta.line_endings
             else:
-                text_meta = file_edit_support.read_text_file_with_metadata(str(resolved))
-                raw_text_for_state = text_meta.content
-                encoding = text_meta.encoding
-                line_endings = text_meta.line_endings
-                rendered = file_read_support.format_text_with_line_numbers(
-                    raw_text_for_state,
-                    normalized_offset,
-                    normalized_limit,
+                if suffix not in file_read_support.IMAGE_SUFFIXES and suffix not in file_read_support.AUDIO_SUFFIXES and suffix != ".pdf":
+                    text_meta = file_edit_support.read_text_file_with_metadata(str(resolved))
+                    raw_text_for_state = text_meta.content
+                    encoding = text_meta.encoding
+                    line_endings = text_meta.line_endings
+
+                config = cfg.export_config(mask_sensitive=False)
+                router = ReadRouter(
+                    model_registry=ModelRegistry(list(config.get("LLM_MODELS") or [])),
+                    image_to_text_service=ImageToTextService(
+                        prompt=str((config.get("READ_ROUTING") or {}).get("imageToTextPrompt") or "")
+                    ),
+                    asr_runtime=build_runtime_from_config(config),
+                    read_routing=dict(config.get("READ_ROUTING") or {}),
                 )
-                result = ToolExecutionResult(
-                    content=rendered,
-                    data={
-                        "type": "text",
-                        "filePath": str(resolved),
-                        "offset": normalized_offset,
-                        "limit": normalized_limit,
-                    },
+                result = await router.read_file(
+                    str(resolved),
+                    offset=normalized_offset,
+                    limit=normalized_limit,
+                    pages=normalized_pages,
                 )
+                content_type = str((result.data or {}).get("type") or "text")
 
             if ctx is not None and not str(result.content).startswith("Error:"):
                 ctx.file_reads.record(

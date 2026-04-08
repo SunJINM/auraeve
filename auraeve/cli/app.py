@@ -40,6 +40,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 import main as runtime_main
+from auraeve.llm.model_registry import ModelRegistry
 
 app = typer.Typer(
     name="auraeve",
@@ -90,10 +91,24 @@ def _print_json(payload: Any) -> None:
 
 def _required_config_issues(snapshot: cfg.ConfigSnapshot) -> list[dict[str, str]]:
     issues: list[dict[str, str]] = []
-    for key in ("LLM_API_KEY",):
-        value = snapshot.config.get(key)
+    models = snapshot.config.get("LLM_MODELS")
+    if not isinstance(models, list) or not models:
+        issues.append({"path": "LLM_MODELS", "message": "primary model is not configured"})
+        return issues
+    try:
+        primary = ModelRegistry(list(models)).primary()
+    except ValueError:
+        issues.append({"path": "LLM_MODELS", "message": "primary model is not configured"})
+        return issues
+    for idx, item in enumerate(models):
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("id") or "") != primary.id:
+            continue
+        value = item.get("apiKey")
         if not isinstance(value, str) or not value.strip():
-            issues.append({"path": key, "message": "required value is empty"})
+            issues.append({"path": f"LLM_MODELS[{idx}].apiKey", "message": "required value is empty"})
+        break
     return issues
 
 
@@ -107,7 +122,7 @@ def _ensure_runtime_ready() -> cfg.ConfigSnapshot:
             print("Please fill required config values and restart:")
             for issue in required_issues:
                 print(f"- {issue.get('path')}: {issue.get('message')}")
-            print('Tip: auraeve config set LLM_API_KEY "<your-key>"')
+            print("Tip: update the primary model apiKey in LLM_MODELS")
         raise typer.Exit(code=1)
     if not snapshot.valid:
         print(f"Config invalid: {snapshot.path}")
@@ -126,7 +141,7 @@ def _ensure_runtime_for_run() -> None:
         print("Please fill required config values and restart:")
         for issue in required_issues:
             print(f"- {issue.get('path')}: {issue.get('message')}")
-        print('Tip: auraeve config set LLM_API_KEY "<your-key>"')
+        print("Tip: update the primary model apiKey in LLM_MODELS")
         raise typer.Exit(code=1)
 
 

@@ -11,6 +11,7 @@ from typing import Any
 from .defaults import DEFAULTS, SENSITIVE_KEYS
 from .env_substitution import substitute_env
 from .includes import resolve_includes
+from .legacy import migrate_legacy_config_object
 from .paths import (
     resolve_config_path,
 )
@@ -171,6 +172,8 @@ def read_config_snapshot() -> ConfigSnapshot:
         resolved = substitute_env(resolved_includes, warnings)
         if not isinstance(resolved, dict):
             raise ValueError("resolved config must be object")
+        resolved, migration_notes = migrate_legacy_config_object(resolved)
+        warnings.extend({"path": "legacy", "message": note} for note in migration_notes)
         valid, issues = validate_config_object(resolved)
         config = normalize_config_object(resolved if valid else {})
         return ConfigSnapshot(
