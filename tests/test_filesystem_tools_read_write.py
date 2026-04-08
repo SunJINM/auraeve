@@ -193,6 +193,49 @@ async def test_read_tool_returns_structured_image_content(
 ) -> None:
     image_path = tmp_path / "demo.png"
     image_path.write_bytes(b"fake")
+    monkeypatch.setattr(
+        "auraeve.agent.tools.filesystem.cfg.export_config",
+        lambda mask_sensitive=False: {
+            "LLM_MODELS": [
+                {
+                    "id": "main",
+                    "label": "Main",
+                    "enabled": True,
+                    "isPrimary": True,
+                    "model": "gpt-4o-mini",
+                    "apiBase": None,
+                    "apiKey": "test-key",
+                    "extraHeaders": {},
+                    "maxTokens": 4096,
+                    "temperature": 0.2,
+                    "thinkingBudgetTokens": 0,
+                    "capabilities": {
+                        "imageInput": True,
+                        "audioInput": False,
+                        "documentInput": True,
+                        "toolCalling": True,
+                        "streaming": True,
+                    },
+                }
+            ],
+            "READ_ROUTING": {
+                "imageFallbackEnabled": True,
+                "failWhenNoImageModel": True,
+                "imageToTextPrompt": "describe image",
+            },
+            "ASR": {
+                "enabled": True,
+                "defaultLanguage": "zh-CN",
+                "timeoutMs": 15000,
+                "maxConcurrency": 4,
+                "retryCount": 1,
+                "failoverEnabled": True,
+                "cacheEnabled": True,
+                "cacheTtlSeconds": 600,
+                "providers": [],
+            },
+        },
+    )
 
     async def _fake_image_reader(_path: str):
         return ToolExecutionResult(
