@@ -30,6 +30,32 @@ def _serialize(value: Any) -> Any:
     return value
 
 
+def _mask_model_secrets(config: dict[str, Any]) -> dict[str, Any]:
+    payload = dict(config)
+    models = []
+    for item in payload.get("LLM_MODELS") or []:
+        if not isinstance(item, dict):
+            continue
+        model = dict(item)
+        if isinstance(model.get("apiKey"), str) and model.get("apiKey"):
+            model["apiKey"] = "********"
+        models.append(model)
+    payload["LLM_MODELS"] = models
+
+    asr = payload.get("ASR")
+    if isinstance(asr, dict):
+        providers = []
+        for item in asr.get("providers") or []:
+            if not isinstance(item, dict):
+                continue
+            provider = dict(item)
+            if isinstance(provider.get("apiKey"), str) and provider.get("apiKey"):
+                provider["apiKey"] = "********"
+            providers.append(provider)
+        payload["ASR"] = {**asr, "providers": providers}
+    return payload
+
+
 class ConfigService:
     def __init__(
         self,
@@ -45,7 +71,17 @@ class ConfigService:
     def get(self) -> ConfigGetResponse:
         snapshot = cfg.read_snapshot()
         payload = cfg.export_config(mask_sensitive=True)
-        data = {k: _serialize(v) for k, v in payload.items() if k.isupper()}
+        payload = _mask_model_secrets(payload)
+        data = {
+            "LLM_MODELS": _serialize(payload.get("LLM_MODELS") or []),
+            "READ_ROUTING": _serialize(payload.get("READ_ROUTING") or {}),
+            "ASR": _serialize(payload.get("ASR") or {}),
+            **{
+                k: _serialize(v)
+                for k, v in payload.items()
+                if k.isupper() and k not in {"LLM_MODELS", "READ_ROUTING", "ASR"}
+            },
+        }
         return ConfigGetResponse(
             config=data,
             baseHash=snapshot.base_hash,
@@ -157,6 +193,32 @@ class ConfigService:
     def _sanitize_patch(self, patch: dict[str, Any]) -> dict[str, Any]:
         out: dict[str, Any] = {}
         for key, value in patch.items():
+            if key == "LLM_MODELS" and isinstance(value, list):
+                sanitized_models = []
+                for item in value:
+                    if not isinstance(item, dict):
+                        continue
+                    model = dict(item)
+                    api_key = model.get("apiKey")
+                    if isinstance(api_key, str) and (not api_key.strip() or set(api_key.strip()) == {"*"}):
+                        model.pop("apiKey", None)
+                    sanitized_models.append(model)
+                out[key] = sanitized_models
+                continue
+            if key == "ASR" and isinstance(value, dict):
+                asr = dict(value)
+                providers = []
+                for item in asr.get("providers") or []:
+                    if not isinstance(item, dict):
+                        continue
+                    provider = dict(item)
+                    api_key = provider.get("apiKey")
+                    if isinstance(api_key, str) and (not api_key.strip() or set(api_key.strip()) == {"*"}):
+                        provider.pop("apiKey", None)
+                    providers.append(provider)
+                asr["providers"] = providers
+                out[key] = asr
+                continue
             if key in SENSITIVE_KEYS and isinstance(value, str):
                 trimmed = value.strip()
                 if trimmed == "" or set(trimmed) == {"*"}:

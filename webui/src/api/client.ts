@@ -230,7 +230,7 @@ export interface ConfigGetResp {
   config: Record<string, unknown>
   baseHash: string
   valid: boolean
-  issues: { code: string; message: string }[]
+  issues: Array<Record<string, unknown>>
 }
 
 export interface ConfigSchemaField {
