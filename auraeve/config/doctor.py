@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from .defaults import DEFAULTS
+from .legacy import migrate_legacy_config_object
 from .io import read_config_snapshot, write_config
 from .paths import resolve_config_path
 
@@ -73,121 +74,25 @@ def _load_raw_object(path: Path) -> dict[str, Any] | None:
     return payload
 
 
-def _as_str_list(value: Any) -> list[str]:
-    if not isinstance(value, list):
-        return []
-    out: list[str] = []
-    for item in value:
-        if isinstance(item, str):
-            out.append(item)
-    return out
-
-
-def _as_str_map(value: Any) -> dict[str, str]:
-    if not isinstance(value, dict):
-        return {}
-    out: dict[str, str] = {}
-    for k, v in value.items():
-        if isinstance(k, str) and isinstance(v, str):
-            out[k] = v
-    return out
-
-
-def _as_non_empty_str(value: Any) -> str:
-    if not isinstance(value, str):
-        return ""
-    return value.strip()
-
-
-def _migrate_legacy_mcp_keys(raw_obj: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
-    out = dict(raw_obj)
-    notes: list[str] = []
-    has_legacy_servers = "MCP_SERVERS" in out
-    has_legacy_reload = "MCP_HOT_RELOAD_ENABLED" in out
-
-    if not has_legacy_servers and not has_legacy_reload:
-        return out, notes
-
-    legacy_servers = out.get("MCP_SERVERS")
-    legacy_reload = out.get("MCP_HOT_RELOAD_ENABLED")
-
-    if "MCP" not in out:
-        servers: dict[str, Any] = {}
-        if isinstance(legacy_servers, dict):
-            for server_id, cfg in legacy_servers.items():
-                sid = _as_non_empty_str(server_id)
-                if not sid or not isinstance(cfg, dict):
-                    continue
-                transport = _as_non_empty_str(cfg.get("transport")).lower()
-                if transport not in {"stdio", "http"}:
-                    transport = "http" if _as_non_empty_str(cfg.get("url")) else "stdio"
-                command = _as_non_empty_str(cfg.get("command")) or _as_non_empty_str(cfg.get("cmd"))
-                url = _as_non_empty_str(cfg.get("url")) or _as_non_empty_str(cfg.get("endpoint"))
-                server: dict[str, Any] = {
-                    "enabled": bool(cfg.get("enabled", True)),
-                    "transport": transport,
-                    "command": command,
-                    "args": _as_str_list(cfg.get("args")),
-                    "env": _as_str_map(cfg.get("env")),
-                    "url": url,
-                    "headers": _as_str_map(cfg.get("headers")),
-                    "toolPrefix": _as_non_empty_str(cfg.get("toolPrefix")),
-                    "toolAllow": _as_str_list(cfg.get("toolAllow")),
-                    "toolDeny": _as_str_list(cfg.get("toolDeny")),
-                    "retry": {
-                        "maxAttempts": int(cfg.get("retry", {}).get("maxAttempts", 3))
-                        if isinstance(cfg.get("retry"), dict)
-                        and isinstance(cfg.get("retry", {}).get("maxAttempts"), int)
-                        else 3,
-                        "backoffMs": int(cfg.get("retry", {}).get("backoffMs", 500))
-                        if isinstance(cfg.get("retry"), dict)
-                        and isinstance(cfg.get("retry", {}).get("backoffMs"), int)
-                        else 500,
-                    },
-                    "healthcheck": {
-                        "enabled": bool(cfg.get("healthcheck", {}).get("enabled", True))
-                        if isinstance(cfg.get("healthcheck"), dict)
-                        else True,
-                        "intervalSec": int(cfg.get("healthcheck", {}).get("intervalSec", 60))
-                        if isinstance(cfg.get("healthcheck"), dict)
-                        and isinstance(cfg.get("healthcheck", {}).get("intervalSec"), int)
-                        else 60,
-                    },
-                }
-                servers[sid] = server
-
-        reload_policy = "none" if legacy_reload is False else "diff"
-        out["MCP"] = {
-            "enabled": bool(servers),
-            "reloadPolicy": reload_policy,
-            "defaultTimeoutMs": 20000,
-            "servers": servers,
-        }
-        notes.append("migrated legacy MCP_SERVERS/MCP_HOT_RELOAD_ENABLED to MCP")
-
-    if has_legacy_servers:
-        out.pop("MCP_SERVERS", None)
-    if has_legacy_reload:
-        out.pop("MCP_HOT_RELOAD_ENABLED", None)
-        if "MCP" in out and isinstance(out.get("MCP"), dict):
-            mcp_obj = dict(out["MCP"])
-            if "reloadPolicy" not in mcp_obj:
-                mcp_obj["reloadPolicy"] = "none" if legacy_reload is False else "diff"
-                out["MCP"] = mcp_obj
-    notes.append("removed legacy MCP keys: MCP_SERVERS/MCP_HOT_RELOAD_ENABLED")
-    return out, notes
-
-
 def run_config_doctor(*, fix: bool = False) -> dict[str, Any]:
     try:
         snapshot = read_config_snapshot()
-        if snapshot.valid:
+        path = resolve_config_path()
+        raw_obj = _load_raw_object(path)
+        migration_notes: list[str] = []
+        migrated_obj = raw_obj
+        legacy_needs_rewrite = False
+        if isinstance(raw_obj, dict):
+            migrated_obj, migration_notes = migrate_legacy_config_object(raw_obj)
+            legacy_needs_rewrite = migrated_obj != raw_obj
+
+        if snapshot.valid and not (fix and legacy_needs_rewrite):
             return {
                 "ok": True,
                 "fixed": False,
                 "path": str(snapshot.path),
                 "issues": [],
-                "warnings": [*snapshot.warnings],
+                "warnings": [*snapshot.warnings, *({"path": "legacy", "message": n} for n in migration_notes)],
             }
 
         issues = [*snapshot.issues]
@@ -201,8 +106,6 @@ def run_config_doctor(*, fix: bool = False) -> dict[str, Any]:
                 "warnings": warnings,
             }
 
-        path = resolve_config_path()
-        raw_obj = _load_raw_object(path)
         if raw_obj is None:
             # cannot parse, preserve a corrupt copy then reset to defaults
             if path.exists():
@@ -219,11 +122,9 @@ def run_config_doctor(*, fix: bool = False) -> dict[str, Any]:
                 "requiresRestart": requires_restart,
             }
 
-        raw_obj, migration_notes = _migrate_legacy_mcp_keys(raw_obj)
-
         # prune unknown keys; keep META if present
         allowed = set(DEFAULTS.keys()) | {"META"}
-        cleaned = {k: v for k, v in raw_obj.items() if k in allowed}
+        cleaned = {k: v for k, v in (migrated_obj or {}).items() if k in allowed}
         # remove known bad types by falling back to default value
         for issue in issues:
             path_key = issue.get("path", "")
