@@ -109,6 +109,150 @@ def _validate_runtime_loop_guard(
         )
 
 
+_MODEL_CAPABILITY_KEYS = {
+    "imageInput",
+    "audioInput",
+    "documentInput",
+    "toolCalling",
+    "streaming",
+}
+
+_ASR_PROVIDER_TYPES = {"openai", "whisper-cli", "funasr-local"}
+
+
+def _validate_llm_models(
+    value: Any,
+    issues: list[dict[str, str]],
+    path: str = "LLM_MODELS",
+) -> None:
+    if not isinstance(value, list):
+        issues.append({"path": path, "message": f"expected array, got {_type_name(value)}"})
+        return
+
+    if not value:
+        issues.append({"path": path, "message": "expected at least one model"})
+        return
+
+    primary_count = 0
+    for idx, item in enumerate(value):
+        item_path = f"{path}[{idx}]"
+        if not isinstance(item, dict):
+            issues.append({"path": item_path, "message": f"expected object, got {_type_name(item)}"})
+            continue
+
+        for required in ("id", "label", "model", "capabilities"):
+            raw = item.get(required)
+            if required == "capabilities":
+                if not isinstance(raw, dict):
+                    issues.append({"path": f"{item_path}.capabilities", "message": "expected object"})
+                continue
+            if not isinstance(raw, str) or not raw.strip():
+                issues.append({"path": f"{item_path}.{required}", "message": "expected non-empty string"})
+
+        for bool_key in ("enabled", "isPrimary"):
+            if not isinstance(item.get(bool_key), bool):
+                issues.append({"path": f"{item_path}.{bool_key}", "message": "expected boolean"})
+
+        if item.get("isPrimary") is True:
+            primary_count += 1
+
+        if "apiBase" in item and item.get("apiBase") is not None and not isinstance(item.get("apiBase"), str):
+            issues.append({"path": f"{item_path}.apiBase", "message": "expected string|null"})
+        if "apiKey" in item and not isinstance(item.get("apiKey"), str):
+            issues.append({"path": f"{item_path}.apiKey", "message": "expected string"})
+        if "extraHeaders" in item and not isinstance(item.get("extraHeaders"), dict):
+            issues.append({"path": f"{item_path}.extraHeaders", "message": "expected object"})
+        for int_key in ("maxTokens", "thinkingBudgetTokens"):
+            if int_key in item:
+                raw = item.get(int_key)
+                if not isinstance(raw, int) or isinstance(raw, bool) or raw < 0:
+                    issues.append({"path": f"{item_path}.{int_key}", "message": "expected non-negative integer"})
+        if "temperature" in item:
+            raw = item.get("temperature")
+            if not _is_number(raw):
+                issues.append({"path": f"{item_path}.temperature", "message": "expected number"})
+
+        caps = item.get("capabilities")
+        if not isinstance(caps, dict):
+            continue
+        for key, raw in caps.items():
+            if key not in _MODEL_CAPABILITY_KEYS:
+                issues.append({"path": f"{item_path}.capabilities.{key}", "message": "unknown capability"})
+                continue
+            if not isinstance(raw, bool):
+                issues.append({"path": f"{item_path}.capabilities.{key}", "message": "expected boolean"})
+        for key in _MODEL_CAPABILITY_KEYS:
+            if key not in caps:
+                issues.append({"path": f"{item_path}.capabilities.{key}", "message": "value is required"})
+
+    if primary_count != 1:
+        issues.append({"path": path, "message": "expected exactly one primary model"})
+
+
+def _validate_read_routing(
+    value: Any,
+    issues: list[dict[str, str]],
+    path: str = "READ_ROUTING",
+) -> None:
+    if not isinstance(value, dict):
+        issues.append({"path": path, "message": f"expected object, got {_type_name(value)}"})
+        return
+    for key in ("imageFallbackEnabled", "failWhenNoImageModel"):
+        if not isinstance(value.get(key), bool):
+            issues.append({"path": f"{path}.{key}", "message": "expected boolean"})
+    if not isinstance(value.get("imageToTextPrompt"), str):
+        issues.append({"path": f"{path}.imageToTextPrompt", "message": "expected string"})
+
+
+def _validate_asr(
+    value: Any,
+    issues: list[dict[str, str]],
+    path: str = "ASR",
+) -> None:
+    if not isinstance(value, dict):
+        issues.append({"path": path, "message": f"expected object, got {_type_name(value)}"})
+        return
+
+    for key in ("enabled", "failoverEnabled", "cacheEnabled"):
+        if not isinstance(value.get(key), bool):
+            issues.append({"path": f"{path}.{key}", "message": "expected boolean"})
+    if not isinstance(value.get("defaultLanguage"), str):
+        issues.append({"path": f"{path}.defaultLanguage", "message": "expected string"})
+    for key in ("timeoutMs", "maxConcurrency", "retryCount", "cacheTtlSeconds"):
+        raw = value.get(key)
+        if not isinstance(raw, int) or isinstance(raw, bool) or raw < 0:
+            issues.append({"path": f"{path}.{key}", "message": "expected non-negative integer"})
+
+    providers = value.get("providers")
+    if not isinstance(providers, list):
+        issues.append({"path": f"{path}.providers", "message": "expected array"})
+        return
+
+    for idx, item in enumerate(providers):
+        item_path = f"{path}.providers[{idx}]"
+        if not isinstance(item, dict):
+            issues.append({"path": item_path, "message": f"expected object, got {_type_name(item)}"})
+            continue
+        provider_id = item.get("id")
+        if not isinstance(provider_id, str) or not provider_id.strip():
+            issues.append({"path": f"{item_path}.id", "message": "expected non-empty string"})
+        provider_type = item.get("type")
+        if not isinstance(provider_type, str) or provider_type not in _ASR_PROVIDER_TYPES:
+            issues.append(
+                {
+                    "path": f"{item_path}.type",
+                    "message": f"expected one of {sorted(_ASR_PROVIDER_TYPES)}",
+                }
+            )
+        for key in ("enabled",):
+            if key in item and not isinstance(item.get(key), bool):
+                issues.append({"path": f"{item_path}.{key}", "message": "expected boolean"})
+        for key in ("priority", "timeoutMs"):
+            if key in item:
+                raw = item.get(key)
+                if not isinstance(raw, int) or isinstance(raw, bool) or raw < 0:
+                    issues.append({"path": f"{item_path}.{key}", "message": "expected non-negative integer"})
+
 def validate_config_object(raw: dict[str, Any]) -> tuple[bool, list[dict[str, str]]]:
     issues: list[dict[str, str]] = []
     allowed = set(DEFAULTS.keys()) | {"META"}
@@ -231,30 +375,16 @@ def validate_config_object(raw: dict[str, Any]) -> tuple[bool, list[dict[str, st
                         }
                     )
 
-    stt_providers = raw.get("STT_PROVIDERS")
-    if isinstance(stt_providers, list):
-        for idx, item in enumerate(stt_providers):
-            if not isinstance(item, dict):
-                issues.append(
-                    {
-                        "path": f"STT_PROVIDERS[{idx}]",
-                        "message": f"expected object, got {_type_name(item)}",
-                    }
-                )
-                continue
-            provider_id = item.get("id")
-            if not isinstance(provider_id, str) or not provider_id.strip():
-                issues.append(
-                    {
-                        "path": f"STT_PROVIDERS[{idx}].id",
-                        "message": "expected non-empty string",
-                    }
-                )
-
     if "RUNTIME_EXECUTION" in raw:
         _validate_runtime_execution(raw.get("RUNTIME_EXECUTION"), issues)
     if "RUNTIME_LOOP_GUARD" in raw:
         _validate_runtime_loop_guard(raw.get("RUNTIME_LOOP_GUARD"), issues)
+    if "LLM_MODELS" in raw:
+        _validate_llm_models(raw.get("LLM_MODELS"), issues)
+    if "READ_ROUTING" in raw:
+        _validate_read_routing(raw.get("READ_ROUTING"), issues)
+    if "ASR" in raw:
+        _validate_asr(raw.get("ASR"), issues)
     if "MCP" in raw:
         issues.extend(validate_mcp_config(raw.get("MCP")))
 
@@ -312,6 +442,46 @@ def normalize_config_object(raw: dict[str, Any]) -> dict[str, Any]:
         normalized_runtime_loop = dict(runtime_loop_defaults)
         normalized_runtime_loop.update(runtime_loop_guard)
         merged["RUNTIME_LOOP_GUARD"] = normalized_runtime_loop
+
+    read_routing_defaults = DEFAULTS.get("READ_ROUTING", {})
+    read_routing = merged.get("READ_ROUTING")
+    if not isinstance(read_routing, dict):
+        merged["READ_ROUTING"] = dict(read_routing_defaults)
+    else:
+        normalized_read_routing = dict(read_routing_defaults)
+        normalized_read_routing.update(read_routing)
+        merged["READ_ROUTING"] = normalized_read_routing
+
+    asr_defaults = DEFAULTS.get("ASR", {})
+    asr = merged.get("ASR")
+    if not isinstance(asr, dict):
+        merged["ASR"] = dict(asr_defaults)
+    else:
+        normalized_asr = dict(asr_defaults)
+        normalized_asr.update(asr)
+        if not isinstance(normalized_asr.get("providers"), list):
+            normalized_asr["providers"] = list(asr_defaults.get("providers", []))
+        merged["ASR"] = normalized_asr
+
+    llm_models = merged.get("LLM_MODELS")
+    if not isinstance(llm_models, list):
+        merged["LLM_MODELS"] = list(DEFAULTS.get("LLM_MODELS", []))
+    else:
+        normalized_models: list[dict[str, Any]] = []
+        default_model = (DEFAULTS.get("LLM_MODELS") or [{}])[0]
+        default_capabilities = dict(default_model.get("capabilities") or {})
+        for item in llm_models:
+            if not isinstance(item, dict):
+                continue
+            model = dict(default_model)
+            model.update(item)
+            caps = item.get("capabilities")
+            merged_caps = dict(default_capabilities)
+            if isinstance(caps, dict):
+                merged_caps.update(caps)
+            model["capabilities"] = merged_caps
+            normalized_models.append(model)
+        merged["LLM_MODELS"] = normalized_models or list(DEFAULTS.get("LLM_MODELS", []))
     return merged
 
 
@@ -320,17 +490,12 @@ _SCHEMA_GROUPS: list[tuple[str, str, list[str]]] = [
         "llm",
         "模型配置",
         [
-            "LLM_MODEL",
-            "LLM_API_BASE",
-            "LLM_API_KEY",
-            "LLM_EXTRA_HEADERS",
-            "LLM_MAX_TOKENS",
-            "LLM_TEMPERATURE",
+            "LLM_MODELS",
+            "READ_ROUTING",
             "LLM_MAX_TOOL_ITERATIONS",
             "RUNTIME_EXECUTION",
             "RUNTIME_LOOP_GUARD",
             "LLM_MEMORY_WINDOW",
-            "LLM_THINKING_BUDGET_TOKENS",
         ],
     ),
     (
@@ -368,15 +533,7 @@ _SCHEMA_GROUPS: list[tuple[str, str, list[str]]] = [
         "stt",
         "语音转写配置",
         [
-            "STT_ENABLED",
-            "STT_DEFAULT_LANGUAGE",
-            "STT_TIMEOUT_MS",
-            "STT_MAX_CONCURRENCY",
-            "STT_RETRY_COUNT",
-            "STT_FAILOVER_ENABLED",
-            "STT_CACHE_ENABLED",
-            "STT_CACHE_TTL_S",
-            "STT_PROVIDERS",
+            "ASR",
         ],
     ),
     (
@@ -479,14 +636,13 @@ _SCHEMA_GROUPS: list[tuple[str, str, list[str]]] = [
             "RESTRICT_TO_WORKSPACE",
             "GIT_USERNAME",
             "GIT_TOKEN",
-            "MEDIA_UNDERSTANDING",
         ],
     ),
 ]
 
 HOT_KEYS = {
-    "LLM_TEMPERATURE",
-    "LLM_MAX_TOKENS",
+    "LLM_MODELS",
+    "READ_ROUTING",
     "LLM_MAX_TOOL_ITERATIONS",
     "RUNTIME_EXECUTION",
     "RUNTIME_LOOP_GUARD",
@@ -506,16 +662,7 @@ HOT_KEYS = {
     "NAPCAT_ACCESS_TOKEN",
     "NAPCAT_ALLOW_FROM",
     "NAPCAT_ALLOW_GROUPS",
-    "STT_ENABLED",
-    "STT_DEFAULT_LANGUAGE",
-    "STT_TIMEOUT_MS",
-    "STT_MAX_CONCURRENCY",
-    "STT_RETRY_COUNT",
-    "STT_FAILOVER_ENABLED",
-    "STT_CACHE_ENABLED",
-    "STT_CACHE_TTL_S",
-    "STT_PROVIDERS",
-    "MEDIA_UNDERSTANDING",
+    "ASR",
     "CHANNEL_USERS",
     "NOTIFY_CHANNEL",
     "PLUGINS_AUTO_DISCOVERY_ENABLED",
@@ -540,15 +687,10 @@ COLD_KEYS = {key for key in DEFAULTS.keys() if key not in HOT_KEYS}
 
 _LABEL_OVERRIDES = {
     # 模型配置
-    "LLM_MODEL": "模型名称",
-    "LLM_API_BASE": "API 地址",
-    "LLM_API_KEY": "API 密钥",
-    "LLM_EXTRA_HEADERS": "额外请求头",
-    "LLM_MAX_TOKENS": "最大 Token 数",
-    "LLM_TEMPERATURE": "温度",
+    "LLM_MODELS": "模型卡片列表",
+    "READ_ROUTING": "读取路由策略",
     "LLM_MAX_TOOL_ITERATIONS": "工具最大迭代次数",
     "LLM_MEMORY_WINDOW": "记忆窗口",
-    "LLM_THINKING_BUDGET_TOKENS": "思考预算 Token",
     "RUNTIME_EXECUTION": "执行预算与并发",
     "RUNTIME_LOOP_GUARD": "循环防护策略",
     # 运行时配置
@@ -573,15 +715,7 @@ _LABEL_OVERRIDES = {
     "CHANNEL_USERS": "渠道用户映射",
     "NOTIFY_CHANNEL": "通知渠道",
     # 语音转写
-    "STT_ENABLED": "启用语音转写",
-    "STT_DEFAULT_LANGUAGE": "默认语言",
-    "STT_TIMEOUT_MS": "转写超时(ms)",
-    "STT_MAX_CONCURRENCY": "最大并发数",
-    "STT_RETRY_COUNT": "重试次数",
-    "STT_FAILOVER_ENABLED": "故障转移",
-    "STT_CACHE_ENABLED": "启用缓存",
-    "STT_CACHE_TTL_S": "缓存过期(秒)",
-    "STT_PROVIDERS": "转写引擎列表",
+    "ASR": "语音转文本配置",
     # 插件
     "PLUGINS_AUTO_DISCOVERY_ENABLED": "自动发现插件",
     "PLUGINS_ENABLED": "启用插件系统",
@@ -640,20 +774,14 @@ _LABEL_OVERRIDES = {
     "RESTRICT_TO_WORKSPACE": "限制在工作区内",
     "GIT_USERNAME": "Git 用户名",
     "GIT_TOKEN": "Git 令牌",
-    "MEDIA_UNDERSTANDING": "多媒体理解",
 }
 
 _DESCRIPTION_OVERRIDES = {
     # 模型配置
-    "LLM_MODEL": "OpenAI 兼容模型名称，如 gpt-4o-mini、deepseek-chat 等。",
-    "LLM_API_BASE": "模型 API 地址，留空则使用官方默认地址。",
-    "LLM_API_KEY": "模型服务的 API 密钥。",
-    "LLM_EXTRA_HEADERS": "调用模型时附加的 HTTP 请求头（JSON 对象）。",
-    "LLM_MAX_TOKENS": "单次模型调用返回的最大 Token 数量。",
-    "LLM_TEMPERATURE": "生成随机性，值越高回复越多样，范围 0-2。",
+    "LLM_MODELS": "模型配置卡片列表，手动声明主模型与能力标记。",
+    "READ_ROUTING": "Read 工具的图片降级和失败策略（JSON 对象）。",
     "LLM_MAX_TOOL_ITERATIONS": "单轮对话中模型调用工具的最大迭代次数。",
     "LLM_MEMORY_WINDOW": "发送给模型的历史消息条数上限。",
-    "LLM_THINKING_BUDGET_TOKENS": "模型思考链预算 Token 数，0 表示关闭。",
     "RUNTIME_EXECUTION": "运行时执行预算与工具并发策略（JSON 对象）。",
     "RUNTIME_LOOP_GUARD": "循环检测与降速/阻断策略（JSON 对象）。",
     # 运行时配置
@@ -678,15 +806,7 @@ _DESCRIPTION_OVERRIDES = {
     "CHANNEL_USERS": "渠道 ID 到内部用户 ID 的映射关系（JSON 对象）。",
     "NOTIFY_CHANNEL": "系统通知发送的目标渠道标识。",
     # 语音转写
-    "STT_ENABLED": "是否启用语音转文字功能。",
-    "STT_DEFAULT_LANGUAGE": "语音识别的默认语言代码，如 zh-CN。",
-    "STT_TIMEOUT_MS": "单次语音转写的超时时间（毫秒）。",
-    "STT_MAX_CONCURRENCY": "语音转写的最大并发请求数。",
-    "STT_RETRY_COUNT": "转写失败时的重试次数。",
-    "STT_FAILOVER_ENABLED": "某个引擎失败后是否自动切换到下一个。",
-    "STT_CACHE_ENABLED": "是否缓存转写结果以避免重复转写。",
-    "STT_CACHE_TTL_S": "转写缓存的过期时间（秒）。",
-    "STT_PROVIDERS": "语音转写引擎列表，按 priority 从高到低尝试。",
+    "ASR": "语音转文本运行参数与服务列表（JSON 对象）。",
     # 插件
     "PLUGINS_AUTO_DISCOVERY_ENABLED": "是否自动扫描并发现插件目录中的新插件。",
     "PLUGINS_ENABLED": "是否启用插件系统。",
@@ -745,7 +865,6 @@ _DESCRIPTION_OVERRIDES = {
     "RESTRICT_TO_WORKSPACE": "是否限制文件操作只能在工作区目录内执行。",
     "GIT_USERNAME": "Git 操作使用的用户名。",
     "GIT_TOKEN": "Git 操作使用的认证令牌。",
-    "MEDIA_UNDERSTANDING": "多媒体理解配置（图片/音频/视频/文件，JSON 对象）。",
 }
 
 
