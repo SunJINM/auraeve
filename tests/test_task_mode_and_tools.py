@@ -121,9 +121,9 @@ def test_context_builder_uses_read_write_tool_names(tmp_path: Path) -> None:
     assert "- Edit: 精确编辑文件片段" in prompt
     assert "- Bash: 执行 Bash Shell 命令" in prompt
     assert "高风险操作（Bash / Write / Edit / browser）先用一句话说明再执行。" in prompt
-    assert "有专用工具时，优先用专用工具而不是 Bash" in prompt
+    assert "为了高质量完成任务，积极使用最能提升结论质量的工具组合" in prompt
     assert "需要长时间运行且不必立刻读取结果时，使用 run_in_background" in prompt
-    assert "默认优先一次高信息量调用，而不是多次试探性小调用" in prompt
+    assert "每次调用都应明显减少不确定性" in prompt
     assert "若后续可能修改文件，第一次就完整 Read" in prompt
     assert "只有彼此独立、互不依赖的只读工具调用，才应并发发出" in prompt
     assert "依赖前一步结果的调用必须串行执行" in prompt

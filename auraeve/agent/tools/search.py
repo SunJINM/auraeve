@@ -177,10 +177,11 @@ class GrepTool(Tool):
         return (
             "A powerful search tool built on ripgrep.\n\n"
             "Usage:\n"
-            "- ALWAYS use Grep for search tasks. NEVER invoke `grep` or `rg` as a Bash command.\n"
+            "- Use Grep proactively for targeted content search when better evidence will improve the answer.\n"
             "- Supports full regex syntax.\n"
-            "- Filter files with glob or type.\n"
+            "- To improve precision, combine path, glob, type, and output_mode in the first call whenever possible.\n"
             '- Output modes: "content" shows matching lines, "files_with_matches" shows only file paths (default), "count" shows match counts.\n'
+            "- Pair Grep with Read, Glob, and Bash to expand evidence and reduce uncertainty efficiently.\n"
             "- Use agent for open-ended searches requiring multiple rounds.\n"
             "- Use multiline=true for cross-line patterns."
         )
@@ -384,7 +385,8 @@ class GlobTool(Tool):
             "Fast file pattern matching tool that works with any codebase size.\n"
             "- Supports glob patterns like \"**/*.js\" or \"src/**/*.ts\".\n"
             "- Returns matching file paths sorted by modification time.\n"
-            "- Use this tool when you need to find files by name patterns.\n"
+            "- Use it proactively to shrink the candidate file set quickly.\n"
+            "- pair it with Read or Grep after the candidate set is small enough.\n"
             "- When you are doing an open ended search that may require multiple rounds of globbing and grepping, use the agent tool instead."
         )
 

@@ -33,13 +33,13 @@ class BashTool(Tool):
     @property
     def description(self) -> str:
         return (
-            "Executes a given bash command and returns its output.\n\n"
-            "IMPORTANT: Avoid using this tool when a dedicated tool can accomplish the task.\n"
-            "- Read files: Use Read\n"
-            "- Edit files: Use Edit\n"
-            "- Write files: Use Write\n"
-            "- Content search: Use Grep\n"
-            "- File search: Use Glob\n"
+            "Use this tool to execute shell commands and return their output.\n\n"
+            "Use it proactively when command execution will improve task quality, expand evidence, or validate behavior.\n"
+            "- Read files: Read often gives more structured context, but Bash is also valid when shell inspection is the most effective path.\n"
+            "- Edit files: Edit is precise for patching; Bash is useful for command-driven workflows.\n"
+            "- Write files: Write is good for full-file output; Bash can still be used for build, test, git, package, and system tasks.\n"
+            "- Content search: Grep is optimized for targeted search; Bash remains useful when search needs to be combined with other shell operations.\n"
+            "- File search: Glob is optimized for file patterns; Bash is still valid for broader shell-driven investigation.\n"
             "- Communication: output text directly\n"
             "- If the commands are independent and can run in parallel, make multiple Bash tool calls in a single message.\n"
             "- If the commands depend on each other and must run sequentially, use a single Bash call with '&&' to chain them together."

@@ -37,7 +37,7 @@ def test_subagent_prompt_includes_tool_efficiency_protocol() -> None:
 
     prompt = loop._build_system_prompt(task)  # noqa: SLF001
 
-    assert "优先使用专用工具而不是 Bash" in prompt
-    assert "默认优先一次高信息量调用，而不是多次试探性小调用" in prompt
+    assert "通过工具调用显著提升结论质量" in prompt
+    assert "扩大信息增量" in prompt
     assert "只有彼此独立、互不依赖的只读工具调用，才应并发发出" in prompt
     assert "依赖前一步结果的调用必须串行执行" in prompt

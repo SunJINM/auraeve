@@ -22,8 +22,8 @@ from auraeve.agent_runtime.tool_runtime_context import (
 def test_read_tool_description_encodes_default_full_read_strategy(tmp_path: Path) -> None:
     tool = ReadTool(allowed_dir=tmp_path)
 
-    assert "recommended to read the whole file" in tool.description
-    assert "When you already know which part of the file you need, only read that part" in tool.description
+    assert "start with a full read when broad context will improve quality" in tool.description
+    assert "targeted partial reads" in tool.description
     assert "This tool can read PDF files" in tool.description
 
 
