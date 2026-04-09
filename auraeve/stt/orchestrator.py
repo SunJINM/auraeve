@@ -57,14 +57,25 @@ class STTOrchestrator:
         should_cleanup = False
 
         async with self._semaphore:
-            normalized_path, should_cleanup, _fmt = await normalize_for_stt(str(request.input_path))
-            req = STTRequest(
-                input_path=Path(normalized_path),
-                channel=request.channel,
-                language=request.language,
-                provider_profile=request.provider_profile,
-                metadata=request.metadata,
-            )
+            if request.audio_url:
+                req = STTRequest(
+                    input_path=request.input_path,
+                    audio_url=request.audio_url,
+                    channel=request.channel,
+                    language=request.language,
+                    provider_profile=request.provider_profile,
+                    metadata=request.metadata,
+                )
+            else:
+                normalized_path, should_cleanup, _fmt = await normalize_for_stt(str(request.input_path))
+                req = STTRequest(
+                    input_path=Path(normalized_path),
+                    audio_url="",
+                    channel=request.channel,
+                    language=request.language,
+                    provider_profile=request.provider_profile,
+                    metadata=request.metadata,
+                )
 
             try:
                 for provider in self.providers:

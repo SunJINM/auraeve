@@ -185,6 +185,47 @@ def test_build_stt_runtime_reads_new_asr_config_shape() -> None:
     )
 
     assert runtime is not None
+    profile = runtime._config.providers[0]
+    assert profile.type == "openai"
+
+
+def test_build_stt_runtime_preserves_bytedance_provider_options() -> None:
+    from auraeve.stt.runtime import build_stt_runtime_from_config
+
+    runtime = build_stt_runtime_from_config(
+        {
+            "ASR": {
+                "enabled": True,
+                "defaultLanguage": "zh-CN",
+                "timeoutMs": 15000,
+                "maxConcurrency": 4,
+                "retryCount": 1,
+                "failoverEnabled": True,
+                "cacheEnabled": True,
+                "cacheTtlSeconds": 600,
+                "providers": [
+                    {
+                        "id": "volc-main",
+                        "enabled": True,
+                        "priority": 100,
+                        "type": "bytedance-flash",
+                        "model": "bigmodel",
+                        "apiBase": "https://openspeech.bytedance.com",
+                        "apiKey": "volc-key",
+                        "resourceId": "volc.bigasr.auc_turbo",
+                        "uid": "uid-1",
+                        "timeoutMs": 15000,
+                    }
+                ],
+            }
+        }
+    )
+
+    profile = runtime._config.providers[0]
+    assert profile.id == "volc-main"
+    assert profile.type == "bytedance-flash"
+    assert profile.options["resourceId"] == "volc.bigasr.auc_turbo"
+    assert profile.options["uid"] == "uid-1"
 
 
 @pytest.mark.asyncio

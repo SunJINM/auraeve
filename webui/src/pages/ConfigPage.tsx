@@ -44,6 +44,8 @@ type AsrProvider = {
   apiBase?: string
   apiKey?: string
   command?: string
+  resourceId?: string
+  uid?: string
   timeoutMs?: number
 }
 
@@ -97,7 +99,73 @@ const defaultAsrProvider = (): AsrProvider => ({
   apiBase: '',
   apiKey: '',
   timeoutMs: 15000,
+  resourceId: '',
+  uid: '',
 })
+
+const defaultAsrProviders = (): AsrProvider[] => ([
+  {
+    id: 'bytedance-flash',
+    enabled: false,
+    priority: 50,
+    type: 'bytedance-flash',
+    model: 'bigmodel',
+    apiBase: 'https://openspeech.bytedance.com',
+    apiKey: '',
+    resourceId: 'volc.bigasr.auc_turbo',
+    uid: '',
+    timeoutMs: 20000,
+  },
+  {
+    id: 'openai',
+    enabled: true,
+    priority: 100,
+    type: 'openai',
+    model: 'gpt-4o-mini-transcribe',
+    apiBase: '',
+    apiKey: '',
+    timeoutMs: 15000,
+  },
+  {
+    id: 'whisper-cli',
+    enabled: true,
+    priority: 10,
+    type: 'whisper-cli',
+    model: '',
+    command: 'whisper',
+    apiBase: '',
+    apiKey: '',
+    timeoutMs: 20000,
+  },
+  {
+    id: 'funasr-local',
+    enabled: false,
+    priority: 1,
+    type: 'funasr-local',
+    model: 'paraformer-zh',
+    apiBase: '',
+    apiKey: '',
+    timeoutMs: 20000,
+  },
+])
+
+const defaultBytedanceAsrProvider = (): AsrProvider => {
+  const provider = defaultAsrProviders().find((item) => item.type === 'bytedance-flash')
+  return provider
+    ? { ...provider }
+    : {
+        id: 'bytedance-flash',
+        enabled: false,
+        priority: 50,
+        type: 'bytedance-flash',
+        model: 'bigmodel',
+        apiBase: 'https://openspeech.bytedance.com',
+        apiKey: '',
+        resourceId: 'volc.bigasr.auc_turbo',
+        uid: '',
+        timeoutMs: 20000,
+      }
+}
 
 const defaultAsrConfig = (): AsrConfig => ({
   enabled: true,
@@ -151,6 +219,8 @@ const normalizeAsrProvider = (value: unknown, index: number): AsrProvider => {
     apiBase: raw.apiBase == null ? '' : String(raw.apiBase),
     apiKey: raw.apiKey == null ? '' : String(raw.apiKey),
     command: raw.command == null ? '' : String(raw.command),
+    resourceId: raw.resourceId == null ? '' : String(raw.resourceId),
+    uid: raw.uid == null ? '' : String(raw.uid),
     timeoutMs: Number(raw.timeoutMs ?? 15000),
   }
 }
@@ -170,6 +240,16 @@ const normalizeConfig = (config: Record<string, unknown>): ConfigValues => {
   const asrRaw = typeof config.ASR === 'object' && config.ASR !== null
     ? config.ASR as Record<string, unknown>
     : {}
+  const providersRaw = Array.isArray(asrRaw.providers) ? asrRaw.providers.map(normalizeAsrProvider) : []
+  const providers = providersRaw.length > 0 ? [...providersRaw] : defaultAsrProviders()
+  if (!providers.some((provider) => provider.type === 'bytedance-flash')) {
+    providers.unshift(defaultBytedanceAsrProvider())
+  }
+  providers.sort((left, right) => {
+    if (left.type === 'bytedance-flash' && right.type !== 'bytedance-flash') return -1
+    if (left.type !== 'bytedance-flash' && right.type === 'bytedance-flash') return 1
+    return 0
+  })
 
   return {
     ...config,
@@ -181,7 +261,7 @@ const normalizeConfig = (config: Record<string, unknown>): ConfigValues => {
     ASR: {
       ...defaultAsrConfig(),
       ...asrRaw,
-      providers: Array.isArray(asrRaw.providers) ? asrRaw.providers.map(normalizeAsrProvider) : [],
+      providers,
     },
   }
 }
@@ -628,13 +708,32 @@ export function ConfigPage() {
                         <div className="cfg-card-editor">
                           <div className="mgmt-grid2">
                             <input className="mgmt-input" value={provider.id} placeholder="服务 ID" onChange={(e) => updateAsrProvider(idx, (item) => ({ ...item, id: e.target.value }))} />
-                            <input className="mgmt-input" value={provider.type} placeholder="服务类型" onChange={(e) => updateAsrProvider(idx, (item) => ({ ...item, type: e.target.value }))} />
-                            <input className="mgmt-input" value={provider.model || ''} placeholder="模型名" onChange={(e) => updateAsrProvider(idx, (item) => ({ ...item, model: e.target.value }))} />
-                            <input className="mgmt-input" value={provider.command || ''} placeholder="本地命令" onChange={(e) => updateAsrProvider(idx, (item) => ({ ...item, command: e.target.value }))} />
-                            <input className="mgmt-input" value={provider.apiBase || ''} placeholder="API Base" onChange={(e) => updateAsrProvider(idx, (item) => ({ ...item, apiBase: e.target.value }))} />
-                            <input className="mgmt-input" type="password" value={provider.apiKey || ''} placeholder="API Key" onChange={(e) => updateAsrProvider(idx, (item) => ({ ...item, apiKey: e.target.value }))} />
+                            <select className="mgmt-input" value={provider.type} onChange={(e) => updateAsrProvider(idx, (item) => ({ ...item, type: e.target.value }))}>
+                              <option value="openai">openai</option>
+                              <option value="whisper-cli">whisper-cli</option>
+                              <option value="funasr-local">funasr-local</option>
+                              <option value="bytedance-flash">bytedance-flash</option>
+                            </select>
                             <input className="mgmt-input" type="number" value={provider.priority} placeholder="优先级" onChange={(e) => updateAsrProvider(idx, (item) => ({ ...item, priority: Number(e.target.value) || 0 }))} />
                             <input className="mgmt-input" type="number" value={provider.timeoutMs || 0} placeholder="超时毫秒" onChange={(e) => updateAsrProvider(idx, (item) => ({ ...item, timeoutMs: Number(e.target.value) || 0 }))} />
+                            {(provider.type === 'openai' || provider.type === 'funasr-local' || provider.type === 'bytedance-flash') && (
+                              <input className="mgmt-input" value={provider.model || ''} placeholder="模型名" onChange={(e) => updateAsrProvider(idx, (item) => ({ ...item, model: e.target.value }))} />
+                            )}
+                            {provider.type === 'whisper-cli' && (
+                              <input className="mgmt-input" value={provider.command || ''} placeholder="本地命令" onChange={(e) => updateAsrProvider(idx, (item) => ({ ...item, command: e.target.value }))} />
+                            )}
+                            {(provider.type === 'openai' || provider.type === 'bytedance-flash') && (
+                              <input className="mgmt-input" value={provider.apiBase || ''} placeholder="API Base" onChange={(e) => updateAsrProvider(idx, (item) => ({ ...item, apiBase: e.target.value }))} />
+                            )}
+                            {(provider.type === 'openai' || provider.type === 'bytedance-flash') && (
+                              <input className="mgmt-input" type="password" value={provider.apiKey || ''} placeholder="API Key" onChange={(e) => updateAsrProvider(idx, (item) => ({ ...item, apiKey: e.target.value }))} />
+                            )}
+                            {provider.type === 'bytedance-flash' && (
+                              <input className="mgmt-input" value={provider.resourceId || ''} placeholder="Resource ID" onChange={(e) => updateAsrProvider(idx, (item) => ({ ...item, resourceId: e.target.value }))} />
+                            )}
+                            {provider.type === 'bytedance-flash' && (
+                              <input className="mgmt-input" value={provider.uid || ''} placeholder="UID" onChange={(e) => updateAsrProvider(idx, (item) => ({ ...item, uid: e.target.value }))} />
+                            )}
                           </div>
                           <label className="cfg-inline-field">
                             <span>启用服务</span>

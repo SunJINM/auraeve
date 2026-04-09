@@ -192,29 +192,58 @@ class ConfigService:
 
     def _sanitize_patch(self, patch: dict[str, Any]) -> dict[str, Any]:
         out: dict[str, Any] = {}
+        current_snapshot = cfg.read_snapshot()
+        current_config = current_snapshot.config
         for key, value in patch.items():
             if key == "LLM_MODELS" and isinstance(value, list):
+                existing_models = current_config.get("LLM_MODELS") if isinstance(current_config.get("LLM_MODELS"), list) else []
+                existing_by_id = {
+                    str(item.get("id") or ""): item
+                    for item in existing_models
+                    if isinstance(item, dict)
+                }
                 sanitized_models = []
-                for item in value:
+                for idx, item in enumerate(value):
                     if not isinstance(item, dict):
                         continue
                     model = dict(item)
+                    existing_model = existing_by_id.get(str(model.get("id") or ""))
+                    if existing_model is None and idx < len(existing_models) and isinstance(existing_models[idx], dict):
+                        existing_model = existing_models[idx]
                     api_key = model.get("apiKey")
                     if isinstance(api_key, str) and (not api_key.strip() or set(api_key.strip()) == {"*"}):
-                        model.pop("apiKey", None)
+                        existing_api_key = existing_model.get("apiKey") if isinstance(existing_model, dict) else None
+                        if isinstance(existing_api_key, str) and existing_api_key:
+                            model["apiKey"] = existing_api_key
+                        else:
+                            model.pop("apiKey", None)
                     sanitized_models.append(model)
                 out[key] = sanitized_models
                 continue
             if key == "ASR" and isinstance(value, dict):
                 asr = dict(value)
+                current_asr = current_config.get("ASR") if isinstance(current_config.get("ASR"), dict) else {}
+                existing_providers = current_asr.get("providers") if isinstance(current_asr.get("providers"), list) else []
+                existing_by_id = {
+                    str(item.get("id") or ""): item
+                    for item in existing_providers
+                    if isinstance(item, dict)
+                }
                 providers = []
-                for item in asr.get("providers") or []:
+                for idx, item in enumerate(asr.get("providers") or []):
                     if not isinstance(item, dict):
                         continue
                     provider = dict(item)
+                    existing_provider = existing_by_id.get(str(provider.get("id") or ""))
+                    if existing_provider is None and idx < len(existing_providers) and isinstance(existing_providers[idx], dict):
+                        existing_provider = existing_providers[idx]
                     api_key = provider.get("apiKey")
                     if isinstance(api_key, str) and (not api_key.strip() or set(api_key.strip()) == {"*"}):
-                        provider.pop("apiKey", None)
+                        existing_api_key = existing_provider.get("apiKey") if isinstance(existing_provider, dict) else None
+                        if isinstance(existing_api_key, str) and existing_api_key:
+                            provider["apiKey"] = existing_api_key
+                        else:
+                            provider.pop("apiKey", None)
                     providers.append(provider)
                 asr["providers"] = providers
                 out[key] = asr

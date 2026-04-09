@@ -117,7 +117,7 @@ _MODEL_CAPABILITY_KEYS = {
     "streaming",
 }
 
-_ASR_PROVIDER_TYPES = {"openai", "whisper-cli", "funasr-local"}
+_ASR_PROVIDER_TYPES = {"openai", "whisper-cli", "funasr-local", "bytedance-flash"}
 
 
 def _validate_llm_models(
