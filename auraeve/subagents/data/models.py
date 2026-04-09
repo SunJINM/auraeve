@@ -70,12 +70,20 @@ class Task:
     status: TaskStatus = TaskStatus.QUEUED
     priority: int = 5
     budget: TaskBudget = field(default_factory=TaskBudget)
+    name: str = ""
+    description: str = ""
     role_prompt: str = ""
     result: str = ""
     origin_channel: str = ""
     origin_chat_id: str = ""
     spawn_tool_call_id: str = ""
-    run_in_background: bool = True
+    run_in_background: bool = False
+    execution_mode: str = "sync"
+    context_mode: str = "fresh"
+    session_key: str = ""
+    parent_thread_id: str = ""
+    parent_task_id: str = ""
+    seed_messages_json: str = ""
     worktree_path: str = ""
     worktree_branch: str = ""
     created_at: float = field(default_factory=time.time)

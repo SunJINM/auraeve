@@ -123,6 +123,11 @@ def test_context_builder_uses_read_write_tool_names(tmp_path: Path) -> None:
     assert "高风险操作（Bash / Write / Edit / browser）先用一句话说明再执行。" in prompt
     assert "有专用工具时，优先用专用工具而不是 Bash" in prompt
     assert "需要长时间运行且不必立刻读取结果时，使用 run_in_background" in prompt
+    assert "默认优先一次高信息量调用，而不是多次试探性小调用" in prompt
+    assert "若后续可能修改文件，第一次就完整 Read" in prompt
+    assert "只有彼此独立、互不依赖的只读工具调用，才应并发发出" in prompt
+    assert "依赖前一步结果的调用必须串行执行" in prompt
+    assert "多个依赖顺序明确的 Bash 步骤，应合并为一次 Bash 调用并使用 && 串联" in prompt
     assert "Read 读取该技能的 <location>" in prompt
     assert "使用 <location> 字段中的原始路径调用 Read" in prompt
     assert "用 Write 在" in prompt

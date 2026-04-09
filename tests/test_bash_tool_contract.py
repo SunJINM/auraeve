@@ -19,6 +19,10 @@ def test_bash_tool_exposes_claude_style_name_and_parameters() -> None:
     tool = BashTool()
 
     assert tool.name == "Bash"
+    assert "IMPORTANT: Avoid using this tool" in tool.description
+    assert "Read files: Use Read" in tool.description
+    assert "If the commands are independent and can run in parallel" in tool.description
+    assert "If the commands depend on each other and must run sequentially" in tool.description
     assert tool.parameters["required"] == ["command"]
 
     props = tool.parameters["properties"]

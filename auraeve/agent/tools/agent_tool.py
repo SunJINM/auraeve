@@ -23,8 +23,8 @@ class AgentTool(Tool):
     @property
     def description(self) -> str:
         return (
-            "启动子智能体执行复杂的多步骤任务。"
-            "也可用于查询和管理已创建的子智能体任务。"
+            "启动、继续、查询和取消子智能体。"
+            "支持 sync（同步前台）、async（后台异步）和 fork（继承当前上下文）三种执行模式。"
         )
 
     @property
@@ -34,8 +34,8 @@ class AgentTool(Tool):
             "properties": {
                 "action": {
                     "type": "string",
-                    "description": "操作类型: spawn(默认,创建子智能体), list(列出任务), status(查询详情), cancel(取消任务)",
-                    "enum": ["spawn", "list", "status", "cancel"],
+                    "description": "操作类型: spawn(默认,创建子智能体), continue(继续已有子智能体), list(列出任务), status(查询详情), cancel(取消任务)",
+                    "enum": ["spawn", "continue", "list", "status", "cancel"],
                     "default": "spawn",
                 },
                 "prompt": {
@@ -44,12 +44,25 @@ class AgentTool(Tool):
                 },
                 "subagent_type": {
                     "type": "string",
-                    "description": "Agent 类型: general-purpose(默认), explore(只读搜索), plan(方案设计)",
+                    "description": "Agent 类型: general-purpose(默认), explore(只读搜索), plan(方案设计), worker(执行者), verifier(独立验证), coordinator(协调者)",
+                },
+                "execution_mode": {
+                    "type": "string",
+                    "description": "执行模式: sync(默认,前台等待), async(后台运行), fork(继承当前上下文并后台运行)",
+                    "enum": ["sync", "async", "fork"],
                 },
                 "run_in_background": {
                     "type": "boolean",
-                    "description": "是否后台执行，默认 true。false 时同步等待结果返回",
-                    "default": True,
+                    "description": "兼容旧参数。true 映射为 execution_mode=async，false 映射为 execution_mode=sync。",
+                    "default": False,
+                },
+                "name": {
+                    "type": "string",
+                    "description": "子智能体名称（可选）",
+                },
+                "description": {
+                    "type": "string",
+                    "description": "对子智能体任务的简短摘要（可选）",
                 },
                 "role_prompt": {
                     "type": "string",
@@ -85,6 +98,8 @@ class AgentTool(Tool):
             return self._handle_status(kwargs.get("task_id", ""))
         elif action == "cancel":
             return self._handle_cancel(kwargs.get("task_id", ""))
+        elif action == "continue":
+            return await self._handle_continue(kwargs)
         else:
             return await self._handle_spawn(kwargs)
 
@@ -94,10 +109,13 @@ class AgentTool(Tool):
             return "错误: prompt 参数不能为空"
 
         agent_type = kwargs.get("subagent_type", "general-purpose")
-        run_in_background = kwargs.get("run_in_background", True)
+        execution_mode = self._resolve_execution_mode(kwargs)
+        run_in_background = execution_mode in {"async", "fork"}
+        context_mode = "inherit" if execution_mode == "fork" else "fresh"
         role_prompt = kwargs.get("role_prompt", "")
         max_steps = kwargs.get("max_steps", 50)
         max_tool_calls = kwargs.get("max_tool_calls", 100)
+        seed_messages = self._load_parent_history() if context_mode == "inherit" else []
 
         agent_def = find_agent(agent_type)
 
@@ -109,12 +127,18 @@ class AgentTool(Tool):
         task = self._executor.create_task(
             goal=prompt,
             agent_type=agent_def.agent_type,
+            name=kwargs.get("name", ""),
+            description=kwargs.get("description", ""),
             role_prompt=role_prompt,
             budget=budget,
             run_in_background=run_in_background,
+            execution_mode=execution_mode,
+            context_mode=context_mode,
             origin_channel=getattr(self, "_channel", ""),
             origin_chat_id=getattr(self, "_chat_id", ""),
             spawn_tool_call_id=getattr(self, "_current_tool_call_id", ""),
+            parent_thread_id=getattr(self, "_thread_id", ""),
+            seed_messages=seed_messages,
         )
 
         if run_in_background:
@@ -122,11 +146,26 @@ class AgentTool(Tool):
             return (
                 f"子智能体已启动（{task.task_id}），后台执行中。\n"
                 f"类型: {agent_def.agent_type}\n"
+                f"模式: {task.execution_mode}\n"
                 f"任务: {prompt[:100]}"
             )
         else:
             result = await self._executor.execute_sync(task)
             return result
+
+    async def _handle_continue(self, kwargs: dict) -> str:
+        task_id = kwargs.get("task_id", "")
+        prompt = kwargs.get("prompt", "")
+        if not task_id:
+            return "错误: 请提供 task_id"
+        if not prompt:
+            return "错误: continue 时必须提供 prompt"
+        execution_mode = self._resolve_execution_mode(kwargs, default="")
+        return await self._executor.continue_task(
+            task_id,
+            prompt,
+            execution_mode=execution_mode or None,
+        )
 
     def _handle_list(self, limit: int = 20) -> str:
         tasks = self._executor.list_tasks(limit=limit)
@@ -165,7 +204,33 @@ class AgentTool(Tool):
             return f"已取消任务: {task_id}"
         return f"取消失败（任务不存在或已结束）: {task_id}"
 
-    def set_context(self, channel: str, chat_id: str) -> None:
+    def _resolve_execution_mode(self, kwargs: dict, default: str = "sync") -> str:
+        raw = str(kwargs.get("execution_mode") or "").strip().lower()
+        if raw in {"sync", "async", "fork"}:
+            return raw
+        if "run_in_background" in kwargs:
+            return "async" if bool(kwargs.get("run_in_background")) else "sync"
+        return default
+
+    def _load_parent_history(self) -> list[dict]:
+        loader = getattr(self, "_session_history_loader", None)
+        if not callable(loader):
+            return []
+        try:
+            history = loader()
+        except Exception:
+            return []
+        return history if isinstance(history, list) else []
+
+    def set_context(
+        self,
+        channel: str,
+        chat_id: str,
+        thread_id: str = "",
+        session_history_loader=None,
+    ) -> None:
         """设置渠道上下文（由 kernel 调用）。"""
         self._channel = channel
         self._chat_id = chat_id
+        self._thread_id = thread_id
+        self._session_history_loader = session_history_loader

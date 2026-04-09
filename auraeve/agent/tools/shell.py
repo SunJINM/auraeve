@@ -32,7 +32,18 @@ class BashTool(Tool):
 
     @property
     def description(self) -> str:
-        return "Execute a Bash shell command."
+        return (
+            "Executes a given bash command and returns its output.\n\n"
+            "IMPORTANT: Avoid using this tool when a dedicated tool can accomplish the task.\n"
+            "- Read files: Use Read\n"
+            "- Edit files: Use Edit\n"
+            "- Write files: Use Write\n"
+            "- Content search: Use Grep\n"
+            "- File search: Use Glob\n"
+            "- Communication: output text directly\n"
+            "- If the commands are independent and can run in parallel, make multiple Bash tool calls in a single message.\n"
+            "- If the commands depend on each other and must run sequentially, use a single Bash call with '&&' to chain them together."
+        )
 
     @property
     def parameters(self) -> dict[str, Any]:

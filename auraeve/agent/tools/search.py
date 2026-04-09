@@ -174,7 +174,16 @@ class GrepTool(Tool):
 
     @property
     def description(self) -> str:
-        return "Search file contents with regex using ripgrep."
+        return (
+            "A powerful search tool built on ripgrep.\n\n"
+            "Usage:\n"
+            "- ALWAYS use Grep for search tasks. NEVER invoke `grep` or `rg` as a Bash command.\n"
+            "- Supports full regex syntax.\n"
+            "- Filter files with glob or type.\n"
+            '- Output modes: "content" shows matching lines, "files_with_matches" shows only file paths (default), "count" shows match counts.\n'
+            "- Use agent for open-ended searches requiring multiple rounds.\n"
+            "- Use multiline=true for cross-line patterns."
+        )
 
     @property
     def parameters(self) -> dict[str, Any]:
@@ -371,7 +380,13 @@ class GlobTool(Tool):
 
     @property
     def description(self) -> str:
-        return "Find files by glob pattern."
+        return (
+            "Fast file pattern matching tool that works with any codebase size.\n"
+            "- Supports glob patterns like \"**/*.js\" or \"src/**/*.ts\".\n"
+            "- Returns matching file paths sorted by modification time.\n"
+            "- Use this tool when you need to find files by name patterns.\n"
+            "- When you are doing an open ended search that may require multiple rounds of globbing and grepping, use the agent tool instead."
+        )
 
     @property
     def parameters(self) -> dict[str, Any]:
