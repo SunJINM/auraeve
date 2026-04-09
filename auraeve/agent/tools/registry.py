@@ -26,6 +26,13 @@ class ToolRegistry:
         self._tools.pop(name, None)
         self._meta.pop(name, None)
 
+    def set_metadata(self, name: str, **metadata: Any) -> None:
+        if name not in self._tools:
+            return
+        current = dict(self._meta.get(name) or {})
+        current.update(metadata)
+        self._meta[name] = current
+
     def get(self, name: str) -> Tool | None:
         tool = self._tools.get(name)
         if tool is None and name.startswith("proxy_"):

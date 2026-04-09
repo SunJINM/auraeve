@@ -9,9 +9,13 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+from pathlib import Path
 
 from auraeve.agent_runtime.command_queue import RuntimeCommandQueue
+from auraeve.agent.agents.definitions import find_agent
+from auraeve.session.manager import SessionManager
 
 from .context_isolation import generate_agent_id
 from .data.models import Task, TaskBudget, TaskStatus
@@ -66,6 +70,7 @@ class SubagentExecutor:
         thinking_budget_tokens: int = 0,
         max_concurrent: int = 5,
         workspace: str = "",
+        sessions_dir: str | Path | None = None,
     ) -> None:
         self._store = store
         self._command_queue = command_queue
@@ -79,6 +84,7 @@ class SubagentExecutor:
         self._thinking_budget_tokens = thinking_budget_tokens
         self._max_concurrent = max_concurrent
         self._workspace = workspace
+        self._sessions = SessionManager(Path(sessions_dir) if sessions_dir else Path(workspace) / ".subagents")
         self._lifecycle = SubagentLifecycle(
             store=store,
             command_queue=command_queue,
@@ -86,6 +92,7 @@ class SubagentExecutor:
 
         self._running: dict[str, asyncio.Task] = {}
         self._loops: dict[str, ReActLoop] = {}
+        self._steer_queues: dict[str, asyncio.Queue[str]] = {}
 
     # ── 任务管理 ──────────────────────────────────────────
 
@@ -99,7 +106,15 @@ class SubagentExecutor:
         priority: int = 5,
         role_prompt: str = "",
         budget: TaskBudget | None = None,
-        run_in_background: bool = True,
+        run_in_background: bool | None = None,
+        execution_mode: str = "sync",
+        context_mode: str = "fresh",
+        name: str = "",
+        description: str = "",
+        session_key: str = "",
+        parent_thread_id: str = "",
+        parent_task_id: str = "",
+        seed_messages: list[dict] | None = None,
     ) -> Task:
         """创建子智能体任务。"""
         if len(self._running) >= self._max_concurrent:
@@ -107,17 +122,37 @@ class SubagentExecutor:
                 f"子智能体并发数已达上限（{self._max_concurrent}），请等待现有任务完成"
             )
 
+        execution_mode = (execution_mode or "sync").strip().lower()
+        if execution_mode not in {"sync", "async", "fork"}:
+            execution_mode = "sync"
+        if execution_mode == "fork":
+            context_mode = "inherit"
+        context_mode = (context_mode or "fresh").strip().lower()
+        if context_mode not in {"fresh", "inherit"}:
+            context_mode = "fresh"
+        if run_in_background is None:
+            run_in_background = execution_mode in {"async", "fork"}
+
+        task_id = generate_agent_id()
         task = Task(
-            task_id=generate_agent_id(),
+            task_id=task_id,
             goal=goal,
             agent_type=agent_type,
             priority=priority,
             budget=budget or TaskBudget(),
+            name=name,
+            description=description,
             role_prompt=role_prompt,
             origin_channel=origin_channel,
             origin_chat_id=origin_chat_id,
             spawn_tool_call_id=spawn_tool_call_id,
+            execution_mode=execution_mode,
+            context_mode=context_mode,
             run_in_background=run_in_background,
+            session_key=session_key or f"sub:{task_id}",
+            parent_thread_id=parent_thread_id,
+            parent_task_id=parent_task_id,
+            seed_messages_json=json.dumps(seed_messages or [], ensure_ascii=False),
         )
         self._store.save_task(task)
         return task
@@ -148,17 +183,50 @@ class SubagentExecutor:
 
     async def execute_async(self, task: Task) -> None:
         """异步执行子智能体任务（后台 asyncio.Task）。"""
-        async_task = asyncio.create_task(self._run_lifecycle(task))
+        steer_queue = self._new_steer_queue()
+        self._steer_queues[task.task_id] = steer_queue
+        async_task = asyncio.create_task(self._run_lifecycle(task, steer_queue))
         self._running[task.task_id] = async_task
 
     async def execute_sync(self, task: Task) -> str:
         """同步执行子智能体任务（等待结果返回）。"""
-        return await self._run_task(task)
+        return await self._run_task(task, self._new_steer_queue())
 
-    async def _run_lifecycle(self, task: Task) -> None:
+    async def continue_task(
+        self,
+        task_id: str,
+        prompt: str,
+        *,
+        execution_mode: str | None = None,
+    ) -> str:
+        task = self._store.get_task(task_id)
+        if task is None:
+            return f"未找到任务: {task_id}"
+
+        if task_id in self._running and task_id in self._steer_queues:
+            await self._steer_queues[task_id].put(prompt)
+            return f"已向运行中的子智能体 {task_id} 发送继续消息。"
+
+        task.goal = prompt
+        task.status = TaskStatus.RUNNING
+        if execution_mode:
+            task.execution_mode = execution_mode
+        task.run_in_background = task.execution_mode in {"async", "fork"}
+        if not task.session_key:
+            task.session_key = f"sub:{task.task_id}"
+        self._store.save_task(task)
+        if task.run_in_background:
+            await self.execute_async(task)
+            return f"子智能体 {task_id} 已继续执行（后台）。"
+        return await self._run_task(task, self._new_steer_queue())
+
+    def _new_steer_queue(self) -> asyncio.Queue[str]:
+        return asyncio.Queue()
+
+    async def _run_lifecycle(self, task: Task, steer_queue: asyncio.Queue[str]) -> None:
         """异步生命周期：执行并在结束后投递后台通知。"""
         try:
-            result = await self._run_task(task)
+            result = await self._run_task(task, steer_queue)
             await self._lifecycle.mark_completed(task, result)
 
         except asyncio.CancelledError:
@@ -171,13 +239,22 @@ class SubagentExecutor:
         finally:
             self._running.pop(task.task_id, None)
             self._loops.pop(task.task_id, None)
+            self._steer_queues.pop(task.task_id, None)
 
-    async def _run_task(self, task: Task) -> str:
+    async def _run_task(self, task: Task, steer_queue: asyncio.Queue[str] | None = None) -> str:
         """执行子智能体 ReAct 循环。"""
         self._store.update_task_status(task.task_id, TaskStatus.RUNNING)
 
         reporter = _InProcessReporter(self._store)
-        tools = self._tool_builder(task)
+        tools = self._build_tools_for_task(task)
+        session = self._sessions.get_or_create(task.session_key or f"sub:{task.task_id}")
+        if not session.messages and task.context_mode == "inherit" and task.seed_messages_json:
+            try:
+                session.replace_history(json.loads(task.seed_messages_json))
+                self._sessions.save(session)
+            except Exception:
+                logger.warning("子智能体 seed_messages_json 解析失败: %s", task.task_id)
+        history_messages = session.get_history()
 
         loop = ReActLoop(
             provider=self._provider,
@@ -192,4 +269,28 @@ class SubagentExecutor:
         )
         self._loops[task.task_id] = loop
 
-        return await loop.run(task)
+        result = await loop.run(task, history_messages=history_messages, steer_queue=steer_queue)
+        session.add_message("user", task.goal)
+        for message in loop.messages:
+            role = str(message.get("role") or "")
+            if role not in {"assistant", "tool", "user"}:
+                continue
+            payload = {k: v for k, v in message.items() if k != "role"}
+            session.add_message(role, payload.pop("content", ""), **payload)
+        session.add_message("assistant", result)
+        self._sessions.save(session)
+        return result
+
+    def _build_tools_for_task(self, task: Task):
+        registry = self._tool_builder(task)
+        agent_def = find_agent(task.agent_type)
+        if agent_def.tools and "*" not in agent_def.tools:
+            allowed = set(agent_def.tools)
+            for tool_name in list(registry.tool_names):
+                if tool_name not in allowed:
+                    registry.unregister(tool_name)
+        for tool_name in agent_def.disallowed_tools:
+            registry.unregister(tool_name)
+        if task.agent_type == "coordinator" and registry.has("agent"):
+            registry.set_metadata("agent", allow_in_subagent=True)
+        return registry

@@ -10,6 +10,7 @@ import logging
 import time
 from datetime import datetime, timezone
 
+from auraeve.agent.agents.definitions import find_agent
 from auraeve.subagents.data.models import Task, ProgressTracker
 from .reporter import TaskReporter
 
@@ -45,7 +46,12 @@ class ReActLoop:
         self.progress = ProgressTracker()
         self.messages: list[dict] = []
 
-    async def run(self, task: Task) -> str:
+    async def run(
+        self,
+        task: Task,
+        history_messages: list[dict] | None = None,
+        steer_queue: asyncio.Queue | None = None,
+    ) -> str:
         """执行完整的 ReAct 循环。"""
         from auraeve.agent_runtime.session_attempt import SessionAttemptRunner
         from auraeve.agent_runtime.run_orchestrator import RunOrchestrator
@@ -81,10 +87,7 @@ class ReActLoop:
             is_subagent=True,
         )
 
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": task.goal},
-        ]
+        messages = self._prepare_messages(task, history_messages or [])
 
         start_time = time.monotonic()
 
@@ -96,6 +99,7 @@ class ReActLoop:
                 temperature=self._temperature,
                 max_tokens=self._max_tokens,
                 thread_id=f"sub:{task.task_id}",
+                steer_queue=steer_queue,
             )
             if timeout:
                 result = await asyncio.wait_for(coro, timeout=timeout)
@@ -105,6 +109,7 @@ class ReActLoop:
             elapsed_ms = int((time.monotonic() - start_time) * 1000)
             self.progress.duration_ms = elapsed_ms
             final_content = result.final_content or ""
+            self.messages = list(result.messages or [])
 
             if self._reporter:
                 await self._reporter.report_done(
@@ -141,17 +146,28 @@ class ReActLoop:
 
     def _build_system_prompt(self, task: Task) -> str:
         now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+        agent_def = find_agent(task.agent_type)
         parts = [
             f"当前时间: {now}",
             "",
             "你正在作为子智能体执行任务。",
+            f"子智能体类型: {task.agent_type}",
+            f"执行模式: {task.execution_mode}",
+            f"上下文模式: {task.context_mode}",
             f"执行预算: 最多 {task.budget.max_steps} 步, "
             f"最多 {task.budget.max_tool_calls} 次工具调用, "
             f"最长 {task.budget.max_duration_s} 秒。",
             "",
+            "角色说明:",
+            agent_def.system_prompt or "按分配目标完成任务。",
+            "",
             "执行约束:",
             "- 专注于你的任务目标，不要偏离",
             "- 高效使用工具，避免重复操作",
+            "- 优先使用专用工具而不是 Bash；读文件用 Read，内容搜索用 Grep，文件定位用 Glob",
+            "- 默认优先一次高信息量调用，而不是多次试探性小调用",
+            "- 只有彼此独立、互不依赖的只读工具调用，才应并发发出",
+            "- 依赖前一步结果的调用必须串行执行",
             "- 完成后输出清晰、结构化的结果",
             "- 如果发现任务无法完成，说明原因并返回已有成果",
         ]
@@ -160,3 +176,16 @@ class ReActLoop:
             parts.extend(["", "角色配置:", task.role_prompt])
 
         return "\n".join(parts)
+
+    def _prepare_messages(
+        self,
+        task: Task,
+        history_messages: list[dict] | None = None,
+    ) -> list[dict]:
+        messages: list[dict] = [
+            {"role": "system", "content": self._build_system_prompt(task)},
+        ]
+        if history_messages:
+            messages.extend(history_messages)
+        messages.append({"role": "user", "content": task.goal})
+        return messages

@@ -52,7 +52,18 @@ class ReadTool(_FsToolBase):
 
     @property
     def description(self) -> str:
-        return "Read a file from the local filesystem."
+        return (
+            "Reads a file from the local filesystem.\n\n"
+            "Usage:\n"
+            "- The file_path parameter must be an absolute path, not a relative path.\n"
+            "- By default, it reads up to 2000 lines starting from the beginning of the file.\n"
+            "- You can optionally specify a line offset and limit, but it's recommended to read the whole file by not providing these parameters.\n"
+            "- When you already know which part of the file you need, only read that part. This can be important for larger files.\n"
+            "- This tool can read images.\n"
+            "- This tool can read PDF files.\n"
+            "- This tool can read Jupyter notebooks.\n"
+            "- This tool can only read files, not directories."
+        )
 
     @property
     def parameters(self) -> dict[str, Any]:

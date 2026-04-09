@@ -10,7 +10,15 @@ def store(tmp_path):
 
 
 def test_save_and_get_task(store):
-    task = Task(task_id="t1", goal="测试任务")
+    task = Task(
+        task_id="t1",
+        goal="测试任务",
+        execution_mode="fork",
+        context_mode="inherit",
+        session_key="sub:t1",
+        parent_thread_id="main:chat",
+        seed_messages_json='[{"role":"user","content":"seed"}]',
+    )
     store.save_task(task)
     loaded = store.get_task("t1")
     assert loaded is not None
@@ -18,6 +26,11 @@ def test_save_and_get_task(store):
     assert loaded.goal == "测试任务"
     assert loaded.agent_type == "general-purpose"
     assert loaded.status == TaskStatus.QUEUED
+    assert loaded.execution_mode == "fork"
+    assert loaded.context_mode == "inherit"
+    assert loaded.session_key == "sub:t1"
+    assert loaded.parent_thread_id == "main:chat"
+    assert loaded.seed_messages_json.startswith("[")
 
 
 def test_get_nonexistent_task(store):
@@ -65,3 +78,17 @@ def test_complete_task(store):
     assert loaded.status == TaskStatus.COMPLETED
     assert loaded.result == "完成了"
     assert loaded.completed_at == 1000.0
+
+
+def test_save_and_get_task_parent_task_id(store):
+    task = Task(
+        task_id="child-1",
+        goal="继续任务",
+        parent_task_id="parent-1",
+        session_key="sub:child-1",
+    )
+    store.save_task(task)
+    loaded = store.get_task("child-1")
+    assert loaded is not None
+    assert loaded.parent_task_id == "parent-1"
+    assert loaded.session_key == "sub:child-1"

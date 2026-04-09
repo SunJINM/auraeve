@@ -4,6 +4,9 @@ from auraeve.agent.agents.definitions import (
     GENERAL_PURPOSE_AGENT,
     EXPLORE_AGENT,
     PLAN_AGENT,
+    WORKER_AGENT,
+    VERIFIER_AGENT,
+    COORDINATOR_AGENT,
     get_builtin_agents,
     find_agent,
 )
@@ -51,6 +54,9 @@ def test_get_builtin_agents():
     assert "general-purpose" in types
     assert "explore" in types
     assert "plan" in types
+    assert "worker" in types
+    assert "verifier" in types
+    assert "coordinator" in types
 
 
 def test_find_agent_builtin():
@@ -63,6 +69,30 @@ def test_find_agent_default():
     a = find_agent("nonexistent")
     assert a is not None
     assert a.agent_type == "general-purpose"
+
+
+def test_worker_agent_can_edit_and_research():
+    a = WORKER_AGENT
+    assert a.agent_type == "worker"
+    assert "*" in a.tools
+    assert "agent" in a.disallowed_tools
+
+
+def test_verifier_agent_is_read_only():
+    a = VERIFIER_AGENT
+    assert a.agent_type == "verifier"
+    assert "Read" in a.tools
+    assert "Grep" in a.tools
+    assert "Write" not in a.tools
+    assert "Edit" not in a.tools
+    assert "agent" in a.disallowed_tools
+
+
+def test_coordinator_agent_can_spawn_and_continue_workers():
+    a = COORDINATOR_AGENT
+    assert a.agent_type == "coordinator"
+    assert "agent" in a.tools
+    assert "message" not in a.disallowed_tools
 
 
 def test_custom_agent_definition():

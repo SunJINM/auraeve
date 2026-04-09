@@ -205,7 +205,9 @@ class SessionAttemptRunner:
                         steer_msg = steer_queue.get_nowait()
                     except asyncio.QueueEmpty:
                         break
-                    msgs.append({"role": "user", "content": f"[引导消息] {steer_msg}"})
+                    steer_message = {"role": "user", "content": f"[引导消息] {steer_msg}"}
+                    msgs.append(steer_message)
+                    transcript_messages.append(steer_message)
                     trace.add("steer_injected", message=str(steer_msg)[:200])
 
             model_override = await self._hooks.run_before_model_resolve(
@@ -464,11 +466,17 @@ class SessionAttemptRunner:
                         effective_args = before_result.params
 
                     async def _run_tool() -> Any:
+                        tool_obj = active_tools.get(tc.name)
                         try:
+                            if tool_obj is not None:
+                                setattr(tool_obj, "_current_tool_call_id", tc.id)
                             with use_tool_runtime_context(runtime_context):
                                 result = await active_tools.execute(tc.name, effective_args)
                         except Exception as exc:  # noqa: BLE001
                             result = f"工具执行出错：{exc}"
+                        finally:
+                            if tool_obj is not None and hasattr(tool_obj, "_current_tool_call_id"):
+                                setattr(tool_obj, "_current_tool_call_id", "")
                         asyncio.create_task(
                             self._hooks.run_after_tool_call(
                                 HookAfterToolCallEvent(

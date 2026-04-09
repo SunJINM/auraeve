@@ -7,7 +7,6 @@ from __future__ import annotations
 import json
 import sqlite3
 import threading
-from pathlib import Path
 
 from .models import Task, TaskBudget, TaskStatus
 
@@ -36,18 +35,45 @@ class SubagentStore:
                 status           TEXT NOT NULL DEFAULT 'queued',
                 priority         INTEGER NOT NULL DEFAULT 5,
                 budget_json      TEXT NOT NULL DEFAULT '{}',
+                name             TEXT NOT NULL DEFAULT '',
+                description      TEXT NOT NULL DEFAULT '',
                 role_prompt      TEXT NOT NULL DEFAULT '',
                 result           TEXT NOT NULL DEFAULT '',
                 origin_channel   TEXT NOT NULL DEFAULT '',
                 origin_chat_id   TEXT NOT NULL DEFAULT '',
                 spawn_tool_call_id TEXT NOT NULL DEFAULT '',
-                run_in_background INTEGER NOT NULL DEFAULT 1,
+                run_in_background INTEGER NOT NULL DEFAULT 0,
+                execution_mode   TEXT NOT NULL DEFAULT 'sync',
+                context_mode     TEXT NOT NULL DEFAULT 'fresh',
+                session_key      TEXT NOT NULL DEFAULT '',
+                parent_thread_id TEXT NOT NULL DEFAULT '',
+                parent_task_id   TEXT NOT NULL DEFAULT '',
+                seed_messages_json TEXT NOT NULL DEFAULT '',
                 worktree_path    TEXT NOT NULL DEFAULT '',
                 worktree_branch  TEXT NOT NULL DEFAULT '',
                 created_at       REAL NOT NULL,
                 completed_at     REAL NOT NULL DEFAULT 0.0
             )
         """)
+        self._ensure_column("name", "TEXT NOT NULL DEFAULT ''")
+        self._ensure_column("description", "TEXT NOT NULL DEFAULT ''")
+        self._ensure_column("execution_mode", "TEXT NOT NULL DEFAULT 'sync'")
+        self._ensure_column("context_mode", "TEXT NOT NULL DEFAULT 'fresh'")
+        self._ensure_column("session_key", "TEXT NOT NULL DEFAULT ''")
+        self._ensure_column("parent_thread_id", "TEXT NOT NULL DEFAULT ''")
+        self._ensure_column("parent_task_id", "TEXT NOT NULL DEFAULT ''")
+        self._ensure_column("seed_messages_json", "TEXT NOT NULL DEFAULT ''")
+        conn.commit()
+
+    def _ensure_column(self, name: str, ddl: str) -> None:
+        conn = self._get_conn()
+        existing = {
+            str(row["name"])
+            for row in conn.execute("PRAGMA table_info(tasks)").fetchall()
+        }
+        if name in existing:
+            return
+        conn.execute(f"ALTER TABLE tasks ADD COLUMN {name} {ddl}")
         conn.commit()
 
     def save_task(self, task: Task) -> None:
@@ -60,15 +86,22 @@ class SubagentStore:
         conn.execute(
             """INSERT OR REPLACE INTO tasks
                (task_id, goal, agent_type, status, priority, budget_json,
-                role_prompt, result, origin_channel, origin_chat_id,
-                spawn_tool_call_id, run_in_background, worktree_path,
+                name, description, role_prompt, result,
+                origin_channel, origin_chat_id,
+                spawn_tool_call_id, run_in_background,
+                execution_mode, context_mode, session_key,
+                parent_thread_id, parent_task_id, seed_messages_json,
+                worktree_path,
                 worktree_branch, created_at, completed_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 task.task_id, task.goal, task.agent_type, task.status.value,
-                task.priority, budget_json, task.role_prompt, task.result,
+                task.priority, budget_json, task.name, task.description,
+                task.role_prompt, task.result,
                 task.origin_channel, task.origin_chat_id,
                 task.spawn_tool_call_id, int(task.run_in_background),
+                task.execution_mode, task.context_mode, task.session_key,
+                task.parent_thread_id, task.parent_task_id, task.seed_messages_json,
                 task.worktree_path, task.worktree_branch,
                 task.created_at, task.completed_at,
             ),
@@ -142,12 +175,20 @@ class SubagentStore:
             status=TaskStatus(row["status"]),
             priority=row["priority"],
             budget=budget,
+            name=row["name"] if "name" in row.keys() else "",
+            description=row["description"] if "description" in row.keys() else "",
             role_prompt=row["role_prompt"],
             result=row["result"],
             origin_channel=row["origin_channel"],
             origin_chat_id=row["origin_chat_id"],
             spawn_tool_call_id=row["spawn_tool_call_id"],
             run_in_background=bool(row["run_in_background"]),
+            execution_mode=row["execution_mode"] if "execution_mode" in row.keys() else ("async" if bool(row["run_in_background"]) else "sync"),
+            context_mode=row["context_mode"] if "context_mode" in row.keys() else "fresh",
+            session_key=row["session_key"] if "session_key" in row.keys() else "",
+            parent_thread_id=row["parent_thread_id"] if "parent_thread_id" in row.keys() else "",
+            parent_task_id=row["parent_task_id"] if "parent_task_id" in row.keys() else "",
+            seed_messages_json=row["seed_messages_json"] if "seed_messages_json" in row.keys() else "",
             worktree_path=row["worktree_path"],
             worktree_branch=row["worktree_branch"],
             created_at=row["created_at"],

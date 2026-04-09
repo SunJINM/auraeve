@@ -13,7 +13,13 @@ def test_task_default_values():
     assert t.agent_type == "general-purpose"
     assert t.status == TaskStatus.QUEUED
     assert t.priority == 5
-    assert t.run_in_background is True
+    assert t.run_in_background is False
+    assert t.execution_mode == "sync"
+    assert t.context_mode == "fresh"
+    assert t.session_key == ""
+    assert t.parent_thread_id == ""
+    assert t.parent_task_id == ""
+    assert t.seed_messages_json == ""
     assert t.budget.max_steps == 50
     assert t.budget.max_duration_s == 600
     assert t.budget.max_tool_calls == 100
@@ -24,6 +30,25 @@ def test_task_budget_custom():
     assert b.max_steps == 20
     assert b.max_duration_s == 120
     assert b.max_tool_calls == 50
+
+
+def test_task_supports_execution_and_context_modes():
+    t = Task(
+        task_id="t-exec",
+        goal="继续分析",
+        execution_mode="fork",
+        context_mode="inherit",
+        session_key="sub:t-exec",
+        parent_thread_id="main:chat",
+        parent_task_id="parent-1",
+        seed_messages_json='[{"role":"user","content":"hello"}]',
+    )
+    assert t.execution_mode == "fork"
+    assert t.context_mode == "inherit"
+    assert t.session_key == "sub:t-exec"
+    assert t.parent_thread_id == "main:chat"
+    assert t.parent_task_id == "parent-1"
+    assert t.seed_messages_json.startswith("[")
 
 
 def test_terminal_statuses():

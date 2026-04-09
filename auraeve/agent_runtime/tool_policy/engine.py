@@ -214,7 +214,11 @@ class ToolPolicyEngine:
         ))
 
         # ── 层 3：子代理策略 ──────────────────────────────────────────────
-        if ctx.is_subagent and ctx.tool_name in _SUBAGENT_DENY:
+        allow_in_subagent = False
+        if isinstance(ctx.tool_metadata, dict):
+            allow_in_subagent = bool(ctx.tool_metadata.get("allow_in_subagent"))
+
+        if ctx.is_subagent and ctx.tool_name in _SUBAGENT_DENY and not allow_in_subagent:
             decision = PolicyDecision(
                 layer="subagent",
                 rule_id="subagent_deny_agent",

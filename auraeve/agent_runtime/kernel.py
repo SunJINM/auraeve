@@ -140,7 +140,7 @@ class RuntimeKernel:
             command_queue=self.command_queue,
             provider=provider,
             tool_builder=lambda task: build_tool_registry(
-                profile="subagent",
+                profile="main" if task.agent_type == "coordinator" else "subagent",
                 workspace=self.workspace,
                 restrict_to_workspace=self.restrict_to_workspace,
                 exec_timeout=self.exec_timeout,
@@ -170,6 +170,7 @@ class RuntimeKernel:
             thinking_budget_tokens=thinking_budget_tokens or 0,
             max_concurrent=max_global_subagent_concurrent,
             workspace=str(workspace),
+            sessions_dir=sessions_dir / "subagent_sessions",
         )
 
         # 主执行器与统一运行编排器
@@ -409,7 +410,12 @@ class RuntimeKernel:
             message_tool.set_context(channel, chat_id)
         agent_tool = tools.get("agent")
         if agent_tool is not None and isinstance(agent_tool, AgentTool):
-            agent_tool.set_context(channel, chat_id)
+            agent_tool.set_context(
+                channel,
+                chat_id,
+                thread_id,
+                session_history_loader=lambda tid=thread_id: self.sessions.get_or_create(tid).get_history(),
+            )
         cron_tool = tools.get("cron")
         if cron_tool is not None and isinstance(cron_tool, CronTool):
             cron_tool.set_context(channel, chat_id)
