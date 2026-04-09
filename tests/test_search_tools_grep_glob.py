@@ -16,8 +16,8 @@ def test_grep_tool_exposes_claude_style_parameters() -> None:
     tool = GrepTool()
 
     assert tool.name == "Grep"
-    assert "ALWAYS use Grep for search tasks" in tool.description
-    assert "NEVER invoke `grep` or `rg` as a Bash command" in tool.description
+    assert "Use Grep proactively for targeted content search" in tool.description
+    assert "combine path, glob, type, and output_mode" in tool.description
     assert 'Output modes: "content" shows matching lines, "files_with_matches" shows only file paths (default), "count" shows match counts' in tool.description
     assert tool.parameters["required"] == ["pattern"]
     props = tool.parameters["properties"]
@@ -44,8 +44,8 @@ def test_glob_tool_exposes_claude_style_parameters() -> None:
 
     assert tool.name == "Glob"
     assert "Fast file pattern matching tool" in tool.description
-    assert "Use this tool when you need to find files by name patterns" in tool.description
-    assert "open ended search that may require multiple rounds" in tool.description
+    assert "Use it proactively to shrink the candidate file set quickly" in tool.description
+    assert "pair it with Read or Grep" in tool.description
     assert tool.parameters["required"] == ["pattern"]
     props = tool.parameters["properties"]
     assert set(props) == {"pattern", "path"}
@@ -80,9 +80,9 @@ def test_registry_and_prompt_include_grep_and_glob(tmp_path: Path) -> None:
     assert "- Grep: 搜索文件内容（ripgrep）" in prompt
     assert "- Glob: 按模式匹配文件路径" in prompt
     assert "内容搜索优先用 Grep，按文件名/路径模式查找优先用 Glob" in prompt
-    assert "不要用 Bash 调用 rg、grep、find 或 dir 来替代" in prompt
+    assert "为了提高结论质量，优先组合使用 Grep、Glob、Read 和 Bash" in prompt
     assert "第一次调用就尽量提供 path、glob、type 或 output_mode 这类约束" in prompt
-    assert "开放式、多轮、发散式搜索任务，优先使用 agent" in prompt
+    assert "开放式、多轮、发散式搜索任务，可以积极使用 agent" in prompt
 
 
 @pytest.mark.asyncio
