@@ -28,6 +28,7 @@ class PermanentError(STTError):
 @dataclass
 class STTRequest:
     input_path: Path
+    audio_url: str = ""
     channel: str = ""
     language: str = ""
     provider_profile: str = ""
@@ -63,6 +64,7 @@ class STTResult:
 @dataclass
 class ProviderProfile:
     id: str
+    type: str = ""
     enabled: bool = True
     priority: int = 100
     model: str = ""

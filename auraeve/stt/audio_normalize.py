@@ -124,6 +124,62 @@ async def convert_to_wav_via_ffmpeg(input_path: str) -> str | None:
         return None
 
 
+async def convert_to_ogg_opus_via_ffmpeg(input_path: str, *, bitrate: str = "32k") -> str | None:
+    try:
+        import imageio_ffmpeg
+    except ImportError:
+        logger.warning("imageio-ffmpeg is not installed; cannot convert audio to ogg/opus")
+        return None
+
+    import subprocess
+
+    ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
+    out = tempfile.NamedTemporaryFile(delete=False, suffix=".ogg")
+    out_path = out.name
+    out.close()
+
+    loop = asyncio.get_running_loop()
+    try:
+        result = await loop.run_in_executor(
+            None,
+            lambda: subprocess.run(
+                [
+                    ffmpeg,
+                    "-y",
+                    "-i",
+                    input_path,
+                    "-vn",
+                    "-ar",
+                    "16000",
+                    "-ac",
+                    "1",
+                    "-c:a",
+                    "libopus",
+                    "-b:a",
+                    bitrate,
+                    "-vbr",
+                    "on",
+                    out_path,
+                ],
+                capture_output=True,
+                timeout=30,
+            ),
+        )
+        if result.returncode != 0:
+            tail = result.stderr.decode(errors="replace")[-300:]
+            logger.warning(f"ffmpeg ogg/opus convert failed: {tail}")
+            os.unlink(out_path)
+            return None
+        return out_path
+    except Exception as exc:
+        logger.warning(f"ffmpeg ogg/opus convert error: {exc}")
+        try:
+            os.unlink(out_path)
+        except OSError:
+            pass
+        return None
+
+
 async def normalize_for_stt(input_path: str) -> tuple[str, bool, str]:
     """Return (path, should_cleanup, detected_format)."""
     fmt = detect_audio_format(input_path)
@@ -137,6 +193,32 @@ async def normalize_for_stt(input_path: str) -> tuple[str, bool, str]:
     converted = await convert_to_wav_via_ffmpeg(input_path)
     if converted:
         return converted, True, "wav"
+    return input_path, False, fmt
+
+
+async def normalize_for_bytedance_flash_upload(input_path: str) -> tuple[str, bool, str]:
+    """Prefer compact provider-supported uploads for ByteDance flash ASR."""
+    fmt = detect_audio_format(input_path)
+    if fmt in {"ogg", "wav", "mp3"}:
+        return input_path, False, fmt
+
+    if fmt == "silk":
+        decoded = await silk_to_wav(input_path)
+        if decoded:
+            try:
+                converted = await convert_to_ogg_opus_via_ffmpeg(decoded)
+            finally:
+                try:
+                    os.unlink(decoded)
+                except OSError:
+                    pass
+            if converted:
+                return converted, True, "ogg"
+        return input_path, False, fmt
+
+    converted = await convert_to_ogg_opus_via_ffmpeg(input_path)
+    if converted:
+        return converted, True, "ogg"
     return input_path, False, fmt
 
 

@@ -54,6 +54,18 @@ def build_defaults() -> dict[str, Any]:
                     "model": "paraformer-zh",
                     "timeoutMs": 20000,
                 },
+                {
+                    "id": "bytedance-flash",
+                    "enabled": False,
+                    "priority": 50,
+                    "type": "bytedance-flash",
+                    "model": "bigmodel",
+                    "apiBase": "https://openspeech.bytedance.com",
+                    "apiKey": "",
+                    "resourceId": "volc.bigasr.auc_turbo",
+                    "uid": "",
+                    "timeoutMs": 20000,
+                },
             ],
         },
         "LLM_MODELS": [

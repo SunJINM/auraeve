@@ -84,6 +84,7 @@ class STTRuntime:
 
         req = STTRequest(
             input_path=Path(file_path),
+            audio_url="",
             channel=channel,
             language=language_final,
             provider_profile=provider_profile,
@@ -105,6 +106,48 @@ class STTRuntime:
         if result.ok and result.text and self._config.cache_enabled and cache_key:
             self._cache.set(cache_key, result.text, self._config.cache_ttl_s)
 
+        return result.text if result.ok else None
+
+    async def transcribe_url(
+        self,
+        audio_url: str,
+        *,
+        channel: str,
+        language: str | None = None,
+        provider_profile: str = "",
+        metadata: dict[str, Any] | None = None,
+    ) -> str | None:
+        if not self._config.enabled:
+            return None
+
+        target_url = str(audio_url or "").strip()
+        if not target_url:
+            return None
+
+        language_final = (language or self._config.default_language or "zh-CN").strip() or "zh-CN"
+        request_id = str(uuid.uuid4())
+        meta = dict(metadata or {})
+        meta.setdefault("audio", {"url": target_url})
+        req = STTRequest(
+            input_path=Path("remote-audio"),
+            audio_url=target_url,
+            channel=channel,
+            language=language_final,
+            provider_profile=provider_profile,
+            metadata=meta,
+        )
+        result = await self._orchestrator.transcribe(req)
+
+        self._write_audit(
+            request_id=request_id,
+            channel=channel,
+            provider_selected=result.provider,
+            attempts=result.attempts,
+            latency_ms=result.latency_ms,
+            ok=result.ok,
+            error=result.error,
+            metadata=meta,
+        )
         return result.text if result.ok else None
 
     def _write_audit(
@@ -141,8 +184,18 @@ def _normalize_provider_profile(raw: Any) -> ProviderProfile | None:
     if not provider_id:
         return None
 
+    options = dict(raw.get("options") or {})
+    for key in ("resourceId", "uid"):
+        value = raw.get(key)
+        if isinstance(value, str) and value.strip():
+            options[key] = value.strip()
+    use_url_mode = raw.get("useUrlMode")
+    if isinstance(use_url_mode, bool):
+        options["useUrlMode"] = use_url_mode
+
     return ProviderProfile(
         id=provider_id,
+        type=str(raw.get("type") or provider_id).strip().lower(),
         enabled=bool(raw.get("enabled", True)),
         priority=int(raw.get("priority", 100)),
         model=str(raw.get("model") or "").strip(),
@@ -152,7 +205,7 @@ def _normalize_provider_profile(raw: Any) -> ProviderProfile | None:
         timeout_ms=int(raw.get("timeoutMs", raw.get("timeout_ms", 15000)) or 15000),
         command=str(raw.get("command") or "").strip(),
         args_template=[str(x) for x in (raw.get("argsTemplate") or raw.get("args_template") or [])],
-        options=dict(raw.get("options") or {}),
+        options=options,
     )
 
 

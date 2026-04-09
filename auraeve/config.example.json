@@ -95,6 +95,18 @@
         "type": "funasr-local",
         "model": "paraformer-zh",
         "timeoutMs": 20000
+      },
+      {
+        "id": "bytedance-flash",
+        "enabled": false,
+        "priority": 50,
+        "type": "bytedance-flash",
+        "model": "bigmodel",
+        "apiBase": "https://openspeech.bytedance.com",
+        "apiKey": "",
+        "resourceId": "volc.bigasr.auc_turbo",
+        "uid": "",
+        "timeoutMs": 20000
       }
     ]
   },
