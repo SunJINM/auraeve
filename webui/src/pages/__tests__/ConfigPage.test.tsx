@@ -68,12 +68,76 @@ describe('ConfigPage', () => {
     vi.clearAllMocks()
   })
 
-  it('renders model cards and asr card', async () => {
+  it('renders config workspace shell with section navigation', async () => {
     render(<ConfigPage />)
-    await waitFor(() => expect(screen.getByText('模型配置')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByRole('heading', { name: '参数配置' })).toBeInTheDocument())
+    expect(screen.getByRole('button', { name: '模型' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '读取路由' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '语音转文本' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '运行时' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '记忆' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '扩展' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '系统' })).toBeInTheDocument()
     expect(screen.getAllByText('主模型').length).toBeGreaterThan(0)
-    expect(screen.getByText('语音转文本')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '刷新' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '保存' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '应用' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '重启服务' })).toBeInTheDocument()
+  })
+
+  it('switches active config sections from the sidebar', async () => {
+    render(<ConfigPage />)
+    await waitFor(() => expect(screen.getByRole('button', { name: '语音转文本' })).toBeInTheDocument())
+
+    fireEvent.click(screen.getByRole('button', { name: '语音转文本' }))
+    expect(screen.getByText('ASR 全局设置')).toBeInTheDocument()
     expect(screen.getAllByDisplayValue('bytedance-flash').length).toBeGreaterThan(0)
+
+    fireEvent.click(screen.getByRole('button', { name: '读取路由' }))
+    expect(screen.getByText('图片与文件读取策略')).toBeInTheDocument()
+    expect(screen.getByText('启用图片降级')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '记忆' }))
+    expect(screen.getByText('记忆与上下文')).toBeInTheDocument()
+    expect(screen.getByLabelText('上下文引擎')).toBeInTheDocument()
+    expect(screen.getByLabelText('Embedding 模型')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '运行时' }))
+    expect(screen.getByText('运行时预算')).toBeInTheDocument()
+    expect(screen.getByLabelText('最大轮数')).toBeInTheDocument()
+    expect(screen.getByLabelText('循环检测模式')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '扩展' }))
+    expect(screen.getByText('MCP 与插件能力')).toBeInTheDocument()
+    expect(screen.getByLabelText('MCP 启用')).toBeInTheDocument()
+    expect(screen.getByLabelText('插件系统')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '系统' }))
+    expect(screen.getByText('系统服务与运维')).toBeInTheDocument()
+    expect(screen.getByLabelText('WebUI 端口')).toBeInTheDocument()
+    expect(screen.getByLabelText('心跳间隔(秒)')).toBeInTheDocument()
+    expect(screen.getByLabelText('NapCat WS URL')).toBeInTheDocument()
+    expect(screen.getByLabelText('Agent 列表 JSON')).toBeInTheDocument()
+  })
+
+  it('saves updated runtime and system settings from visual sections', async () => {
+    render(<ConfigPage />)
+    await waitFor(() => expect(screen.getByRole('button', { name: '运行时' })).toBeInTheDocument())
+
+    fireEvent.click(screen.getByRole('button', { name: '运行时' }))
+    fireEvent.change(screen.getByLabelText('最大轮数'), { target: { value: '80' } })
+
+    fireEvent.click(screen.getByRole('button', { name: '系统' }))
+    fireEvent.change(screen.getByLabelText('WebUI 端口'), { target: { value: '9090' } })
+
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+
+    await waitFor(() => expect(mockSet).toHaveBeenCalledTimes(1))
+    const firstCall = mockSet.mock.calls.at(0) as unknown[] | undefined
+    const payload = (firstCall?.[1] ?? {}) as Record<string, any>
+    expect(payload).toBeDefined()
+    expect(payload.RUNTIME_EXECUTION.maxTurns).toBe(80)
+    expect(payload.WEBUI_PORT).toBe(9090)
   })
 
   it('allows switching primary model card', async () => {
@@ -88,7 +152,8 @@ describe('ConfigPage', () => {
 
   it('shows bytedance flash fields when provider type is selected', async () => {
     render(<ConfigPage />)
-    await waitFor(() => expect(screen.getByText('语音转文本')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByRole('button', { name: '语音转文本' })).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: '语音转文本' }))
     const selects = screen.getAllByRole('combobox')
     fireEvent.change(selects[0], { target: { value: 'bytedance-flash' } })
     expect(screen.getByPlaceholderText('Resource ID')).toBeInTheDocument()
@@ -141,7 +206,8 @@ describe('ConfigPage', () => {
     }
     mockGet.mockResolvedValueOnce(configResponse)
     render(<ConfigPage />)
-    await waitFor(() => expect(screen.getByText('语音转文本')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByRole('button', { name: '语音转文本' })).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: '语音转文本' }))
     const pills = screen.getAllByText(/^(bytedance-flash|openai)$/)
     expect(pills[0]).toHaveTextContent('bytedance-flash')
   })
@@ -193,7 +259,8 @@ describe('ConfigPage', () => {
     }
     mockGet.mockResolvedValueOnce(configResponse)
     render(<ConfigPage />)
-    await waitFor(() => expect(screen.getByText('语音转文本')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByRole('button', { name: '语音转文本' })).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: '语音转文本' }))
     const pills = screen.getAllByText(/^(bytedance-flash|openai|whisper-cli|funasr-local)$/)
     expect(pills[0]).toHaveTextContent('bytedance-flash')
     expect(screen.getAllByDisplayValue('bytedance-flash').length).toBeGreaterThan(0)
