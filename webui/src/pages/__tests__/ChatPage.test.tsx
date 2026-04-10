@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ChatPage } from '../ChatPage'
@@ -57,19 +57,18 @@ describe('ChatPage', () => {
   it('renders transcript-first layout without run panel', async () => {
     render(<ChatPage />)
 
-    await waitFor(() => expect(mockRuntime).toHaveBeenCalled())
     expect(screen.queryByText('运行控制台')).not.toBeInTheDocument()
-    expect(screen.getByText('聊天主线')).toBeInTheDocument()
+    expect(screen.queryByText('聊天主线')).not.toBeInTheDocument()
+    expect(screen.getByDisplayValue('webui:test')).toBeInTheDocument()
   })
 
   it('does not render task list when there are no main tasks', async () => {
     render(<ChatPage />)
 
-    await waitFor(() => expect(mockRuntime).toHaveBeenCalled())
     expect(screen.queryByText('实时任务')).not.toBeInTheDocument()
   })
 
-  it('renders realtime task list when runtime includes main tasks', async () => {
+  it('keeps chat-only layout when runtime includes main tasks', async () => {
     mockRuntime.mockResolvedValue({
       run: { runId: 'run-1', status: 'running', done: false, aborted: false },
       toolCalls: [],
@@ -112,13 +111,12 @@ describe('ChatPage', () => {
 
     render(<ChatPage />)
 
-    await waitFor(() => expect(mockRuntime).toHaveBeenCalled())
-    expect(await screen.findByText('实时任务')).toBeInTheDocument()
-    expect(screen.getByText('Task 6: Orchestrator 重写 inject_result_to_mother')).toBeInTheDocument()
-    expect(screen.getByText('Task 7: Kernel 注册回调 + spawn 传 agent_name')).toBeInTheDocument()
+    expect(screen.queryByText('实时任务')).not.toBeInTheDocument()
+    expect(screen.queryByText('Task 6: Orchestrator 重写 inject_result_to_mother')).not.toBeInTheDocument()
+    expect(screen.queryByText('Task 7: Kernel 注册回调 + spawn 传 agent_name')).not.toBeInTheDocument()
   })
 
-  it('collapses task list to the current in-progress task summary', async () => {
+  it('does not show run block count in status line', async () => {
     mockRuntime.mockResolvedValue({
       run: { runId: 'run-1', status: 'running', done: false, aborted: false },
       toolCalls: [],
@@ -161,11 +159,6 @@ describe('ChatPage', () => {
 
     render(<ChatPage />)
 
-    await waitFor(() => expect(mockRuntime).toHaveBeenCalled())
-    const toggle = await screen.findByRole('button', { name: /折叠任务列表/i })
-    fireEvent.click(toggle)
-
-    expect(await screen.findByText('进行中: Task 6: Orchestrator 重写 inject_result_to_mother')).toBeInTheDocument()
-    expect(screen.queryByText('Task 7: Kernel 注册回调 + spawn 传 agent_name')).not.toBeInTheDocument()
+    expect(screen.queryByText(/个运行块/)).not.toBeInTheDocument()
   })
 })
