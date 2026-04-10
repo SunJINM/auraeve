@@ -3,10 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from auraeve.agent.tasks import TaskStore
-from auraeve.agent.tools.browser import BrowserTool
 from auraeve.agent.tools.cron import CronTool
 from auraeve.agent.tools.filesystem import EditTool, ReadTool, WriteTool
-from auraeve.agent.tools.message import MessageTool
 from auraeve.agent.tools.plan import TodoTool
 from auraeve.agent.tools.search import GlobTool, GrepTool
 from auraeve.agent.tools.task_create import TaskCreateTool
@@ -105,15 +103,6 @@ def build_tool_registry(
     ))
     registry.register(WebFetchTool())
 
-    message_tool = MessageTool(
-        send_callback=bus_publish_outbound,
-        channel_users=channel_users or {},
-        notify_channel=notify_channel,
-    )
-    if origin_channel and origin_chat_id:
-        message_tool.set_context(origin_channel, origin_chat_id)
-    registry.register(message_tool)
-
     if subagent_executor is not None and profile == "main":
         registry.register(AgentTool(executor=subagent_executor))
 
@@ -130,8 +119,6 @@ def build_tool_registry(
         task_session_key=task_session_key or thread_id,
         task_base_dir=task_base_dir,
     )
-
-    registry.register(BrowserTool(screenshot_dir=Path(tool_workspace) / "artifacts" / "browser"))
 
     if engine is not None:
         from auraeve.agent.engines.vector.engine import VectorContextEngine

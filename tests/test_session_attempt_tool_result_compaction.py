@@ -18,11 +18,10 @@ class ToolResultCompactionTests(unittest.TestCase):
         self.assertIn("inline-base64-uri omitted", compacted)
         self.assertNotIn("base64://BBBB", compacted)
 
-    def test_compact_truncates_very_long_text(self) -> None:
+    def test_compact_preserves_very_long_text_without_truncation(self) -> None:
         raw = "x" * 20000
         compacted = _compact_tool_result("web_fetch", raw)
-        self.assertIn("[tool_result_truncated", compacted)
-        self.assertLess(len(compacted), len(raw))
+        self.assertEqual(compacted, raw)
 
 
 if __name__ == "__main__":

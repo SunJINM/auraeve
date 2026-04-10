@@ -41,3 +41,8 @@ def test_subagent_prompt_includes_tool_efficiency_protocol() -> None:
     assert "扩大信息增量" in prompt
     assert "只有彼此独立、互不依赖的只读工具调用，才应并发发出" in prompt
     assert "依赖前一步结果的调用必须串行执行" in prompt
+    assert "默认给出清晰、详细、结构化的结果" in prompt
+    assert "不要为了显得详细而堆砌无关内容" in prompt
+    assert "禁止截断已收集到的关键信息" in prompt
+    assert "必要时分多轮继续读取或继续收集" in prompt
+    assert "写入本地 Markdown 文档并返回路径" in prompt

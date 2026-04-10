@@ -98,10 +98,6 @@ class ContextBuilder:
         if not is_minimal and "agent" in tools:
             sections.append("\n".join(self._section_subagent_protocol()))
 
-        # 消息工具使用规范（条件：message 工具可用 + 非 minimal）
-        if not is_minimal and "message" in tools:
-            sections.append("\n".join(self._section_messaging()))
-
         # Project Context（启动文件）
         bootstrap = self._load_bootstrap_files()
         if bootstrap:
@@ -153,11 +149,9 @@ class ContextBuilder:
             "Bash":           "执行 Bash Shell 命令",
             "web_search":     "搜索网页（Tavily 优先，Brave / DuckDuckGo 降级）",
             "web_fetch":      "抓取 URL 可读内容（三层提取管道）",
-            "browser":        "控制浏览器（导航、截图、交互）",
             "memory_search":  "语义搜索历史记忆（向量 + BM25 混合检索）",
             "memory_get":     "按路径读取记忆文件片段（行范围）",
             "memory_status":  "查看记忆索引状态与降级信息",
-            "message":        "发送消息、文件、图片到渠道",
             "agent":          "启动子智能体执行复杂多步骤任务，支持查询和管理已创建的子智能体",
             "cron":           "管理定时任务和唤醒事件（用于提醒；设置提醒时，写入自然语言描述以便触发时读起来像提醒）",
             "todo":           "管理当前任务规划列表",
@@ -168,8 +162,8 @@ class ContextBuilder:
         }
         TOOL_ORDER = [
             "Read", "Write", "Edit", "Grep", "Glob", "Bash",
-            "web_search", "web_fetch", "browser",
-            "memory_search", "memory_get", "memory_status", "message", "agent", "cron",
+            "web_search", "web_fetch",
+            "memory_search", "memory_get", "memory_status", "agent", "cron",
             "TaskCreate", "TaskGet", "TaskUpdate", "TaskList", "todo",
         ]
 
@@ -208,6 +202,14 @@ class ContextBuilder:
             "工具名区分大小写，调用时请完全匹配。",
             "\n".join(tool_lines),
             "",
+            "## 输出质量",
+            "- 默认给出清晰、详细、结构化的答复，优先保证信息完整、层次清楚、重点明确。",
+            "- 详细不等于冗长：不要为了显得详细而堆砌无关内容，保留与任务目标直接相关的事实、判断、证据和结论。",
+            "- 禁止因为篇幅考虑把关键事实简单压缩成简版；如果内容很多，应先组织结构，再展开关键部分。",
+            "- 信息收集、会议总结、调研汇总、方案比较这类任务，优先按“结论/背景/关键事实/分析/风险与未决项/后续动作”等结构输出。",
+            "- 工具返回内容较长时，禁止截断后假装完整掌握；必要时可分多轮继续读取、继续抓取或继续搜索，直到证据充分。",
+            "- 当任务明确要求详细信息，或结果天然会形成长文档时，可将完整内容写入 docs/ 下的 Markdown 文件，并在回复开头先告知用户文件路径，再提供摘要。",
+            "",
             "## Read / Write 约束",
             "- Read 的 file_path 必须是绝对路径。",
             f"- Read 默认最多读取 {2000} 行文本；需要更精确范围时使用 offset 和 limit。",
@@ -243,7 +245,7 @@ class ContextBuilder:
             "",
             "## 工具调用风格",
             "默认：直接调用，不要过度解释。读文件、搜索、列目录等低风险操作直接执行。",
-            "高风险操作（Bash / Write / Edit / browser）先用一句话说明再执行。",
+            "高风险操作（Bash / Write / Edit）先用一句话说明再执行。",
             "只在以下情况简要说明正在做什么：多步骤复杂操作、敏感操作（删除/覆盖）、用户明确要求。",
             "有专用工具时，直接调用工具，不要让用户自行运行命令。",
             "长时间等待时，避免紧密轮询：用 Bash 配合足够的等待时间，或用后台任务。",
@@ -392,30 +394,6 @@ class ContextBuilder:
             "**写好 prompt**：子智能体看不到你的对话历史，每个 prompt 必须自包含。"
             "像向刚走进房间的聪明同事简报一样：说清楚目标、已知背景、你已排除的方向、期望的输出格式。"
             "简短的命令式 prompt 只会得到肤浅的结果。",
-            "",
-        ]
-
-    def _section_messaging(self) -> list[str]:
-        """消息工具使用规范（条件：message 工具可用 + 非 minimal）。"""
-        return [
-            "## 消息工具",
-            "文字回复：直接用文字响应，不要调用 message 工具。",
-            "以下情况必须调用 message 工具：",
-            "- 发送文件 → message(content='', file_path='/绝对路径/文件名')",
-            "- 任务产出了文件（Write 写入）→ 任务完成前主动调用 message(file_path=...) 发送",
-            "- 主动推送通知 → message(content='通知内容')",
-            "- 发送网络图片 → message(content='', image_url='https://...')",
-            "- 当你已经拿到公网图片 URL 时，禁止先下载到本地再发 file_path；必须直接使用 image_url 发送",
-            "",
-            "用户说'发文件/图片给我'时：先用 Bash 找到绝对路径，再调用 message。",
-            "**绝不能回复\"无法发送文件\"——这是已支持的功能。**",
-            "",
-            "## 任务完成规则",
-            "更新任务状态或清空 legacy todo 仅表示任务跟踪已同步，不等于自动结束回复流程。",
-            "若任务产出了文件，先调用 message(file_path=...) 发送文件。",
-            "只有在内部 meta 事件（如 heartbeat / cron / task-notification）且确实无需对用户说任何话时，才允许最终回复 __SILENT__。",
-            "对正常用户消息，绝不能用 __SILENT__ 结束本轮；即使结果很少，也要给出简短可见回复。",
-            "若有结果、结论、提醒或下一步建议需要用户感知，必须给出正常文字回复。",
             "",
         ]
 

@@ -52,6 +52,8 @@ def test_build_tool_registry_registers_task_v2_tools_without_legacy_todo(tmp_pat
     assert registry.has("TaskUpdate")
     assert registry.has("TaskList")
     assert registry.has("Bash")
+    assert registry.has("message") is False
+    assert registry.has("browser") is False
     assert registry.has("exec") is False
     assert registry.has("todo") is False
 
@@ -73,6 +75,8 @@ def test_build_tool_registry_registers_legacy_todo_without_task_v2_tools(tmp_pat
 
     assert registry.has("todo")
     assert registry.has("Bash")
+    assert registry.has("message") is False
+    assert registry.has("browser") is False
     assert registry.has("exec") is False
     assert registry.has("TaskCreate") is False
     assert registry.has("TaskGet") is False
@@ -107,20 +111,20 @@ def test_context_builder_keeps_legacy_todo_guidance_when_only_todo_available(tmp
     assert "TaskCreate" not in prompt
 
 
-def test_context_builder_uses_read_write_tool_names(tmp_path: Path) -> None:
+def test_context_builder_uses_read_write_tool_names_without_removed_tools(tmp_path: Path) -> None:
     builder = ContextBuilder(tmp_path)
 
     prompt = builder.build_system_prompt(
         channel="webui",
         chat_id="chat-1",
-        available_tools={"Read", "Write", "Edit", "Bash", "message"},
+        available_tools={"Read", "Write", "Edit", "Bash"},
     )
 
     assert "- Read: 读取文件内容" in prompt
     assert "- Write: 创建或覆盖文件" in prompt
     assert "- Edit: 精确编辑文件片段" in prompt
     assert "- Bash: 执行 Bash Shell 命令" in prompt
-    assert "高风险操作（Bash / Write / Edit / browser）先用一句话说明再执行。" in prompt
+    assert "高风险操作（Bash / Write / Edit）先用一句话说明再执行。" in prompt
     assert "为了高质量完成任务，积极使用最能提升结论质量的工具组合" in prompt
     assert "需要长时间运行且不必立刻读取结果时，使用 run_in_background" in prompt
     assert "每次调用都应明显减少不确定性" in prompt
@@ -131,7 +135,16 @@ def test_context_builder_uses_read_write_tool_names(tmp_path: Path) -> None:
     assert "Read 读取该技能的 <location>" in prompt
     assert "使用 <location> 字段中的原始路径调用 Read" in prompt
     assert "用 Write 在" in prompt
-    assert "任务产出了文件（Write 写入）" in prompt
+    assert "默认给出清晰、详细、结构化的答复" in prompt
+    assert "不要为了显得详细而堆砌无关内容" in prompt
+    assert "禁止因为篇幅考虑把关键事实简单压缩成简版" in prompt
+    assert "工具返回内容较长时，禁止截断后假装完整掌握" in prompt
+    assert "可分多轮继续读取" in prompt
+    assert "写入 docs/ 下的 Markdown 文件" in prompt
+    assert "先告知用户文件路径，再提供摘要" in prompt
+    assert "message(content=" not in prompt
+    assert "以下情况必须调用 message 工具" not in prompt
+    assert "- browser:" not in prompt
     assert "list_dir" not in prompt
     assert "- pdf:" not in prompt
     assert "read_file" not in prompt

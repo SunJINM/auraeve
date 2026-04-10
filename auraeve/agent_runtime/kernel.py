@@ -23,7 +23,6 @@ from auraeve.providers.base import LLMProvider
 from auraeve.agent.engines.base import ContextEngine
 from auraeve.agent.legacy_todo_state import extract_latest_todos
 from auraeve.agent.tools.registry import ToolRegistry
-from auraeve.agent.tools.message import MessageTool
 from auraeve.agent.tools.agent_tool import AgentTool
 from auraeve.agent.tools.cron import CronTool
 from auraeve.agent.tools.plan import TodoTool
@@ -204,9 +203,7 @@ class RuntimeKernel:
         self.tools.register(tool)
 
     def register_channel_sender(self, channel: str, sender) -> None:
-        message_tool = self.tools.get("message")
-        if message_tool is not None and isinstance(message_tool, MessageTool):
-            message_tool.register_direct_sender(channel, sender)
+        return None
 
     def _initialize_command_runtime(self) -> None:
         self.command_queue = RuntimeCommandQueue()
@@ -409,9 +406,6 @@ class RuntimeKernel:
         }
 
     def _set_tool_context(self, tools: ToolRegistry, channel: str, chat_id: str, thread_id: str) -> None:
-        message_tool = tools.get("message")
-        if message_tool is not None and isinstance(message_tool, MessageTool):
-            message_tool.set_context(channel, chat_id)
         agent_tool = tools.get("agent")
         if agent_tool is not None and isinstance(agent_tool, AgentTool):
             agent_tool.set_context(

@@ -46,7 +46,6 @@ _DEFAULT_LOOP_GUARD = {
     "slowdownBackoffMs": 500,
 }
 
-_MAX_TOOL_RESULT_CHARS = 4_000
 _DATA_URL_RE = re.compile(
     r"data:(?P<mime>[a-zA-Z0-9.+-]+/[a-zA-Z0-9.+-]+);base64,(?P<data>[A-Za-z0-9+/=\s]+)"
 )
@@ -173,7 +172,8 @@ class SessionAttemptRunner:
                             "content": (
                                 "[系统提示] 执行预算已耗尽，无法继续工具调用。"
                                 "请根据你到目前为止已收集到的所有信息，"
-                                "立即给出一份尽可能完整的汇总结果。"
+                                "立即给出一份尽可能完整、结构化的汇总结果。"
+                                "优先保证关键事实、分析、风险、未决问题和后续动作完整，不要压成简版。"
                                 "如有信息缺口，在结尾注明哪些内容未能收集到。"
                                 "不要提及预算或系统限制，直接输出内容。"
                             ),
@@ -305,7 +305,8 @@ class SessionAttemptRunner:
                             "content": (
                                 "[系统提示] 执行预算已耗尽，无法继续工具调用。"
                                 "请根据你到目前为止已收集到的所有信息，"
-                                "立即给出一份尽可能完整的汇总结果。"
+                                "立即给出一份尽可能完整、结构化的汇总结果。"
+                                "优先保证关键事实、分析、风险、未决问题和后续动作完整，不要压成简版。"
                                 "如有信息缺口，在结尾注明哪些内容未能收集到。"
                                 "不要提及预算或系统限制，直接输出内容。"
                             ),
@@ -670,14 +671,7 @@ def _compact_tool_result(tool_name: str, result_text: Any) -> Any:
         return result_text
     text = str(result_text or "")
     text = _replace_embedded_binary(text)
-    if len(text) <= _MAX_TOOL_RESULT_CHARS:
-        return text
-    head = text[:2500]
-    tail = text[-1000:]
-    return (
-        f"{head}\n\n[tool_result_truncated tool={tool_name} "
-        f"omitted_chars={len(text) - len(head) - len(tail)} total_chars={len(text)}]\n\n{tail}"
-    )
+    return text
 
 
 def _replace_embedded_binary(text: str) -> str:

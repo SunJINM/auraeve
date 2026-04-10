@@ -26,11 +26,6 @@ class _FakeChannel:
         self.stopped = True
 
 
-class _FakeMessageTool:
-    def __init__(self) -> None:
-        self._direct_senders = {"napcat": object()}
-
-
 class _FakeTools:
     def __init__(self) -> None:
         self.tool_names = ["napcat_send", "other"]
@@ -41,8 +36,6 @@ class _FakeTools:
         self.tool_names = [item for item in self.tool_names if item != name]
 
     def get(self, name: str):
-        if name == "message":
-            return _FakeMessageTool()
         return None
 
 

@@ -17,7 +17,7 @@ _SUBAGENT_DENY: frozenset[str] = frozenset({"agent"})
 
 # 高副作用工具风险标签（用于 session 层策略参考）
 _HIGH_RISK_TOOLS: frozenset[str] = frozenset({
-    "Bash", "Write", "write_file", "Edit", "browser",
+    "Bash", "Write", "write_file", "Edit",
 })
 
 
@@ -48,9 +48,9 @@ class ToolPolicyEngine:
             return "mcp"
         if tool_name in {"Read", "Write", "read_file", "write_file", "Edit", "Grep", "Glob"}:
             return "filesystem"
-        if tool_name in {"web_search", "web_fetch", "browser"}:
+        if tool_name in {"web_search", "web_fetch"}:
             return "web"
-        if tool_name in {"agent", "message", "todo", "cron", "TaskCreate", "TaskGet", "TaskUpdate", "TaskList"}:
+        if tool_name in {"agent", "todo", "cron", "TaskCreate", "TaskGet", "TaskUpdate", "TaskList"}:
             return "agent"
         if tool_name in {"Bash"}:
             return "shell"

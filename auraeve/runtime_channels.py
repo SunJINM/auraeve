@@ -145,9 +145,6 @@ class ChannelRuntimeManager:
         self._napcat_channel = None
         self._remove_channel_task("napcat")
         self.bus.unsubscribe_outbound("napcat", channel.send)
-        message_tool = self.agent.tools.get("message")
-        if hasattr(message_tool, "_direct_senders"):
-            message_tool._direct_senders.pop("napcat", None)
         self._remove_napcat_tools()
         await channel.stop()
         self._remove_channel(channel)

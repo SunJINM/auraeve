@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
 
-from auraeve.agent.tools.message import MessageTool
 from auraeve.plugins import PluginRegistry
 from auraeve.stt import runtime_config_from_dict
 
@@ -318,10 +317,4 @@ class RuntimeHotApplyService:
 
 
 def sync_message_tool_settings(agent, *, channel_users: dict | None = None, notify_channel: str | None = None) -> None:
-    message_tool = agent.tools.get("message")
-    if not isinstance(message_tool, MessageTool):
-        return
-    if channel_users is not None:
-        message_tool._channel_users = channel_users
-    if notify_channel is not None:
-        message_tool._notify_channel = notify_channel
+    return None
