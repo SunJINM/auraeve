@@ -11,8 +11,9 @@
 3. 原始文本 fallback
 
 多提供商 web_search 降级链：
-1. Brave Search API（需 BRAVE_API_KEY）
-2. DuckDuckGo（免费 fallback，无需 key）
+1. Tavily Search API（需 TAVILY_API_KEY）
+2. Brave Search API（兼容旧配置，需 BRAVE_API_KEY）
+3. DuckDuckGo（免费 fallback，无需 key）
 """
 
 from __future__ import annotations
@@ -120,14 +121,15 @@ class WebSearchTool(Tool):
     网页搜索工具。
 
     多提供商降级链：
-    1. Brave Search API（BRAVE_API_KEY 已配置时）
-    2. DuckDuckGo Instant Answer（免费 fallback）
+    1. Tavily Search API（TAVILY_API_KEY 已配置时）
+    2. Brave Search API（BRAVE_API_KEY 已配置时）
+    3. DuckDuckGo Instant Answer（免费 fallback）
     """
 
     name = "web_search"
     description = (
         "搜索网页，返回标题、URL 和摘要。\n"
-        "优先使用 Brave Search；未配置 key 时自动切换到 DuckDuckGo。"
+        "优先使用 Tavily；兼容 Brave；都不可用时自动切换到 DuckDuckGo。"
     )
     parameters = {
         "type": "object",
@@ -143,19 +145,64 @@ class WebSearchTool(Tool):
         "required": ["query"],
     }
 
-    def __init__(self, api_key: str | None = None, max_results: int = 5):
-        self.api_key = api_key or os.environ.get("BRAVE_API_KEY", "")
+    def __init__(
+        self,
+        tavily_api_key: str | None = None,
+        brave_api_key: str | None = None,
+        max_results: int = 5,
+    ):
+        self.tavily_api_key = tavily_api_key or os.environ.get("TAVILY_API_KEY", "")
+        self.brave_api_key = brave_api_key or os.environ.get("BRAVE_API_KEY", "")
         self.max_results = max_results
 
     async def execute(self, query: str, count: int | None = None, **kwargs: Any) -> str:
         n = min(max(count or self.max_results, 1), 10)
 
-        if self.api_key:
+        if self.tavily_api_key:
+            result = await self._tavily_search(query, n)
+        elif self.brave_api_key:
             result = await self._brave_search(query, n)
         else:
             result = await self._duckduckgo_search(query, n)
 
         return _wrap_external_content(result, source="web_search")
+
+    async def _tavily_search(self, query: str, n: int) -> str:
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                r = await client.post(
+                    "https://api.tavily.com/search",
+                    json={
+                        "api_key": self.tavily_api_key,
+                        "query": query,
+                        "max_results": n,
+                        "search_depth": "basic",
+                        "include_answer": False,
+                        "include_raw_content": False,
+                    },
+                    headers={
+                        "Accept": "application/json",
+                        "Content-Type": "application/json",
+                    },
+                )
+                r.raise_for_status()
+            data = r.json()
+            results = data.get("results", [])
+            if not results:
+                return f"Tavily 未找到与\"{query}\"相关的结果"
+            lines = [f"Tavily 搜索：{query}\n"]
+            for i, item in enumerate(results[:n], 1):
+                lines.append(f"{i}. {item.get('title', '')}")
+                lines.append(f"   {item.get('url', '')}")
+                if desc := item.get("content"):
+                    lines.append(f"   {desc}")
+            return "\n".join(lines)
+        except Exception as e:
+            if self.brave_api_key:
+                brave = await self._brave_search(query, n)
+                return f"[Tavily 失败：{e}，已切换到 Brave]\n\n{brave}"
+            ddg = await self._duckduckgo_search(query, n)
+            return f"[Tavily 失败：{e}，已切换到 DuckDuckGo]\n\n{ddg}"
 
     async def _brave_search(self, query: str, n: int) -> str:
         try:
@@ -165,7 +212,7 @@ class WebSearchTool(Tool):
                     params={"q": query, "count": n},
                     headers={
                         "Accept": "application/json",
-                        "X-Subscription-Token": self.api_key,
+                        "X-Subscription-Token": self.brave_api_key,
                     },
                 )
                 r.raise_for_status()

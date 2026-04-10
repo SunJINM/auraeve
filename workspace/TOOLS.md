@@ -1,382 +1,127 @@
-# 可用工具
+# 工具速查
 
-本文档描述 AuraEve 当前工作区常用工具的使用方式。系统实际可用工具以当轮提示词中的工具目录为准；本文件提供更具体的行为建议、边界和示例。
+仅保留高频、易错、能明显提升效率的用法。系统实际可用工具以当轮提示词中的工具目录为准；这里不重复完整参数说明。
 
 ## 使用原则
 
-- 低风险操作直接执行：读文件、搜索、读取网页内容
-- 高风险操作先简短说明：删除、覆盖、批量改动、对外发送、改系统配置
-- 有专用工具时优先用专用工具；没有合适工具时，再写脚本
-- 多个互不依赖的操作尽量并行，减少轮次和等待
+- 低风险操作直接执行：读文件、搜索、列目录、抓取网页
+- 高风险操作先一句话说明：覆盖、批量改动、对外发送、改系统配置
+- 有专用工具时优先用专用工具；不要先写脚本绕路
+- 外部信息优先顺序：MCP / 技能 > 已知来源抓取 > `web_search`
+- 只读且互不依赖的调用才并发；依赖前一步结果时必须串行
 - 不凭印象回答；先读文件、查资料、跑命令确认事实
+- 复杂任务先建计划；开放式信息收集优先交给同步子智能体扩散处理，再由主线程综合
 
-## 文件操作
+## 高效组合
 
-### Read
-读取文件内容。
-```
-Read(file_path: str, offset: int = 1, limit: int = None) -> str
-```
+### 搜索定位
 
-### Write
-创建或覆盖文件内容；如需要会自动创建父目录。
-```
-Write(file_path: str, content: str) -> str
-```
+- 按路径找文件：`Glob`
+- 按内容找位置：`Grep`
+- 确认上下文：`Read`
 
-### Edit
-通过替换特定文本精确编辑文件。
-```
-Edit(file_path: str, old_string: str, new_string: str, replace_all: bool = false) -> str
-```
-
-## 搜索
-
-### Grep
-用 ripgrep 搜索文件内容。
-```
-Grep(
-  pattern: str,
-  path: str = None,
-  glob: str = None,
-  output_mode: str = "files_with_matches",
-  head_limit: int = None,
-  offset: int = 0,
-  multiline: bool = False,
-  type: str = None,
-  -i: bool = False,
-  -n: bool = True
-) -> str
-```
-
-**说明：**
-- 内容搜索优先使用 `Grep`，不要再用 `Bash` 调 `rg` / `grep`
-- `output_mode="content"` 返回匹配行
-- `output_mode="files_with_matches"` 只返回文件路径
-- `output_mode="count"` 返回计数结果
-- 结果较多时优先配合 `glob`、`type`、`head_limit`、`offset`
-
-### Glob
-按文件名或路径模式查找文件。
-```
-Glob(pattern: str, path: str = None) -> str
-```
-
-**说明：**
-- 路径/文件名模式查找优先使用 `Glob`
-- 适合 `**/*.py`、`src/**/*.ts`、`*.md` 这类场景
-- 返回按修改时间排序的匹配文件路径
-
-## Shell 执行
-
-### Bash
-执行 Bash Shell 命令并返回结果。
-```
-Bash(
-  command: str,
-  timeout: int = None,
-  description: str = None,
-  run_in_background: bool = False,
-  dangerouslyDisableSandbox: bool = False
-) -> str
-```
-
-**说明：**
-- Windows 上使用 Git Bash 运行
-- 命令有超时限制（毫秒）
-- 明显危险的命令会被拦截
-- 可以用 `run_in_background=true` 启动后台任务
-- 当前工作目录会在同一轮工具调用内持续跟踪
-
-## 脚本策略
-
-当现有工具不能直接完成任务时，写脚本是标准手段，但不是默认第一选择。
-
-**优先顺序：**
-1. 先看是否已有专用工具可直接完成
-2. 专用工具不合适时，再写脚本
-3. 脚本执行后读取输出，再决定下一步
-
-**推荐做法：**
-1. 用 `Write` 将脚本写到当前工作区的 `scripts/`
-2. 用 `Bash` 执行脚本
-3. 读取输出并继续处理
-
-**示例 1：处理 JSON 数据**
 ```python
-# Write("scripts/parse_data.py", ...)
-import json
-
-data = json.load(open("data.json", "r", encoding="utf-8"))
-result = [item for item in data if item["status"] == "active"]
-print(json.dumps(result, ensure_ascii=False, indent=2))
+Glob(pattern="**/*.py", path="D:/repo")
+Grep(pattern="build_system_prompt", path="D:/repo/auraeve", output_mode="content")
+Read(file_path="D:/repo/auraeve/agent/context.py")
 ```
+
+### 修改文件
+
+- 改已有文件前先完整 `Read`
+- 小范围改动优先 `Edit`
+- 需要整文件重写时再 `Write`
+
 ```python
-Bash(command="python scripts/parse_data.py")
-```
-
-**示例 2：多步 API 调用**
-```python
-# Write("scripts/fetch_weather.py", ...)
-import json
-import urllib.request
-
-url = "https://wttr.in/Beijing?format=j1"
-res = urllib.request.urlopen(url)
-data = json.loads(res.read())
-print(data["current_condition"][0]["weatherDesc"][0]["value"])
-```
-```python
-Bash(command="python scripts/fetch_weather.py")
-```
-
-**示例 3：批量文件处理**
-```python
-# Write("scripts/rename_files.py", ...)
-import re
-from pathlib import Path
-
-for f in Path("data").glob("*.txt"):
-    new_name = re.sub(r"\s+", "_", f.stem) + f.suffix
-    f.rename(f.parent / new_name)
-    print(f"{f.name} -> {new_name}")
-```
-```python
-Bash(command="python scripts/rename_files.py")
-```
-
-**适合写脚本的场景：**
-- 数据处理
-- 批量操作
-- 格式转换
-- 复杂计算
-- 多步 API 调用
-
-**不适合写脚本的场景：**
-- 已有专用工具可以直接完成
-- 只是一次读取、一次搜索、一次发送
-
-## 网络访问
-
-### web_search
-搜索网络信息。
-```
-web_search(query: str, count: int = 5) -> str
-```
-
-### web_fetch
-抓取并提取网页主要内容。
-```
-web_fetch(url: str, extractMode: str = "markdown", maxChars: int = 50000) -> str
-```
-
-**建议：**
-- 先用 `web_search` 找来源，再用 `web_fetch` 读具体页面
-- 搜索时尽量带上关键词、时间范围、主体名
-- 需要给用户可核实的信息时，保留来源链接
-
-## 浏览器
-
-### browser
-浏览器自动化工具，支持打开网页、交互、快照、截图、保存 PDF。
-```
-browser(action: str, ...)
-```
-
-常见操作：
-- `navigate`：打开网页
-- `act`：点击、输入、选择、按键等
-- `snapshot`：读取页面内容快照
-- `screenshot`：截图并保存到本地
-- `pdf_save`：将页面保存为 PDF
-- `close`：关闭浏览器
-
-## 记忆检索
-
-### memory_search
-搜索长期记忆和历史记录。
-```
-memory_search(query: str, max_results: int = 8, min_score: float = 0.05) -> str
-```
-
-### memory_get
-读取指定记忆文件的精确片段。
-
-### memory_status
-查看记忆索引状态和检索模式。
-
-**建议：**
-- 回答历史决策、偏好、日期、人物、待办事项前，先用 `memory_search`
-- 需要精确引用时，再用 `memory_get`
-
-## 消息发送
-
-### message
-向用户发送消息，支持文字、本地文件和公开图片 URL。
-```
-message(
-  content: str,
-  file_path: str = None,
-  image_url: str = None,
-  channel: str = None,
-  chat_id: str = None
-) -> str
-```
-
-**使用规则：**
-- 发送文件：`message(content="", file_path="/绝对路径/文件名")`
-- 发送图片 URL：`message(content="", image_url="https://...")`
-- 同时发文字和文件时，传 `content + file_path`
-- `content` 可以为空字符串，但参数本身必须传
-
-**回复规则：**
-- 如果 `message` 已经完成了全部用户可见交付，且不需要额外说明，最终回复可用 `__SILENT__`
-- 如果用户还需要结论、提醒或说明，发送完 `message` 后仍应正常回复
-
-**典型用法：**
-```python
-message(content="", file_path="D:/reports/summary.pdf")
-message(content="天气图：", image_url="https://example.com/weather.png")
-message(content="分析完毕，附上报告。", file_path="D:/reports/output.xlsx")
-```
-
-**重要：**
-- 用户说“发文件给我”“发图片给我”时，先找路径，再调用 `message`
-- 不要说“无法发送文件”；这是已支持能力
-- 需要发给其他渠道或其他会话时，明确传 `channel` 和 `chat_id`
-
-## 子智能体
-
-### agent
-启动或管理后台子智能体任务。
-```
-agent(
-  action: str = "spawn",
-  prompt: str = None,
-  subagent_type: str = "general-purpose",
-  run_in_background: bool = True,
-  role_prompt: str = None,
-  max_steps: int = 50,
-  max_tool_calls: int = 100,
-  task_id: str = None
-) -> str
-```
-
-**action 可选值：**
-- `spawn`：创建任务
-- `list`：列出任务
-- `status`：查看任务详情
-- `cancel`：取消任务
-
-**subagent_type 可选值：**
-- `general-purpose`：通用执行
-- `explore`：偏只读搜索
-- `plan`：偏方案分析
-
-**典型用法：**
-```python
-agent(action="spawn", prompt="搜索最新的 AI 论文并总结关键发现")
-agent(action="spawn", prompt="从法律、舆情、行业三个角度分析这个问题", subagent_type="explore")
-agent(action="list")
-agent(action="status", task_id="abc123")
-agent(action="cancel", task_id="abc123")
-```
-
-**建议：**
-- 独立任务尽量并行派发
-- 能直接完成的事不要派子智能体
-- 子智能体的 prompt 要自包含，不要假设它能看到你的完整对话
-
-## 任务管理
-
-交互式会话（如 `webui`、`terminal`）优先使用 Task V2；非交互式会话可能仍提供 legacy `todo`。
-
-### TaskCreate
-创建任务项。
-```
-TaskCreate(subject: str, description: str, activeForm: str = None, owner: str = None, blocks: list[str] = None, blockedBy: list[str] = None, metadata: object = None) -> str
-```
-
-### TaskGet
-读取单个任务详情。
-```
-TaskGet(taskId: str) -> str
-```
-
-### TaskUpdate
-增量更新任务。
-```
-TaskUpdate(taskId: str, status: str = None, subject: str = None, description: str = None, activeForm: str = None, owner: str = None, blocks: list[str] = None, blockedBy: list[str] = None, metadata: object = None, deleted: bool = False) -> str
-```
-
-### TaskList
-列出当前任务列表。
-```
-TaskList() -> str
-```
-
-**Task V2 建议：**
-- 复杂任务开始时先拆出清晰任务项
-- 开始某项前用 `TaskUpdate(..., status=\"in_progress\")`
-- 完成后立刻改成 `completed`
-- 修改前先用 `TaskGet` 读取最新状态
-- 完成一个任务后用 `TaskList` 查看下一个任务
-
-### todo
-管理当前会话的任务规划列表（legacy，全量替换）。
-```
-todo(todos: list[object]) -> str
-```
-
-**legacy todo 建议：**
-- 仅在未提供 Task V2 时使用
-- 同一时刻只保留一个 `in_progress`
-- 所有步骤完成后传空列表 `[]` 清空计划
-
-## 定时任务
-
-### cron
-管理提醒和周期性任务。
-```
-cron(action: str, ...)
-```
-
-**action 可选值：**
-- `status`
-- `list`
-- `add`
-- `update`
-- `remove`
-- `run`
-- `runs`
-- `wake`
-
-**典型用法：**
-```python
-cron(action="add", message="早上好", cron_expr="0 9 * * *")
-cron(action="add", message="喝水", every_seconds=7200)
-cron(action="add", message="会议马上开始", at="2026-04-03T15:00:00")
-cron(action="list")
-cron(action="remove", job_id="abc123")
-```
-
-## 心跳任务
-
-工作区中的 `HEARTBEAT.md` 会被系统定期检查。
-需要定期跟进的事项，直接维护在该文件中。
-
-**典型用法：**
-```python
+Read(file_path="D:/repo/workspace/TOOLS.md")
 Edit(
-    file_path="HEARTBEAT.md",
-    old_string="## 待执行任务",
-    new_string="## 待执行任务\n\n- [ ] 每周一检查未完成事项并提醒"
+  file_path="D:/repo/workspace/TOOLS.md",
+  old_string="旧内容",
+  new_string="新内容"
 )
 ```
 
-## 添加自定义工具
+### 需要额外证据时
 
-如需扩展工具：
-1. 在 `auraeve/agent/tools/` 中创建继承 `Tool` 的类
-2. 实现 `name`、`description`、`parameters` 和 `execute`
-3. 在 `auraeve/agent/tools/assembler.py` 的 `build_tool_registry()` 中注册
+- 文件证据不够时，用 `Bash` 跑测试、构建、git、系统检查
+- 能用结构化工具完成时，别用 `Bash` 代替 `Read/Grep/Glob`
+- 外部资料若已有 MCP 或技能可直达，优先用它们；不要先上通用搜索
+- 已知官方文档、指定网页、明确 URL，优先 `web_fetch`
+- 只有 MCP、技能、已知来源都不满足，且确实需要最新外部信息时，再用 `web_search`
+- `web_search` 有成本；不要频繁小搜，优先一次查询带全主体、关键词、时间范围，尽量一轮拿够信息
+
+```python
+Bash(command="pytest tests/test_task_mode_and_tools.py", timeout=600000)
+```
+
+## 子智能体
+
+### 适合派发的场景
+
+- 开放式调研、需要多角度并行搜索
+- 主线程需要尽快拿到研究结果来做下一步判断
+- 你不想自己串行调用大量工具做发散式收集
+- 实现、验证、调研可以拆成互不冲突的子任务
+
+### 使用规则
+
+- 默认优先考虑 `execution_mode="sync"` 做前台研究收集；主线程拿到结果后再综合决策
+- 只有主线程还有独立工作可并行推进时，再用后台 `async`
+- 当前上下文已经很丰富，且希望子智能体继承它时，用 `fork`
+- 子智能体 prompt 必须自包含，不要假设它看得到主对话
+- 写清目标、范围、相关文件、禁止事项、完成标准
+- 只读调研任务要明确写 `不要修改文件`
+- 写任务按文件或模块拆开，避免多个子智能体改同一片区域
+- 调研完成后，先由主线程综合结果，再决定继续同一个子智能体还是新开一个
+
+### 推荐心法
+
+- 自己直接调工具，适合已知路径、已知目标、收敛型任务
+- 同步子智能体，适合未知范围、需要扩散搜索、需要它先帮你做一轮信息收集
+- 主线程负责综合，不把“基于你的发现继续做”这种懒委托再丢回去
+
+### 示例：并发调研
+
+```python
+agent(
+  action="spawn",
+  subagent_type="explore",
+  execution_mode="sync",
+  prompt="调查 auraeve/agent_runtime/ 中与 prompt 组装相关的实现。重点看 PromptAssembler、ContextBuilder、工具注入路径。报告关键文件、函数、调用链。不要修改文件。"
+)
+agent(
+  action="spawn",
+  subagent_type="explore",
+  execution_mode="sync",
+  prompt="调查 workspace/ 下的 AGENTS.md、TOOLS.md、USER.md 在运行时如何进入系统提示词。给出关键文件和结论。不要修改文件。"
+)
+```
+
+### 示例：主线程综合后继续实现
+
+```python
+agent(
+  action="continue",
+  task_id="agent-123",
+  prompt="根据你刚才报告的结论，修改 auraeve/agent/context.py 的子智能体使用规范。把“优先 sync 做前台研究、async 只用于有独立并行工作、fork 用于继承上下文”写清楚。改完后报告修改点。"
+)
+```
+
+### 示例：独立验证
+
+```python
+agent(
+  action="spawn",
+  subagent_type="verifier",
+  execution_mode="sync",
+  prompt="验证最近对 TOOLS.md 的修改是否与当前 agent 工具行为一致。重点检查 sync/async/fork 的描述是否准确，是否过度鼓励主线程自己调用工具做发散搜索。只读检查，不要修改文件。输出发现的问题和改进建议。"
+)
+```
+
+## 常见模式
+
+- 用户要“先帮我把相关实现都摸清楚”：优先 `agent(sync, explore)`，再由主线程综合
+- 用户要“看看某个已知位置怎么实现的”：`Glob/Grep/Read`
+- 用户要“直接改掉”：`Read -> Edit/Write -> Bash 验证`
+- 用户要“查外部资料”：优先 MCP/技能，其次 `web_fetch` 已知来源，最后才 `web_search`
+- 用户要“发文件给我”：先拿到绝对路径，再 `message`

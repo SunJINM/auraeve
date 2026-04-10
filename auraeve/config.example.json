@@ -110,6 +110,7 @@
       }
     ]
   },
+  "TAVILY_API_KEY": "",
   "BRAVE_API_KEY": "",
   "EXEC_TIMEOUT": 60,
   "RESTRICT_TO_WORKSPACE": false,

@@ -62,6 +62,7 @@ def build_tool_registry(
     restrict_to_workspace: bool,
     exec_timeout: int,
     brave_api_key: str | None,
+    tavily_api_key: str | None = None,
     bus_publish_outbound,
     provider,
     model: str,
@@ -98,7 +99,10 @@ def build_tool_registry(
         restrict_to_workspace=restrict_to_workspace,
         dispatcher=dispatcher,
     ))
-    registry.register(WebSearchTool(api_key=brave_api_key))
+    registry.register(WebSearchTool(
+        tavily_api_key=tavily_api_key,
+        brave_api_key=brave_api_key,
+    ))
     registry.register(WebFetchTool())
 
     message_tool = MessageTool(

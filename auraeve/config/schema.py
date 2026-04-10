@@ -631,6 +631,7 @@ _SCHEMA_GROUPS: list[tuple[str, str, list[str]]] = [
         "tools",
         "工具与安全",
         [
+            "TAVILY_API_KEY",
             "BRAVE_API_KEY",
             "EXEC_TIMEOUT",
             "RESTRICT_TO_WORKSPACE",
@@ -769,6 +770,7 @@ _LABEL_OVERRIDES = {
     "HEARTBEAT_ENABLED": "启用心跳",
     "HEARTBEAT_INTERVAL_S": "心跳间隔(秒)",
     # 工具与安全
+    "TAVILY_API_KEY": "Tavily 搜索 API Key",
     "BRAVE_API_KEY": "Brave 搜索 API Key",
     "EXEC_TIMEOUT": "命令执行超时(秒)",
     "RESTRICT_TO_WORKSPACE": "限制在工作区内",
@@ -860,6 +862,7 @@ _DESCRIPTION_OVERRIDES = {
     "HEARTBEAT_ENABLED": "是否启用定时心跳自省任务。",
     "HEARTBEAT_INTERVAL_S": "心跳自省的执行间隔（秒）。",
     # 工具与安全
+    "TAVILY_API_KEY": "Tavily 搜索服务的 API 密钥。",
     "BRAVE_API_KEY": "Brave 搜索引擎的 API 密钥。",
     "EXEC_TIMEOUT": "系统命令执行的超时时间（秒）。",
     "RESTRICT_TO_WORKSPACE": "是否限制文件操作只能在工作区目录内执行。",

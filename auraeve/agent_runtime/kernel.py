@@ -64,6 +64,7 @@ class RuntimeKernel:
         temperature: float = 0.7,
         max_tokens: int = 4096,
         brave_api_key: str | None = None,
+        tavily_api_key: str | None = None,
         exec_timeout: int = 60,
         restrict_to_workspace: bool = False,
         mcp_config: dict | None = None,
@@ -91,6 +92,7 @@ class RuntimeKernel:
         self.temperature = temperature
         self.max_tokens = max_tokens
         self.brave_api_key = brave_api_key
+        self.tavily_api_key = tavily_api_key
         self.exec_timeout = exec_timeout
         self.restrict_to_workspace = restrict_to_workspace
         self.thinking_budget_tokens = thinking_budget_tokens
@@ -145,6 +147,7 @@ class RuntimeKernel:
                 restrict_to_workspace=self.restrict_to_workspace,
                 exec_timeout=self.exec_timeout,
                 brave_api_key=self.brave_api_key,
+                tavily_api_key=self.tavily_api_key,
                 bus_publish_outbound=self.bus.publish_outbound,
                 provider=self.provider,
                 model=self.model,
@@ -331,6 +334,7 @@ class RuntimeKernel:
             restrict_to_workspace=self.restrict_to_workspace,
             exec_timeout=self.exec_timeout,
             brave_api_key=self.brave_api_key,
+            tavily_api_key=self.tavily_api_key,
             bus_publish_outbound=self.bus.publish_outbound,
             provider=self.provider,
             model=self.model,

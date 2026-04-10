@@ -195,6 +195,7 @@ async def main(terminal_mode: bool = False) -> None:
         runtime_execution=getattr(cfg, "RUNTIME_EXECUTION", None),
         runtime_loop_guard=getattr(cfg, "RUNTIME_LOOP_GUARD", None),
         brave_api_key=cfg.BRAVE_API_KEY or None,
+        tavily_api_key=cfg.TAVILY_API_KEY or None,
         exec_timeout=cfg.EXEC_TIMEOUT,
         restrict_to_workspace=cfg.RESTRICT_TO_WORKSPACE,
         mcp_config=getattr(cfg, "MCP", {}),
