@@ -60,6 +60,7 @@ class ReadTool(_FsToolBase):
             "- start with a full read when broad context will improve quality or when you may need to edit the file later.\n"
             "- Use targeted partial reads with offset and limit when you already know the relevant region.\n"
             "- This tool can read images.\n"
+            "- This tool can read audio files and return a transcription when ASR is configured.\n"
             "- This tool can read PDF files.\n"
             "- This tool can read Jupyter notebooks.\n"
             "- This tool can only read files, not directories."
