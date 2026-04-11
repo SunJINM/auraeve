@@ -71,7 +71,7 @@ class HeartbeatService:
     def _read_heartbeat_file(self) -> str | None:
         if self.heartbeat_file.exists():
             try:
-                return self.heartbeat_file.read_text()
+                return self.heartbeat_file.read_text(encoding="utf-8")
             except Exception:
                 return None
         return None
@@ -79,7 +79,7 @@ class HeartbeatService:
     def _read_template_heartbeat_file(self) -> str | None:
         if self.template_heartbeat_file.exists():
             try:
-                return self.template_heartbeat_file.read_text()
+                return self.template_heartbeat_file.read_text(encoding="utf-8")
             except Exception:
                 return None
         return None
