@@ -17,6 +17,7 @@ FILE_UNCHANGED_STUB = (
     "in this conversation is still current - refer to that instead of re-reading."
 )
 MAX_LINES_TO_READ = 2000
+MAX_TEXT_READ_TOKENS = 10000
 MAX_PDF_PAGES_WITHOUT_PAGES = 10
 MAX_PDF_PAGES_PER_REQUEST = 20
 MAX_IMAGE_EDGE = 1568
@@ -30,13 +31,37 @@ def estimate_token_count(text: str) -> int:
 def format_text_with_line_numbers(text: str, offset: int | None, limit: int | None) -> str:
     lines = text.splitlines()
     start = max(0, int(offset or 0))
-    count = int(limit or min(len(lines), MAX_LINES_TO_READ))
+    count = int(limit) if limit is not None else max(0, len(lines) - start)
     selected = lines[start : start + count]
     return "\n".join(f"{start + idx + 1}\t{line}" for idx, line in enumerate(selected))
 
 
 def read_text_file(path: Path, offset: int | None = None, limit: int | None = None) -> ToolExecutionResult:
     raw = path.read_text(encoding="utf-8")
+    lines = raw.splitlines()
+    start = max(0, int(offset or 0))
+    count = int(limit) if limit is not None else max(0, len(lines) - start)
+    selected = lines[start : start + count]
+    selected_text = "\n".join(selected)
+    token_count = estimate_token_count(selected_text)
+    if token_count > MAX_TEXT_READ_TOKENS:
+        return ToolExecutionResult(
+            content=(
+                "Error: File content "
+                f"({token_count} tokens) exceeds maximum allowed tokens "
+                f"({MAX_TEXT_READ_TOKENS}). Use offset and limit parameters to read "
+                "specific portions of the file, or search for specific content instead "
+                "of reading the whole file."
+            ),
+            data={
+                "type": "error",
+                "filePath": str(path),
+                "offset": offset,
+                "limit": limit,
+                "estimatedTokens": token_count,
+                "maxTokens": MAX_TEXT_READ_TOKENS,
+            },
+        )
     rendered = format_text_with_line_numbers(raw, offset, limit)
     return ToolExecutionResult(
         content=rendered,

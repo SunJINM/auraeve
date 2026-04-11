@@ -56,7 +56,8 @@ class ReadTool(_FsToolBase):
             "Reads a file from the local filesystem.\n\n"
             "Usage:\n"
             "- The file_path parameter must be an absolute path, not a relative path.\n"
-            "- By default, it reads up to 2000 lines starting from the beginning of the file.\n"
+            "- By default, it reads the whole file when it fits within the text token budget.\n"
+            "- If the file is too large, use offset and limit or search for specific content instead.\n"
             "- start with a full read when broad context will improve quality or when you may need to edit the file later.\n"
             "- Use targeted partial reads with offset and limit when you already know the relevant region.\n"
             "- This tool can read images.\n"
@@ -157,12 +158,19 @@ class ReadTool(_FsToolBase):
                 content_type = str((result.data or {}).get("type") or "text")
 
             if ctx is not None and not str(result.content).startswith("Error:"):
+                is_partial_view = _is_partial_read_view(
+                    content=raw_text_for_state,
+                    content_type=content_type,
+                    offset=normalized_offset,
+                    limit=normalized_limit,
+                    pages=normalized_pages,
+                )
                 ctx.file_reads.record(
                     FileReadSnapshot(
                         file_path=str(resolved),
                         timestamp_ms=int(time.time() * 1000),
                         file_mtime_ms=current_mtime_ms,
-                        is_partial_view=normalized_offset is not None or normalized_limit is not None or bool(normalized_pages),
+                        is_partial_view=is_partial_view,
                         content_type=content_type,
                         content=raw_text_for_state,
                         offset=normalized_offset,
@@ -504,6 +512,28 @@ def _normalize_default_text_read_args(
     if normalized_limit == file_read_support.MAX_LINES_TO_READ:
         normalized_limit = None
     return normalized_offset, normalized_limit
+
+
+def _is_partial_read_view(
+    *,
+    content: str | None,
+    content_type: str,
+    offset: int | None,
+    limit: int | None,
+    pages: str | None,
+) -> bool:
+    if pages:
+        return True
+    if content_type != "text" or content is None:
+        return offset is not None or limit is not None
+
+    total_lines = len(content.splitlines())
+    start = max(0, int(offset or 0))
+    if start > 0:
+        return True
+    if limit is None:
+        return False
+    return int(limit) < total_lines
 
 
 def _build_structured_patch(old_content: str, new_content: str) -> list[dict[str, Any]]:

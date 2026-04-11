@@ -83,6 +83,26 @@ async def test_edit_tool_allows_read_with_explicit_default_full_read_params(tmp_
 
 
 @pytest.mark.asyncio
+async def test_edit_tool_allows_explicit_limit_that_covers_entire_file(tmp_path: Path) -> None:
+    target = tmp_path / "heartbeat.md"
+    target.write_text("".join(f"line {idx}\n" for idx in range(1, 17)), encoding="utf-8")
+    read_tool = ReadTool(allowed_dir=tmp_path)
+    edit_tool = EditTool(allowed_dir=tmp_path)
+
+    with use_tool_runtime_context(_make_ctx()):
+        await read_tool.execute(file_path=str(target.resolve()), offset=0, limit=16)
+        result = await edit_tool.execute(
+            file_path=str(target.resolve()),
+            old_string="line 1\nline 2",
+            new_string="LINE 1\nline 2",
+        )
+
+    assert isinstance(result, ToolExecutionResult)
+    assert "updated successfully" in result.content
+    assert target.read_text(encoding="utf-8").startswith("LINE 1\n")
+
+
+@pytest.mark.asyncio
 async def test_edit_tool_replaces_unique_match_and_returns_structured_result(
     tmp_path: Path,
 ) -> None:

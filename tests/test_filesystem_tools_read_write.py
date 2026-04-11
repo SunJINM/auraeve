@@ -136,6 +136,44 @@ async def test_read_tool_treats_explicit_default_params_as_full_read(tmp_path: P
     assert snapshot.pages is None
 
 
+@pytest.mark.asyncio
+async def test_default_read_of_oversized_file_returns_guidance_without_read_state(tmp_path: Path) -> None:
+    target = tmp_path / "large.txt"
+    target.write_text("x" * 40_004, encoding="utf-8")
+    read_tool = ReadTool(allowed_dir=tmp_path)
+    write_tool = WriteTool(allowed_dir=tmp_path)
+    ctx = ToolRuntimeContext(file_reads=FileReadStateStore())
+
+    with use_tool_runtime_context(ctx):
+        read_result = await read_tool.execute(file_path=str(target.resolve()))
+        write_result = await write_tool.execute(file_path=str(target.resolve()), content="new\n")
+
+    assert isinstance(read_result, ToolExecutionResult)
+    assert "exceeds maximum allowed tokens" in read_result.content
+    assert "Use offset and limit parameters" in read_result.content
+    assert isinstance(write_result, ToolExecutionResult)
+    assert "must be read with Read" in write_result.content
+    assert ctx.file_reads.get(str(target.resolve())) is None
+
+
+@pytest.mark.asyncio
+async def test_partial_read_of_oversized_file_can_read_small_window(tmp_path: Path) -> None:
+    target = tmp_path / "large.txt"
+    target.write_text("".join(f"line {idx}\n" for idx in range(1, 3001)), encoding="utf-8")
+    read_tool = ReadTool(allowed_dir=tmp_path)
+    ctx = ToolRuntimeContext(file_reads=FileReadStateStore())
+
+    with use_tool_runtime_context(ctx):
+        read_result = await read_tool.execute(file_path=str(target.resolve()), offset=10, limit=2)
+
+    assert isinstance(read_result, ToolExecutionResult)
+    assert "11\tline 11" in read_result.content
+    assert "12\tline 12" in read_result.content
+    snapshot = ctx.file_reads.get(str(target.resolve()))
+    assert snapshot is not None
+    assert snapshot.is_partial_view is True
+
+
 def test_build_tool_registry_registers_read_write_without_legacy_names(
     tmp_path: Path,
 ) -> None:

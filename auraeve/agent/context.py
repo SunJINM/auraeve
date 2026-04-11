@@ -17,6 +17,7 @@ import platform
 from pathlib import Path
 from typing import Any
 
+from auraeve.agent.tools import file_read_support
 from auraeve.agent.skills import SkillsLoader
 from auraeve.llm.model_registry import ModelRegistry
 
@@ -215,7 +216,7 @@ class ContextBuilder:
             "",
             "## Read / Write 约束",
             "- Read 的 file_path 必须是绝对路径。",
-            f"- Read 默认最多读取 {2000} 行文本；需要更精确范围时使用 offset 和 limit。",
+            f"- Read 默认读取完整文本；若内容超过 {file_read_support.MAX_TEXT_READ_TOKENS} token 预算，会要求改用 offset/limit 或搜索定位。",
             "- 需要“完整读”时，直接只传 file_path；不要附带 offset、limit 或空字符串 pages。",
             "- 为了高质量完成任务，积极使用最能提升结论质量的工具组合。",
             "- 每次调用都应明显减少不确定性，并为下一步判断提供更强证据。",
