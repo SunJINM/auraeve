@@ -74,7 +74,7 @@ class TranscriptCollapsedActivityBlock(BaseModel):
     model_config = ConfigDict(extra="forbid")
     id: str = Field(min_length=1)
     type: Literal["collapsed_activity"] = "collapsed_activity"
-    activityType: Literal["read"] = "read"
+    activityType: Literal["read", "search"] = "read"
     count: int = Field(default=1, ge=1)
     blocks: list[TranscriptToolUseBlock] = Field(default_factory=list)
 

@@ -5,6 +5,7 @@ import { ToolUseBlock } from './ToolUseBlock'
 
 export function CollapsedActivityBlock({ block }: { block: TranscriptCollapsedActivityBlock }) {
   const [open, setOpen] = useState(false)
+  const title = block.activityType === 'search' ? '联网检索' : '读取/搜索'
 
   return (
     <div
@@ -26,7 +27,7 @@ export function CollapsedActivityBlock({ block }: { block: TranscriptCollapsedAc
         />
 
         <span className="text-xs font-semibold" style={{ color: 'var(--accent)' }}>
-          📂 读取/搜索
+          {title}
         </span>
 
         <span className="flex-1 text-xs" style={{ color: 'var(--text-secondary)' }}>

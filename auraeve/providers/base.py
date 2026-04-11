@@ -3,6 +3,7 @@
 import hashlib
 import json
 from abc import ABC, abstractmethod
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -238,6 +239,7 @@ class LLMProvider(ABC):
         max_tokens: int = 4096,
         temperature: float = 0.7,
         thinking_budget_tokens: int | None = None,
+        text_delta_callback: Callable[[str], Awaitable[None]] | None = None,
     ) -> LLMResponse:
         """
         调用 LLM。

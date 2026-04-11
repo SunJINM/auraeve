@@ -99,6 +99,43 @@ def test_collapse_readonly_activity_into_single_block(tmp_path: Path) -> None:
     assert model.blocks[1].type == "collapsed_activity"
 
 
+def test_collapse_web_search_activity_into_single_block(tmp_path: Path) -> None:
+    sm = SessionManager(tmp_path / "sessions")
+    session = sm.get_or_create("webui:test-user")
+    session.add_message("user", "搜索相关情报")
+    session.add_message(
+        "assistant",
+        "",
+        tool_calls=[
+            {
+                "id": "search_1",
+                "type": "function",
+                "function": {"name": "web_search", "arguments": "{\"query\":\"封锁海域\"}"},
+            }
+        ],
+    )
+    session.add_message("tool", "result 1", tool_call_id="search_1", name="web_search")
+    session.add_message(
+        "assistant",
+        "",
+        tool_calls=[
+            {
+                "id": "fetch_1",
+                "type": "function",
+                "function": {"name": "web_fetch", "arguments": "{\"url\":\"https://example.test\"}"},
+            }
+        ],
+    )
+    session.add_message("tool", "result 2", tool_call_id="fetch_1", name="web_fetch")
+
+    blocks = project_history_into_transcript_blocks(session.messages)
+
+    assert [item["type"] for item in blocks] == ["user", "collapsed_activity"]
+    assert blocks[1]["activityType"] == "search"
+    assert blocks[1]["count"] == 2
+    assert [item["toolName"] for item in blocks[1]["blocks"]] == ["web_search", "web_fetch"]
+
+
 def test_bash_tool_use_is_not_collapsed_as_readonly_activity(tmp_path: Path) -> None:
     sm = SessionManager(tmp_path / "sessions")
     session = sm.get_or_create("webui:test-user")

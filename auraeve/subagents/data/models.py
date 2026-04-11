@@ -57,7 +57,7 @@ def is_valid_transition(from_status: TaskStatus, to_status: TaskStatus) -> bool:
 class TaskBudget:
     """子智能体执行预算。"""
     max_steps: int = 50
-    max_duration_s: int = 600
+    max_duration_s: int = 0
     max_tool_calls: int = 100
 
 

@@ -165,7 +165,7 @@ class SubagentStore:
         budget_data = json.loads(row["budget_json"]) if row["budget_json"] else {}
         budget = TaskBudget(
             max_steps=budget_data.get("max_steps", 50),
-            max_duration_s=budget_data.get("max_duration_s", 600),
+            max_duration_s=budget_data.get("max_duration_s", 0),
             max_tool_calls=budget_data.get("max_tool_calls", 100),
         )
         return Task(

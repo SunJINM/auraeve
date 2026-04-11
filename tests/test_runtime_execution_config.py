@@ -54,6 +54,18 @@ class RuntimeExecutionConfigTests(unittest.TestCase):
         budget.consume_tool_calls(3)
         self.assertEqual(budget.admit_tool_calls(10), 2)
 
+    def test_zero_wall_time_disables_wall_clock_budget(self) -> None:
+        cfg = RuntimeExecutionConfig(
+            max_turns=2,
+            max_tool_calls_total=5,
+            max_tool_calls_per_turn=3,
+            max_wall_time_ms=0,
+        )
+
+        budget = ExecutionBudget(cfg)
+
+        self.assertEqual(budget.check_turn_budget(), (True, None))
+
     def test_runtime_execution_normalization_with_fallback(self) -> None:
         cfg = normalize_runtime_execution_config({"maxTurns": 8}, fallback_max_turns=20)
         self.assertEqual(cfg.max_turns, 8)

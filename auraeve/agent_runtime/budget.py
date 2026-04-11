@@ -23,6 +23,12 @@ def _as_positive_int(value: Any, fallback: int) -> int:
     return value if value > 0 else fallback
 
 
+def _as_nonnegative_int(value: Any, fallback: int) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        return fallback
+    return value if value >= 0 else fallback
+
+
 def normalize_runtime_execution_config(
     raw: dict[str, Any] | None,
     *,
@@ -42,7 +48,7 @@ def normalize_runtime_execution_config(
         max_turns=_as_positive_int(raw.get("maxTurns"), base.max_turns),
         max_tool_calls_total=_as_positive_int(raw.get("maxToolCallsTotal"), base.max_tool_calls_total),
         max_tool_calls_per_turn=_as_positive_int(raw.get("maxToolCallsPerTurn"), base.max_tool_calls_per_turn),
-        max_wall_time_ms=_as_positive_int(raw.get("maxWallTimeMs"), base.max_wall_time_ms),
+        max_wall_time_ms=_as_nonnegative_int(raw.get("maxWallTimeMs"), base.max_wall_time_ms),
         max_recovery_attempts=_as_positive_int(raw.get("maxRecoveryAttempts"), base.max_recovery_attempts),
         tool_concurrency=_as_positive_int(raw.get("toolConcurrency"), base.tool_concurrency),
         tool_timeout_ms=_as_positive_int(raw.get("toolTimeoutMs"), base.tool_timeout_ms),
@@ -63,7 +69,7 @@ class ExecutionBudget:
         if self.turns_used >= self.cfg.max_turns:
             return False, "max_turns_exhausted"
         elapsed_ms = int((time.monotonic() - self.started_at) * 1000)
-        if elapsed_ms >= self.cfg.max_wall_time_ms:
+        if self.cfg.max_wall_time_ms > 0 and elapsed_ms >= self.cfg.max_wall_time_ms:
             return False, "max_wall_time_exhausted"
         return True, None
 
@@ -88,4 +94,3 @@ class ExecutionBudget:
             "maxToolCallsTotal": self.cfg.max_tool_calls_total,
             "maxWallTimeMs": self.cfg.max_wall_time_ms,
         }
-

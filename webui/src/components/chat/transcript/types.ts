@@ -52,7 +52,7 @@ export interface TranscriptAgentTaskBlock {
 export interface TranscriptCollapsedActivityBlock {
   id: string
   type: 'collapsed_activity'
-  activityType: 'read'
+  activityType: 'read' | 'search'
   count: number
   blocks: TranscriptToolUseBlock[]
 }

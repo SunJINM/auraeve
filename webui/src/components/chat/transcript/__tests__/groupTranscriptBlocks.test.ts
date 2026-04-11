@@ -52,4 +52,34 @@ describe('groupTranscriptBlocks', () => {
     expect(result).toHaveLength(1)
     expect(result[0]?.type).toBe('tool_use')
   })
+
+  it('collapses consecutive web search tool_use blocks', () => {
+    const result = groupTranscriptBlocks([
+      {
+        id: 'tool_use:1',
+        type: 'tool_use',
+        toolCallId: 'call-1',
+        toolName: 'web_search',
+        arguments: { query: '封锁海域' },
+        result: 'result list',
+        status: 'success',
+      },
+      {
+        id: 'tool_use:2',
+        type: 'tool_use',
+        toolCallId: 'call-2',
+        toolName: 'web_fetch',
+        arguments: { url: 'https://example.test' },
+        result: 'article',
+        status: 'success',
+      },
+    ])
+
+    expect(result).toHaveLength(1)
+    expect(result[0]?.type).toBe('collapsed_activity')
+    if (result[0]?.type === 'collapsed_activity') {
+      expect(result[0].activityType).toBe('search')
+      expect(result[0].count).toBe(2)
+    }
+  })
 })

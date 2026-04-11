@@ -2,6 +2,7 @@
 
 import json
 import json_repair
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from openai import AsyncOpenAI
@@ -106,6 +107,7 @@ class OpenAICompatibleProvider(LLMProvider):
         max_tokens: int = 4096,
         temperature: float = 0.7,
         thinking_budget_tokens: int | None = None,
+        text_delta_callback: Callable[[str], Awaitable[None]] | None = None,
     ) -> LLMResponse:
         model = model or self.default_model
         max_tokens = max(1, max_tokens)
@@ -151,14 +153,18 @@ class OpenAICompatibleProvider(LLMProvider):
                 f"is_reasoning={is_reasoning}"
             )
             stream = await self._client.chat.completions.create(**kwargs)
-            return await self._consume_stream(stream)
+            return await self._consume_stream(stream, text_delta_callback=text_delta_callback)
         except (_openai.RateLimitError, _openai.APIStatusError, _openai.APIConnectionError) as e:
             raise _classify_openai_error(e) from e
         except Exception as e:
             # 按文本特征二次分类（部分兼容接口不抛 openai 标准异常）
             raise _classify_openai_error(e) from e
 
-    async def _consume_stream(self, stream: Any) -> LLMResponse:
+    async def _consume_stream(
+        self,
+        stream: Any,
+        text_delta_callback: Callable[[str], Awaitable[None]] | None = None,
+    ) -> LLMResponse:
         """消费流式响应，拼接为完整的 LLMResponse。"""
         content_parts: list[str] = []
         reasoning_parts: list[str] = []
@@ -185,6 +191,8 @@ class OpenAICompatibleProvider(LLMProvider):
 
             if delta.content:
                 content_parts.append(delta.content)
+                if text_delta_callback:
+                    await text_delta_callback(delta.content)
 
             rc = getattr(delta, "reasoning_content", None)
             if rc:

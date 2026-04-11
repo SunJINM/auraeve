@@ -66,6 +66,7 @@ class ReActLoop:
             "maxTurns": effective_max_steps,
             "maxToolCallsTotal": max_tc,
             "maxToolCallsPerTurn": per_turn,
+            "maxWallTimeMs": 0,
         }
 
         hooks = PluginRegistry().build_hook_runner()
@@ -92,8 +93,7 @@ class ReActLoop:
         start_time = time.monotonic()
 
         try:
-            timeout = task.budget.max_duration_s if task.budget.max_duration_s > 0 else None
-            coro = orchestrator.run(
+            result = await orchestrator.run(
                 messages=messages,
                 model=self._model,
                 temperature=self._temperature,
@@ -101,10 +101,6 @@ class ReActLoop:
                 thread_id=f"sub:{task.task_id}",
                 steer_queue=steer_queue,
             )
-            if timeout:
-                result = await asyncio.wait_for(coro, timeout=timeout)
-            else:
-                result = await coro
 
             elapsed_ms = int((time.monotonic() - start_time) * 1000)
             self.progress.duration_ms = elapsed_ms
@@ -119,16 +115,6 @@ class ReActLoop:
                 )
 
             return final_content
-
-        except asyncio.TimeoutError:
-            logger.warning("子智能体超时: %s (budget=%ds)", task.task_id, task.budget.max_duration_s)
-            if self._reporter:
-                await self._reporter.report_done(
-                    task_id=task.task_id,
-                    success=False,
-                    result=f"执行超时（{task.budget.max_duration_s}秒）",
-                )
-            raise
 
         except asyncio.CancelledError:
             logger.info("子智能体被取消: %s", task.task_id)
@@ -155,8 +141,8 @@ class ReActLoop:
             f"执行模式: {task.execution_mode}",
             f"上下文模式: {task.context_mode}",
             f"执行预算: 最多 {task.budget.max_steps} 步, "
-            f"最多 {task.budget.max_tool_calls} 次工具调用, "
-            f"最长 {task.budget.max_duration_s} 秒。",
+            f"最多 {task.budget.max_tool_calls} 次工具调用；"
+            "无总时长超时，但必须避免空转和重复搜索。",
             "",
             "角色说明:",
             agent_def.system_prompt or "按分配目标完成任务。",
@@ -164,6 +150,7 @@ class ReActLoop:
             "执行约束:",
             "- 专注于你的任务目标，不要偏离",
             "- 高效使用工具，避免重复操作",
+            "- 在阶段边界先输出一两句进度，像正常对话一样说明“目前已获取到……接下来我会……”；不要只连续调用工具",
             "- 通过工具调用显著提升结论质量；每次调用都应扩大信息增量、减少不确定性，并推动下一步判断",
             "- 积极组合使用 Read、Grep、Glob、Bash 和其他可用工具，而不是停留在单一视角",
             "- 只有彼此独立、互不依赖的只读工具调用，才应并发发出",

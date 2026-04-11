@@ -4,7 +4,16 @@ import type {
   TranscriptToolUseBlock,
 } from './types'
 
-const COLLAPSIBLE_TOOL_NAMES = new Set(['Read', 'read', 'read_file', 'Grep', 'Glob'])
+const READ_TOOL_NAMES = new Set(['Read', 'read', 'read_file', 'Grep', 'Glob'])
+const SEARCH_TOOL_NAMES = new Set(['web_search', 'web_fetch'])
+const COLLAPSIBLE_TOOL_NAMES = new Set([...READ_TOOL_NAMES, ...SEARCH_TOOL_NAMES])
+
+function getActivityType(blocks: TranscriptToolUseBlock[]): TranscriptCollapsedActivityBlock['activityType'] {
+  if (blocks.length > 0 && blocks.every((block) => SEARCH_TOOL_NAMES.has(block.toolName))) {
+    return 'search'
+  }
+  return 'read'
+}
 
 function isCollapsibleToolBlock(
   block: TranscriptBlock,
@@ -26,7 +35,7 @@ export function groupTranscriptBlocks(blocks: TranscriptBlock[]): TranscriptBloc
       const collapsed: TranscriptCollapsedActivityBlock = {
         id: `collapsed:${current[0]!.id}`,
         type: 'collapsed_activity',
-        activityType: 'read',
+        activityType: getActivityType(current),
         count: current.length,
         blocks: current,
       }

@@ -228,6 +228,17 @@ class SessionAttemptRunner:
                 if drained_messages:
                     msgs.extend(drained_messages)
 
+            async def _text_delta_cb(delta: str) -> None:
+                self._obs.emit(
+                    level="info",
+                    kind="event",
+                    subsystem="runtime/assistant",
+                    message="assistant_text_delta",
+                    attrs={"delta": delta},
+                    session_key=thread_id,
+                    channel=channel,
+                )
+
             response = await self._provider.chat(
                 messages=msgs,
                 tools=active_tools.get_definitions(),
@@ -235,6 +246,7 @@ class SessionAttemptRunner:
                 temperature=temperature,
                 max_tokens=max_tokens,
                 thinking_budget_tokens=self._thinking_budget_tokens,
+                text_delta_callback=_text_delta_cb,
             )
 
             if not response.has_tool_calls:

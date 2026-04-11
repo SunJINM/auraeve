@@ -26,6 +26,10 @@ class RunState:
     done: bool = False
     aborted: bool = False
     seq: int = 0
+    # 流式文本块状态：delta 到达时实时更新同一个 block
+    streaming_block_id: str | None = None
+    streaming_content: str = ""
+    streaming_seq: int = 0
 
 
 class ChatService:
@@ -350,8 +354,14 @@ class ChatService:
             )
 
     async def _handle_assistant_event(self, event: dict[str, Any]) -> None:
-        """将 obs assistant 事件转化为 transcript assistant_text block 推送。"""
-        if str(event.get("message") or "") != "assistant_text":
+        """将 obs assistant 事件转化为 transcript assistant_text block 推送。
+
+        支持两种消息类型：
+        - assistant_text_delta：流式增量，实时更新同一个 block
+        - assistant_text：完整内容，流结束后做最终 replace（或无流时新建）
+        """
+        message = str(event.get("message") or "")
+        if message not in ("assistant_text_delta", "assistant_text"):
             return
 
         session_key = str(event.get("sessionKey") or "")
@@ -362,26 +372,73 @@ class ChatService:
         if state is None or state.done:
             return
         run_id = state.run_id
-
         attrs = event.get("attrs") or {}
-        content = str(attrs.get("content") or "").strip()
-        if not content:
-            return
 
-        await self._broadcast(
-            session_key,
-            self._build_block_event(
-                session_key=session_key,
-                run_id=run_id,
-                seq=self._next_seq(run_id),
-                block={
-                    "id": f"assistant_text:{run_id}:{state.seq}",
-                    "type": "assistant_text",
-                    "content": content,
-                    "timestamp": datetime.now().isoformat(),
-                },
-            ),
-        )
+        if message == "assistant_text_delta":
+            delta = str(attrs.get("delta") or "")
+            if not delta:
+                return
+
+            if state.streaming_block_id is None:
+                # 第一个 delta：分配 seq 并创建新 block
+                state.streaming_seq = self._next_seq(run_id)
+                state.streaming_block_id = f"assistant_text_stream:{run_id}:{state.streaming_seq}"
+                state.streaming_content = delta
+                op = "append"
+            else:
+                # 后续 delta：追加内容，替换同一个 block
+                state.streaming_content += delta
+                op = "replace"
+
+            await self._broadcast(
+                session_key,
+                self._build_block_event(
+                    session_key=session_key,
+                    run_id=run_id,
+                    seq=state.streaming_seq,
+                    op=op,
+                    block={
+                        "id": state.streaming_block_id,
+                        "type": "assistant_text",
+                        "content": state.streaming_content,
+                        "timestamp": datetime.now().isoformat(),
+                    },
+                ),
+            )
+
+        else:  # assistant_text（完整内容，流结束后触发）
+            content = str(attrs.get("content") or "").strip()
+            if not content:
+                return
+
+            if state.streaming_block_id is not None:
+                # 已有流式 block：用完整内容做最终 replace，然后清空流式状态
+                block_id = state.streaming_block_id
+                seq = state.streaming_seq
+                op = "replace"
+                state.streaming_block_id = None
+                state.streaming_content = ""
+            else:
+                # 无流式 block（模型未产生 delta）：新建
+                seq = self._next_seq(run_id)
+                block_id = f"assistant_text:{run_id}:{seq}"
+                op = "append"
+
+            await self._broadcast(
+                session_key,
+                self._build_block_event(
+                    session_key=session_key,
+                    run_id=run_id,
+                    seq=seq,
+                    op=op,
+                    block={
+                        "id": block_id,
+                        "type": "assistant_text",
+                        "content": content,
+                        "timestamp": datetime.now().isoformat(),
+                    },
+                ),
+            )
 
     # ─── SSE 订阅 ──────────────────────────────────────────────────
 

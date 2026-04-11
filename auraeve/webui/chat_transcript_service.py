@@ -7,6 +7,8 @@ from typing import Any
 
 
 _READONLY_TOOL_NAMES = {"Read", "read", "read_file", "Grep", "Glob"}
+_SEARCH_TOOL_NAMES = {"web_search", "web_fetch"}
+_COLLAPSIBLE_TOOL_NAMES = _READONLY_TOOL_NAMES | _SEARCH_TOOL_NAMES
 
 
 def project_history_into_transcript_blocks(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -119,11 +121,12 @@ def _collapse_readonly_activity(blocks: list[dict[str, Any]]) -> list[dict[str, 
         group = blocks[start:cursor]
 
         if len(group) >= 2:
+            activity_type = _activity_type_for_group(group)
             collapsed.append(
                 {
-                    "id": _build_collapsed_id("read", group),
+                    "id": _build_collapsed_id(activity_type, group),
                     "type": "collapsed_activity",
-                    "activityType": "read",
+                    "activityType": activity_type,
                     "count": len(group),
                     "blocks": group,
                 }
@@ -135,7 +138,14 @@ def _collapse_readonly_activity(blocks: list[dict[str, Any]]) -> list[dict[str, 
 
 
 def _is_readonly_block(block: dict[str, Any]) -> bool:
-    return block.get("type") == "tool_use" and str(block.get("toolName") or "") in _READONLY_TOOL_NAMES
+    return block.get("type") == "tool_use" and str(block.get("toolName") or "") in _COLLAPSIBLE_TOOL_NAMES
+
+
+def _activity_type_for_group(group: list[dict[str, Any]]) -> str:
+    tool_names = {str(item.get("toolName") or "") for item in group}
+    if tool_names and tool_names <= _SEARCH_TOOL_NAMES:
+        return "search"
+    return "read"
 
 
 def _build_collapsed_id(activity_type: str, group: list[dict[str, Any]]) -> str:

@@ -21,7 +21,7 @@ def test_task_default_values():
     assert t.parent_task_id == ""
     assert t.seed_messages_json == ""
     assert t.budget.max_steps == 50
-    assert t.budget.max_duration_s == 600
+    assert t.budget.max_duration_s == 0
     assert t.budget.max_tool_calls == 100
 
 
