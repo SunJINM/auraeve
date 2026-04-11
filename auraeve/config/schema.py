@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from .defaults import DEFAULTS, PATH_KEYS, SENSITIVE_KEYS
-from auraeve.mcp import validate_mcp_config
+from auraeve.mcp.config import validate_mcp_config
 
 
 def _is_number(value: Any) -> bool:

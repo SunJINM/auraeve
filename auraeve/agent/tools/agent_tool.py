@@ -5,8 +5,11 @@
 """
 from __future__ import annotations
 
+from uuid import uuid4
+
 from auraeve.agent.agents.definitions import find_agent
 from auraeve.agent.tools.base import Tool
+from auraeve.subagents.worktree import create_agent_worktree
 from auraeve.subagents.data.models import TaskBudget, STATUS_ICON
 
 
@@ -113,11 +116,17 @@ class AgentTool(Tool):
         run_in_background = execution_mode in {"async", "fork"}
         context_mode = "inherit" if execution_mode == "fork" else "fresh"
         role_prompt = kwargs.get("role_prompt", "")
-        max_steps = kwargs.get("max_steps", 50)
         max_tool_calls = kwargs.get("max_tool_calls", 100)
         seed_messages = self._load_parent_history() if context_mode == "inherit" else []
 
         agent_def = find_agent(agent_type)
+        max_steps = kwargs.get("max_steps", agent_def.max_turns)
+        worktree_path = ""
+        worktree_branch = ""
+        if kwargs.get("isolation") == "worktree":
+            worktree = create_agent_worktree(uuid4().hex)
+            worktree_path = worktree.path
+            worktree_branch = worktree.branch
 
         budget = TaskBudget(
             max_steps=max_steps,
@@ -139,6 +148,8 @@ class AgentTool(Tool):
             spawn_tool_call_id=getattr(self, "_current_tool_call_id", ""),
             parent_thread_id=getattr(self, "_thread_id", ""),
             seed_messages=seed_messages,
+            worktree_path=worktree_path,
+            worktree_branch=worktree_branch,
         )
 
         if run_in_background:

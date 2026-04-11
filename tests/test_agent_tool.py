@@ -67,6 +67,22 @@ async def test_fork_execute_creates_inherit_task(agent_tool):
 
 
 @pytest.mark.asyncio
+async def test_worktree_isolation_creates_worktree_metadata(agent_tool, monkeypatch):
+    worktree = MagicMock(path="D:/repo/.worktrees/agent-1234", branch="agent/agent-1234")
+    monkeypatch.setattr("auraeve.agent.tools.agent_tool.create_agent_worktree", lambda _agent_id: worktree)
+
+    await agent_tool.execute(
+        prompt="隔离检查风险",
+        execution_mode="fork",
+        isolation="worktree",
+    )
+
+    call = agent_tool._executor.create_task.call_args.kwargs
+    assert call["worktree_path"] == "D:/repo/.worktrees/agent-1234"
+    assert call["worktree_branch"] == "agent/agent-1234"
+
+
+@pytest.mark.asyncio
 async def test_run_in_background_compat_maps_to_async(agent_tool):
     await agent_tool.execute(
         prompt="后台收集信息",
@@ -74,6 +90,20 @@ async def test_run_in_background_compat_maps_to_async(agent_tool):
     )
     call = agent_tool._executor.create_task.call_args.kwargs
     assert call["execution_mode"] == "async"
+
+
+@pytest.mark.asyncio
+async def test_spawn_uses_agent_definition_max_turns_by_default(agent_tool, monkeypatch):
+    agent_def = MagicMock(agent_type="custom-worker", max_turns=17)
+    monkeypatch.setattr("auraeve.agent.tools.agent_tool.find_agent", lambda _agent_type: agent_def)
+
+    await agent_tool.execute(
+        prompt="执行自定义任务",
+        subagent_type="custom-worker",
+    )
+
+    call = agent_tool._executor.create_task.call_args.kwargs
+    assert call["budget"].max_steps == 17
 
 
 @pytest.mark.asyncio

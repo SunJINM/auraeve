@@ -64,6 +64,8 @@ class PromptAssembler:
         prompt_mode: str = "full",
         extra_suffix_messages: list[dict] | None = None,
         runtime_instruction: str = "",
+        prepend_context: str | None = None,
+        append_context: str | None = None,
     ) -> AssemblerResult:
         """
         执行完整 Prompt 组装管线：
@@ -76,8 +78,8 @@ class PromptAssembler:
         from auraeve.plugins.base import HookBeforePromptBuildEvent
 
         # ── Step 1: before_prompt_build hook ──────────────────────────────
-        prepend_context: str | None = None
-        append_context: str | None = None
+        hook_prepend_context: str | None = None
+        hook_append_context: str | None = None
         try:
             hook_event = HookBeforePromptBuildEvent(
                 session_id=session_id,
@@ -86,15 +88,18 @@ class PromptAssembler:
                 current_query=current_query,
             )
             hook_result = await self._hooks.run_before_prompt_build(hook_event)
-            prepend_context = hook_result.prepend_context or None
-            append_context = hook_result.append_context or None
-            if prepend_context or append_context:
+            hook_prepend_context = hook_result.prepend_context or None
+            hook_append_context = hook_result.append_context or None
+            if hook_prepend_context or hook_append_context:
                 logger.debug(
                     f"[assembler] before_prompt_build hook 注入："
-                    f"prepend={bool(prepend_context)}, append={bool(append_context)}"
+                    f"prepend={bool(hook_prepend_context)}, append={bool(hook_append_context)}"
                 )
         except Exception as e:
             logger.error(f"[assembler] before_prompt_build hook 失败：{e}")
+
+        effective_prepend_context = _merge_contexts(prepend_context, hook_prepend_context)
+        effective_append_context = _merge_contexts(hook_append_context, append_context)
 
         # ── Step 2: engine.assemble()（含压缩逻辑）────────────────────────
         assemble_result: AssembleResult = await self._engine.assemble(
@@ -107,8 +112,8 @@ class PromptAssembler:
             attachments=attachments,
             available_tools=available_tools,
             prompt_mode=prompt_mode,
-            prepend_context=prepend_context,
-            append_context=append_context,
+            prepend_context=effective_prepend_context,
+            append_context=effective_append_context,
         )
 
         # ── Step 3: 提取 system_prompt，生成预算报告 ─────────────────────
@@ -116,7 +121,7 @@ class PromptAssembler:
         if assemble_result.messages and assemble_result.messages[0].get("role") == "system":
             system_prompt = assemble_result.messages[0].get("content", "")
 
-        segments = _make_segments(system_prompt, prepend_context, append_context)
+        segments = _make_segments(system_prompt, effective_prepend_context, effective_append_context)
         budget_report = BudgetReport.build(segments, self._token_budget)
 
         if budget_report.utilization > 0.8:

@@ -22,6 +22,9 @@ def test_general_purpose_agent():
 def test_explore_agent():
     a = EXPLORE_AGENT
     assert a.agent_type == "explore"
+    assert "STRICT READ-ONLY" in a.system_prompt
+    assert "禁止使用 Bash 执行" in a.system_prompt
+    assert "Required output" in a.system_prompt
     assert "Write" not in a.tools
     assert "agent" in a.disallowed_tools
     assert a.permission_mode == "bypass"
@@ -30,6 +33,9 @@ def test_explore_agent():
 def test_plan_agent():
     a = PLAN_AGENT
     assert a.agent_type == "plan"
+    assert "STRICT READ-ONLY" in a.system_prompt
+    assert "Critical Files for Implementation" in a.system_prompt
+    assert "Architecture" in a.system_prompt
     assert "agent" in a.disallowed_tools
     assert a.permission_mode == "bypass"
 
@@ -74,6 +80,8 @@ def test_find_agent_default():
 def test_worker_agent_can_edit_and_research():
     a = WORKER_AGENT
     assert a.agent_type == "worker"
+    assert "Report format" in a.system_prompt
+    assert "Tests run" in a.system_prompt
     assert "*" in a.tools
     assert "agent" in a.disallowed_tools
 
@@ -81,6 +89,8 @@ def test_worker_agent_can_edit_and_research():
 def test_verifier_agent_is_read_only():
     a = VERIFIER_AGENT
     assert a.agent_type == "verifier"
+    assert "Evidence required" in a.system_prompt
+    assert "Do not rubber-stamp" in a.system_prompt
     assert "Read" in a.tools
     assert "Grep" in a.tools
     assert "Write" not in a.tools
@@ -92,6 +102,8 @@ def test_coordinator_agent_can_spawn_and_continue_workers():
     a = COORDINATOR_AGENT
     assert a.agent_type == "coordinator"
     assert "agent" in a.tools
+    assert "Parallelism is your advantage" in a.system_prompt
+    assert "Synthesize before delegating follow-up" in a.system_prompt
     assert "message" not in a.disallowed_tools
 
 

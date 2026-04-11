@@ -126,3 +126,19 @@ def test_create_fork_task_uses_inherit_context(executor):
     assert task.execution_mode == "fork"
     assert task.context_mode == "inherit"
     assert task.seed_messages_json.startswith("[")
+
+
+def test_executor_resolves_agent_model_override(executor, monkeypatch):
+    agent_def = MagicMock(model="custom-model")
+    monkeypatch.setattr("auraeve.subagents.executor.find_agent", lambda _agent_type: agent_def)
+    task = Task(task_id="t-model", goal="模型测试", agent_type="custom-worker")
+
+    assert executor._model_for_task(task) == "custom-model"  # noqa: SLF001
+
+
+def test_executor_inherits_parent_model_when_agent_model_is_inherit(executor, monkeypatch):
+    agent_def = MagicMock(model="inherit")
+    monkeypatch.setattr("auraeve.subagents.executor.find_agent", lambda _agent_type: agent_def)
+    task = Task(task_id="t-model", goal="模型测试", agent_type="worker")
+
+    assert executor._model_for_task(task) == "test-model"  # noqa: SLF001

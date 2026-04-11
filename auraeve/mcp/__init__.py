@@ -1,5 +1,4 @@
 from .config import MCPConfigError, parse_mcp_config, validate_mcp_config
-from .runtime import MCPRuntimeManager
 
 __all__ = [
     "MCPConfigError",
@@ -7,4 +6,12 @@ __all__ = [
     "parse_mcp_config",
     "validate_mcp_config",
 ]
+
+
+def __getattr__(name: str):
+    if name == "MCPRuntimeManager":
+        from .runtime import MCPRuntimeManager
+
+        return MCPRuntimeManager
+    raise AttributeError(name)
 

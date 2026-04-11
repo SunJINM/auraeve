@@ -170,6 +170,8 @@ class RuntimeKernel:
             max_tokens=max_tokens,
             max_iterations=50,
             thinking_budget_tokens=thinking_budget_tokens or 0,
+            prompt_assembler=self.assembler,
+            hooks=self.hooks,
             max_concurrent=max_global_subagent_concurrent,
             workspace=str(workspace),
             sessions_dir=sessions_dir / "subagent_sessions",

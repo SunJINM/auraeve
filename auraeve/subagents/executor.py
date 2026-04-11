@@ -68,6 +68,8 @@ class SubagentExecutor:
         max_tokens: int = 16384,
         max_iterations: int = 200,
         thinking_budget_tokens: int = 0,
+        prompt_assembler=None,
+        hooks=None,
         max_concurrent: int = 5,
         workspace: str = "",
         sessions_dir: str | Path | None = None,
@@ -82,6 +84,8 @@ class SubagentExecutor:
         self._max_tokens = max_tokens
         self._max_iterations = max_iterations
         self._thinking_budget_tokens = thinking_budget_tokens
+        self._prompt_assembler = prompt_assembler
+        self._hooks = hooks
         self._max_concurrent = max_concurrent
         self._workspace = workspace
         self._sessions = SessionManager(Path(sessions_dir) if sessions_dir else Path(workspace) / ".subagents")
@@ -115,6 +119,8 @@ class SubagentExecutor:
         parent_thread_id: str = "",
         parent_task_id: str = "",
         seed_messages: list[dict] | None = None,
+        worktree_path: str = "",
+        worktree_branch: str = "",
     ) -> Task:
         """创建子智能体任务。"""
         if len(self._running) >= self._max_concurrent:
@@ -153,6 +159,8 @@ class SubagentExecutor:
             parent_thread_id=parent_thread_id,
             parent_task_id=parent_task_id,
             seed_messages_json=json.dumps(seed_messages or [], ensure_ascii=False),
+            worktree_path=worktree_path,
+            worktree_branch=worktree_branch,
         )
         self._store.save_task(task)
         return task
@@ -260,16 +268,21 @@ class SubagentExecutor:
             provider=self._provider,
             tools=tools,
             policy=self._policy,
-            model=self._model,
+            model=self._model_for_task(task),
             temperature=self._temperature,
             max_tokens=self._max_tokens,
             max_iterations=self._max_iterations,
             thinking_budget_tokens=self._thinking_budget_tokens,
             reporter=reporter,
+            hooks=self._hooks,
+            prompt_assembler=self._prompt_assembler,
+            parent_workdir=self._workspace,
         )
         self._loops[task.task_id] = loop
 
         result = await loop.run(task, history_messages=history_messages, steer_queue=steer_queue)
+        if loop.compacted_messages is not None:
+            session.replace_history(loop.compacted_messages)
         session.add_message("user", task.goal)
         for message in loop.messages:
             role = str(message.get("role") or "")
@@ -280,6 +293,13 @@ class SubagentExecutor:
         session.add_message("assistant", result)
         self._sessions.save(session)
         return result
+
+    def _model_for_task(self, task: Task) -> str:
+        agent_def = find_agent(task.agent_type)
+        agent_model = str(getattr(agent_def, "model", "") or "").strip()
+        if agent_model and agent_model != "inherit":
+            return agent_model
+        return self._model
 
     def _build_tools_for_task(self, task: Task):
         registry = self._tool_builder(task)

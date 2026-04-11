@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 
 from auraeve.agent.agents.definitions import find_agent
 from auraeve.subagents.data.models import Task, ProgressTracker
+from auraeve.subagents.fork_context import build_fork_messages, build_worktree_notice
 from .reporter import TaskReporter
 
 logger = logging.getLogger(__name__)
@@ -32,6 +33,9 @@ class ReActLoop:
         max_iterations: int = 200,
         thinking_budget_tokens: int = 0,
         reporter: TaskReporter | None = None,
+        hooks=None,
+        prompt_assembler=None,
+        parent_workdir: str = "",
     ) -> None:
         self._provider = provider
         self._tools = tools
@@ -42,9 +46,13 @@ class ReActLoop:
         self._max_iterations = max_iterations
         self._thinking_budget_tokens = thinking_budget_tokens
         self._reporter = reporter
+        self._hooks = hooks
+        self._prompt_assembler = prompt_assembler
+        self._parent_workdir = parent_workdir
         self._task: asyncio.Task | None = None
         self.progress = ProgressTracker()
         self.messages: list[dict] = []
+        self.compacted_messages: list[dict] | None = None
 
     async def run(
         self,
@@ -55,10 +63,6 @@ class ReActLoop:
         """执行完整的 ReAct 循环。"""
         from auraeve.agent_runtime.session_attempt import SessionAttemptRunner
         from auraeve.agent_runtime.run_orchestrator import RunOrchestrator
-        from auraeve.plugins import PluginRegistry
-
-        system_prompt = self._build_system_prompt(task)
-
         effective_max_steps = min(self._max_iterations, task.budget.max_steps)
         max_tc = task.budget.max_tool_calls
         per_turn = max(4, max_tc // 4)
@@ -69,7 +73,11 @@ class ReActLoop:
             "maxWallTimeMs": 0,
         }
 
-        hooks = PluginRegistry().build_hook_runner()
+        if self._hooks is None:
+            from auraeve.plugins import PluginRegistry
+            hooks = PluginRegistry().build_hook_runner()
+        else:
+            hooks = self._hooks
 
         runner = SessionAttemptRunner(
             provider=self._provider,
@@ -88,7 +96,7 @@ class ReActLoop:
             is_subagent=True,
         )
 
-        messages = self._prepare_messages(task, history_messages or [])
+        messages = await self._prepare_messages_for_run(task, history_messages or [])
 
         start_time = time.monotonic()
 
@@ -168,6 +176,52 @@ class ReActLoop:
 
         return "\n".join(parts)
 
+    def _build_agent_context(self, task: Task) -> str:
+        agent_def = find_agent(task.agent_type)
+        parts = [
+            "你正在作为子智能体执行任务。",
+            f"子智能体类型: {task.agent_type}",
+            f"执行模式: {task.execution_mode}",
+            f"上下文模式: {task.context_mode}",
+            "",
+            "角色说明:",
+            agent_def.system_prompt or "按分配目标完成任务。",
+        ]
+        if task.role_prompt:
+            parts.extend(["", "角色配置:", task.role_prompt])
+        return "\n".join(parts)
+
+    def _build_runtime_instruction(self, task: Task) -> str:
+        lines = [
+            f"执行预算: 最多 {task.budget.max_steps} 步, "
+            f"最多 {task.budget.max_tool_calls} 次工具调用；"
+            "无总时长超时，但必须避免空转和重复搜索。",
+            "",
+            "执行约束:",
+            "- 专注于你的任务目标，不要偏离",
+            "- 高效使用工具，避免重复操作",
+            "- 在阶段边界先输出一两句进度，像正常对话一样说明“目前已获取到……接下来我会……”；不要只连续调用工具",
+            "- 通过工具调用显著提升结论质量；每次调用都应扩大信息增量、减少不确定性，并推动下一步判断",
+            "- 积极组合使用 Read、Grep、Glob、Bash 和其他可用工具，而不是停留在单一视角",
+            "- 只有彼此独立、互不依赖的只读工具调用，才应并发发出",
+            "- 依赖前一步结果的调用必须串行执行",
+            "- 默认给出清晰、详细、结构化的结果，优先覆盖关键事实、分析逻辑、风险、未决问题和后续建议",
+            "- 详细不等于堆砌；不要为了显得详细而堆砌无关内容",
+            "- 禁止截断已收集到的关键信息；必要时分多轮继续读取或继续收集",
+            "- 如果结果天然很长，可写入本地 Markdown 文档并返回路径，再补一个高质量摘要",
+            "- 完成后输出清晰、结构化的结果",
+            "- 如果发现任务无法完成，说明原因并返回已有成果",
+        ]
+        if task.execution_mode == "fork" and task.worktree_path:
+            lines.extend(
+                [
+                    "",
+                    "Fork worktree notice:",
+                    build_worktree_notice(self._parent_workdir, task.worktree_path),
+                ]
+            )
+        return "\n".join(lines)
+
     def _prepare_messages(
         self,
         task: Task,
@@ -180,3 +234,33 @@ class ReActLoop:
             messages.extend(history_messages)
         messages.append({"role": "user", "content": task.goal})
         return messages
+
+    async def _prepare_messages_for_run(
+        self,
+        task: Task,
+        history_messages: list[dict] | None = None,
+    ) -> list[dict]:
+        if self._prompt_assembler is None:
+            return self._prepare_messages(task, history_messages)
+
+        available_tools = set(getattr(self._tools, "tool_names", []) or [])
+        base_history = list(history_messages or [])
+        current_query = task.goal
+        if task.execution_mode == "fork" and task.context_mode == "inherit":
+            fork_messages = build_fork_messages(base_history, task.goal)
+            directive_message = fork_messages.pop()
+            base_history = fork_messages
+            current_query = str(directive_message.get("content") or task.goal)
+        result = await self._prompt_assembler.assemble(
+            session_id=task.session_key or f"sub:{task.task_id}",
+            messages=base_history,
+            current_query=current_query,
+            channel=task.origin_channel or None,
+            chat_id=task.origin_chat_id or None,
+            available_tools=available_tools,
+            prompt_mode="full",
+            prepend_context=self._build_agent_context(task),
+            runtime_instruction=self._build_runtime_instruction(task),
+        )
+        self.compacted_messages = getattr(result, "compacted_messages", None)
+        return list(result.messages)
