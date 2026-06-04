@@ -1,15 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { v4 as uuid } from 'uuid'
+import { HiArrowLeftOnRectangle } from 'react-icons/hi2'
 
 import { ChatComposer } from '../components/chat/ChatComposer'
 import { ChatTranscript } from '../components/chat/transcript/ChatTranscript'
+import { ThemeSwitch } from '../components/ThemeSwitch'
 import { useChatTranscript } from '../components/chat/transcript/useChatTranscript'
 import type { ChatTranscriptEvent } from '../components/chat/transcript/types'
 import { chatApi } from '../api/client'
 import { useAppStore } from '../store/app'
 
 export function ChatPage() {
-  const { sessionKey, setSessionKey } = useAppStore()
+  const { sessionKey, logout } = useAppStore()
   const { blocks, run, loading, load, applyEvent } = useChatTranscript(sessionKey)
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
@@ -90,51 +92,38 @@ export function ChatPage() {
     await chatApi.abort(sessionKey, runId)
   }
 
-  const statusLine = buildStatusLine(run?.status, errorMsg, blocks.length, sending)
-
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="border-b px-4 py-3" style={{ borderColor: 'var(--glass-border)' }}>
-        <div className="flex items-center gap-3">
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Agent Console</div>
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>Key</span>
-            <input
-              className="rounded-xl border px-3 py-2 text-sm focus:outline-none"
-              style={{ background: 'var(--input-bg)', color: 'var(--text-primary)', borderColor: 'var(--glass-border)' }}
-              value={sessionKey}
-              onChange={(e) => setSessionKey(e.target.value)}
-              onBlur={() => void load()}
-              placeholder="会话 key"
-            />
-          </div>
+      <header
+        className="flex items-center justify-between border-b px-4 py-2.5"
+        style={{ borderColor: 'var(--glass-border)' }}
+      >
+        <span className="text-sm font-semibold tracking-wide" style={{ color: 'var(--text-primary)' }}>
+          AuraEve
+        </span>
+        <div className="flex items-center gap-1">
+          <ThemeSwitch className="rounded-full p-1.5 transition-colors hover:opacity-80" />
+          <button
+            onClick={logout}
+            aria-label="退出登录"
+            className="rounded-full p-1.5 transition-colors hover:opacity-80"
+            style={{ color: 'var(--text-secondary)' }}
+          >
+            <HiArrowLeftOnRectangle size={20} />
+          </button>
         </div>
-
-        <div className="mt-3 flex flex-wrap gap-2 text-xs">
-          {statusLine.map((item) => (
-            <span
-              key={item.text}
-              className="rounded-full border px-3 py-1"
-              style={{ borderColor: 'var(--glass-border)', color: item.color || 'var(--text-secondary)' }}
-            >
-              {item.text}
-            </span>
-          ))}
-        </div>
-      </div>
+      </header>
 
       <div className="flex min-h-0 flex-1 flex-col p-3">
         <section
-          className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[22px] border"
-          style={{ borderColor: 'var(--glass-border)', background: 'color-mix(in srgb, var(--surface-1) 92%, transparent)' }}
+          className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border"
+          style={{ borderColor: 'var(--glass-border)', background: 'var(--surface-1)' }}
         >
           <div className="flex-1 overflow-y-auto px-4 py-5">
             {!loading && blocks.length === 0 ? (
               <div
-                className="mx-auto mt-10 max-w-3xl rounded-[28px] border px-6 py-7"
-                style={{ borderColor: 'var(--glass-border)', background: 'rgba(255,255,255,0.22)' }}
+                className="mx-auto mt-10 max-w-3xl rounded-2xl border px-6 py-7"
+                style={{ borderColor: 'var(--glass-border)', background: 'var(--surface-2)' }}
               >
                 <div className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>欢迎来到 AuraEve 对话中心</div>
                 <div className="mt-2 text-sm leading-7" style={{ color: 'var(--text-secondary)' }}>
@@ -147,25 +136,18 @@ export function ChatPage() {
             <div ref={bottomRef} />
           </div>
 
+          {errorMsg && (
+            <div
+              className="border-t px-4 py-2 text-xs"
+              style={{ borderColor: 'var(--glass-border)', color: 'var(--danger)' }}
+            >
+              错误: {errorMsg}
+            </div>
+          )}
+
           <ChatComposer value={input} sending={sending} onChange={setInput} onSubmit={() => void send()} onAbort={() => void abort()} />
         </section>
       </div>
     </div>
   )
-}
-
-function buildStatusLine(
-  runStatus: 'idle' | 'running' | 'completed' | 'aborted' | undefined,
-  errorMsg: string,
-  _blockCount: number,
-  sending: boolean,
-): Array<{ text: string; color?: string }> {
-  const items: Array<{ text: string; color?: string }> = []
-
-  if (sending || runStatus === 'running') items.push({ text: '处理中', color: 'var(--accent)' })
-  if (runStatus === 'aborted') items.push({ text: '已中止', color: 'var(--danger)' })
-  if (errorMsg) items.push({ text: `错误: ${errorMsg}`, color: 'var(--danger)' })
-  if (items.length === 0) items.push({ text: '当前空闲，可直接开始新一轮任务' })
-
-  return items
 }

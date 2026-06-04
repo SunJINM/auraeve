@@ -1,14 +1,9 @@
 import { useEffect, useState } from 'react'
-import { motion } from 'framer-motion'
 import { Button } from '@heroui/button'
-import { CardBody, CardHeader } from '@heroui/card'
-import { Image } from '@heroui/image'
 import { Input } from '@heroui/input'
 import { IoKeyOutline } from 'react-icons/io5'
 import { useAppStore } from '../store/app'
-import { HoverEffectCard } from '../components/HoverEffectCard'
 import { ThemeSwitch } from '../components/ThemeSwitch'
-import { PureLayout } from '../layouts/PureLayout'
 
 export function LoginPage() {
   const { setToken } = useAppStore()
@@ -43,123 +38,80 @@ export function LoginPage() {
     }
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [input, isLoading])
 
   return (
-    <>
-      <title>WebUI登录 - AuraEve</title>
-      <PureLayout>
-        <motion.div
-          initial={{ opacity: 0, y: 20, scale: 0.95 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          transition={{ duration: 0.5, type: 'spring', stiffness: 120, damping: 20 }}
-          className="w-[608px] max-w-full py-8 px-2 md:px-8 overflow-hidden"
-        >
-          <HoverEffectCard
-            className="items-center gap-4 pt-0 pb-6 bg-default-50"
-            maxXRotation={3}
-            maxYRotation={3}
+    <div
+      className="relative flex h-screen w-full items-center justify-center px-4"
+      style={{ background: 'var(--bg-page)' }}
+    >
+      <title>登录 - AuraEve</title>
+      <ThemeSwitch className="absolute right-5 top-5 rounded-full p-2 transition-colors hover:opacity-80" />
+
+      <div
+        className="w-full max-w-sm rounded-2xl border p-8"
+        style={{
+          background: 'var(--surface-1)',
+          borderColor: 'var(--glass-border)',
+          boxShadow: 'var(--shadow)',
+        }}
+      >
+        <div className="flex flex-col items-center gap-3">
+          <img src="/auraeve.png" alt="AuraEve" className="h-14 w-14 rounded-full" />
+          <h1 className="text-2xl font-semibold tracking-tight" style={{ color: 'var(--text-primary)' }}>
+            AuraEve
+          </h1>
+        </div>
+
+        <form className="mt-8 flex flex-col gap-4" onSubmit={(e) => { e.preventDefault(); login() }}>
+          <input
+            type="text"
+            name="username"
+            value="auraeve-webui"
+            autoComplete="username"
+            style={{ position: 'fixed', top: '-9999px', left: '-9999px', opacity: 0 }}
+            readOnly
+            tabIndex={-1}
+            aria-label="Username"
+          />
+          <Input
+            isClearable
+            type="password"
+            name="password"
+            autoComplete="current-password"
+            isDisabled={isLoading}
+            label="Token"
+            placeholder="请输入 Token"
+            radius="lg"
+            size="lg"
+            variant="bordered"
+            startContent={<IoKeyOutline className="flex-shrink-0 text-default-400" />}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onClear={() => setInput('')}
+          />
+
+          <div className="min-h-5 text-center text-sm">
+            {error ? (
+              <span style={{ color: 'var(--danger)' }}>{error}</span>
+            ) : (
+              <span style={{ color: 'var(--text-tertiary)' }}>可在 AuraEve 配置中查看或设置 WebUI Token</span>
+            )}
+          </div>
+
+          <Button
+            color="primary"
+            isLoading={isLoading}
+            radius="lg"
+            size="lg"
+            type="submit"
+            onPress={login}
           >
-            <CardHeader className="inline-block max-w-lg text-center justify-center">
-              <div className="flex items-center justify-center w-full gap-2 pt-10">
-                <Image alt="logo" height="7em" src="/auraeve.png" className="rounded-full" />
-                <div>
-                  <span className="text-4xl font-black tracking-tight">Web&nbsp;</span>
-                  <span
-                    className="text-4xl font-black tracking-tight bg-clip-text text-transparent"
-                    style={{ backgroundImage: 'linear-gradient(180deg, #ff1cf7 0%, #b249f8 100%)' }}
-                  >
-                    Login&nbsp;
-                  </span>
-                </div>
-              </div>
-              <ThemeSwitch className="absolute right-4 top-4" />
-            </CardHeader>
-
-            <CardBody className="flex gap-5 py-5 px-5 md:px-10">
-              <form onSubmit={(e) => { e.preventDefault(); login() }}>
-                <input
-                  type="text"
-                  name="username"
-                  value="auraeve-webui"
-                  autoComplete="username"
-                  style={{ position: 'fixed', top: '-9999px', left: '-9999px', opacity: 0 }}
-                  readOnly
-                  tabIndex={-1}
-                  aria-label="Username"
-                />
-                <Input
-                  isClearable
-                  type="password"
-                  name="password"
-                  autoComplete="current-password"
-                  classNames={{
-                    label: 'text-black/50 dark:text-white/90',
-                    input: [
-                      'bg-transparent',
-                      'text-black/90 dark:text-white/90',
-                      'placeholder:text-default-700/50 dark:placeholder:text-white/60',
-                    ],
-                    innerWrapper: 'bg-transparent',
-                    inputWrapper: [
-                      'shadow-xl',
-                      'bg-default-100/70',
-                      'dark:bg-default/60',
-                      'backdrop-blur-xl',
-                      'backdrop-saturate-200',
-                      'hover:bg-default-0/70',
-                      'dark:hover:bg-default/70',
-                      'group-data-[focus=true]:bg-default-100/50',
-                      'dark:group-data-[focus=true]:bg-default/60',
-                      '!cursor-text',
-                    ],
-                  }}
-                  isDisabled={isLoading}
-                  label="Token"
-                  placeholder="请输入 Token"
-                  radius="lg"
-                  size="lg"
-                  startContent={
-                    <IoKeyOutline className="text-black/50 mb-0.5 dark:text-white/90 text-slate-400 pointer-events-none flex-shrink-0" />
-                  }
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onClear={() => setInput('')}
-                />
-              </form>
-
-              <div className="text-center text-small px-2" style={{ color: error ? '#ef4444' : undefined }} >
-                {error
-                  ? <span className="text-danger">{error}</span>
-                  : <span className="text-default-500">💡 提示：可在 AuraEve 配置中查看或设置 WebUI Token</span>
-                }
-              </div>
-
-              <Button
-                className="mx-10 mt-10 text-lg py-7"
-                color="primary"
-                isLoading={isLoading}
-                radius="full"
-                size="lg"
-                variant="shadow"
-                onPress={login}
-              >
-                {!isLoading && (
-                  <Image
-                    alt="logo"
-                    classNames={{ wrapper: '-ml-8' }}
-                    height="2em"
-                    src="/auraeve.png"
-                    className="rounded-full"
-                  />
-                )}
-                登录
-              </Button>
-            </CardBody>
-          </HoverEffectCard>
-        </motion.div>
-      </PureLayout>
-    </>
+            登录
+          </Button>
+        </form>
+      </div>
+    </div>
   )
 }

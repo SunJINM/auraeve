@@ -11,10 +11,6 @@ interface AppState {
   setToken: (t: string) => void
   logout: () => void
 
-  // 当前页面
-  page: 'chat' | 'config' | 'mcp' | 'plugins' | 'skills' | 'logs' | 'profile' | 'nodes'
-  setPage: (p: 'chat' | 'config' | 'mcp' | 'plugins' | 'skills' | 'logs' | 'profile' | 'nodes') => void
-
   // 当前会话
   sessionKey: string
   setSessionKey: (k: string) => void
@@ -40,9 +36,6 @@ export const useAppStore = create<AppState>((set) => ({
     localStorage.removeItem('webui_token')
     set({ token: '', authed: false })
   },
-
-  page: 'chat',
-  setPage: (page) => set({ page }),
 
   sessionKey: (() => {
     const stored = localStorage.getItem('webui_session_key')

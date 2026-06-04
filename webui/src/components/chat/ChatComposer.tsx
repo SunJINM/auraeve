@@ -21,7 +21,7 @@ export function ChatComposer({
   return (
     <div
       className="border-t px-4 pb-4 pt-3"
-      style={{ borderColor: 'var(--glass-border)', background: 'var(--glass-bg)', backdropFilter: 'blur(12px)' }}
+      style={{ borderColor: 'var(--glass-border)', background: 'var(--surface-1)' }}
     >
       <div className="flex items-end gap-3">
         <textarea

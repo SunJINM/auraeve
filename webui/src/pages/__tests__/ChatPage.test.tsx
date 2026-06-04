@@ -11,6 +11,9 @@ vi.mock('../../store/app', () => ({
   useAppStore: () => ({
     sessionKey: 'webui:test',
     setSessionKey: vi.fn(),
+    logout: vi.fn(),
+    dark: false,
+    toggleDark: vi.fn(),
   }),
 }))
 
@@ -59,7 +62,7 @@ describe('ChatPage', () => {
 
     expect(screen.queryByText('运行控制台')).not.toBeInTheDocument()
     expect(screen.queryByText('聊天主线')).not.toBeInTheDocument()
-    expect(screen.getByDisplayValue('webui:test')).toBeInTheDocument()
+    expect(screen.getByText('AuraEve')).toBeInTheDocument()
   })
 
   it('does not render task list when there are no main tasks', async () => {
