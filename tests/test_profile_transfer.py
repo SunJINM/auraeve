@@ -55,7 +55,7 @@ class ProfileTransferTests(unittest.TestCase):
         self.assertTrue((self.state_dir / "memory.db").exists())
         self.assertTrue((self.state_dir / "workspace" / "memory" / "MEMORY.md").exists())
         self.assertTrue((self.state_dir / "skills" / "state.json").exists())
-        self.assertTrue((self.state_dir / "plugins" / "state.json").exists())
+        self.assertFalse((self.state_dir / "plugins" / "state.json").exists())
 
     def test_import_requires_force_when_target_not_empty(self) -> None:
         self._seed_state()

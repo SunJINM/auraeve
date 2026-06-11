@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { v4 as uuid } from 'uuid'
-import { HiArrowLeftOnRectangle } from 'react-icons/hi2'
+import { HiArrowLeftOnRectangle, HiBolt, HiCircleStack, HiSparkles } from 'react-icons/hi2'
 
 import { ChatComposer } from '../components/chat/ChatComposer'
 import { ChatTranscript } from '../components/chat/transcript/ChatTranscript'
@@ -92,62 +92,99 @@ export function ChatPage() {
     await chatApi.abort(sessionKey, runId)
   }
 
+  const statusText = sending ? '正在想' : run?.status === 'completed' ? '已收好' : '等你'
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       <header
-        className="flex items-center justify-between border-b px-4 py-2.5"
+        className="shrink-0 border-b px-4 py-3 sm:px-6"
         style={{ borderColor: 'var(--glass-border)' }}
       >
-        <span className="text-sm font-semibold tracking-wide" style={{ color: 'var(--text-primary)' }}>
-          AuraEve
-        </span>
-        <div className="flex items-center gap-1">
-          <ThemeSwitch className="rounded-full p-1.5 transition-colors hover:opacity-80" />
-          <button
-            onClick={logout}
-            aria-label="退出登录"
-            className="rounded-full p-1.5 transition-colors hover:opacity-80"
-            style={{ color: 'var(--text-secondary)' }}
-          >
-            <HiArrowLeftOnRectangle size={20} />
-          </button>
+        <div className="mx-auto flex w-full max-w-[860px] items-center justify-between gap-4">
+          <div className="flex min-w-0 items-center gap-3">
+            <img src="/auraeve.png" alt="AuraEve" className="h-9 w-9 shrink-0 rounded-[12px]" />
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="text-[15px] font-semibold tracking-tight" style={{ color: 'var(--text-primary)' }}>AuraEve</span>
+                <span className="inline-flex items-center gap-1.5 text-[11px] font-medium" style={{ color: 'var(--text-tertiary)' }}>
+                  <span
+                    className="inline-block h-1.5 w-1.5 rounded-full"
+                    style={{ background: sending ? 'var(--accent)' : 'var(--success)', animation: sending ? 'pulse 1.4s ease-in-out infinite' : undefined }}
+                  />
+                  {statusText}
+                </span>
+              </div>
+              <div className="mt-0.5 max-w-[48vw] truncate text-xs sm:max-w-[420px]" style={{ color: 'var(--text-tertiary)' }}>{sessionKey}</div>
+            </div>
+          </div>
+
+          <div className="flex shrink-0 items-center gap-1.5">
+            <ThemeSwitch className="icon-btn" />
+            <button onClick={logout} aria-label="退出登录" className="icon-btn">
+              <HiArrowLeftOnRectangle size={19} />
+            </button>
+          </div>
         </div>
       </header>
 
-      <div className="flex min-h-0 flex-1 flex-col p-3">
-        <section
-          className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border"
-          style={{ borderColor: 'var(--glass-border)', background: 'var(--surface-1)' }}
-        >
-          <div className="flex-1 overflow-y-auto px-4 py-5">
+      <main className="flex min-h-0 flex-1 flex-col">
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-8 pt-6 sm:px-6 sm:pt-8">
+          <div className="mx-auto w-full max-w-[860px] pb-28">
             {!loading && blocks.length === 0 ? (
               <div
-                className="mx-auto mt-10 max-w-3xl rounded-2xl border px-6 py-7"
-                style={{ borderColor: 'var(--glass-border)', background: 'var(--surface-2)' }}
+                className="mx-auto mt-[14vh] max-w-2xl text-center"
               >
-                <div className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>欢迎来到 AuraEve 对话中心</div>
-                <div className="mt-2 text-sm leading-7" style={{ color: 'var(--text-secondary)' }}>
-                  这里直接展示完整对话，你可以在同一个窗口里连续查看消息、过程和结果。
-                </div>
+                <img src="/auraeve.png" alt="AuraEve" className="mx-auto h-14 w-14 rounded-[18px]" style={{ boxShadow: 'var(--shadow-soft)' }} />
+                <h2 className="mt-6 text-4xl font-semibold tracking-tight sm:text-[42px]" style={{ color: 'var(--text-primary)' }}>
+                  想聊什么？
+                </h2>
+                <p className="mx-auto mt-3 max-w-[36ch] text-[15px] leading-7" style={{ color: 'var(--text-secondary)' }}>
+                  随便开个头，剩下的慢慢展开。
+                </p>
+                <div className="mt-8 flex flex-wrap justify-center gap-2">
+                  {[
+                    { label: '整理想法', prompt: '帮我把这些零散的想法整理成清晰的思路：', icon: HiCircleStack },
+                    { label: '推进任务', prompt: '我想推进一件事，先帮我拆解成可执行的步骤：', icon: HiBolt },
+                    { label: '继续完善', prompt: '帮我把下面这段内容打磨得更好：', icon: HiSparkles },
+                  ].map((item) => {
+                    const Icon = item.icon
+                    return (
+                      <button
+                        key={item.label}
+                        type="button"
+                        onClick={() => setInput(item.prompt)}
+                        className="suggest-chip inline-flex items-center gap-2 rounded-full border px-4 py-2 text-[13px]"
+                        style={{ borderColor: 'var(--glass-border)', background: 'var(--surface-1)', color: 'var(--text-secondary)', boxShadow: 'var(--shadow-soft)' }}
+                      >
+                        <Icon size={15} style={{ color: 'var(--accent)' }} />
+                        {item.label}
+                      </button>
+                    )
+                  })}
+                  </div>
               </div>
             ) : (
               <ChatTranscript blocks={blocks} />
             )}
             <div ref={bottomRef} />
           </div>
+        </div>
 
+        <footer className="shrink-0 px-4 pb-4 sm:px-6 sm:pb-5">
           {errorMsg && (
             <div
-              className="border-t px-4 py-2 text-xs"
-              style={{ borderColor: 'var(--glass-border)', color: 'var(--danger)' }}
+              className="mx-auto mb-2 w-full max-w-[860px] rounded-[14px] border px-4 py-2.5 text-xs"
+              style={{ borderColor: 'color-mix(in srgb, var(--danger) 26%, var(--glass-border))', color: 'var(--danger)', background: 'color-mix(in srgb, var(--danger) 6%, var(--surface-1))' }}
             >
               错误: {errorMsg}
             </div>
           )}
 
-          <ChatComposer value={input} sending={sending} onChange={setInput} onSubmit={() => void send()} onAbort={() => void abort()} />
-        </section>
-      </div>
+          <div className="mx-auto w-full max-w-[860px]">
+            <ChatComposer value={input} sending={sending} onChange={setInput} onSubmit={() => void send()} onAbort={() => void abort()} />
+          </div>
+        </footer>
+      </main>
     </div>
   )
 }

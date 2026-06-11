@@ -112,7 +112,7 @@ def _get_tiktoken():
                         mergeable_ranks=mergeable_ranks,
                         special_tokens=_CL100K_SPECIAL_TOKENS,
                     )
-                    logger.info(f"[tiktoken] loaded local vocabulary: {local_file}")
+                    logger.debug(f"已加载本地 tiktoken 词表：{local_file}")
                     return _tiktoken_enc
                 except Exception as exc:
                     logger.warning(f"[tiktoken] local vocabulary load failed, fallback to default: {exc}")
@@ -309,20 +309,20 @@ async def compact_messages(
     if not chunks:
         return CompactResult(ok=False, compacted=False, reason="无可压缩内容")
 
-    logger.info(f"上下文压缩：{len(to_summarize)} 条消息分为 {len(chunks)} 块进行摘要")
+    logger.debug(f"上下文压缩开始：{len(to_summarize)} 条消息分为 {len(chunks)} 块")
 
     # 顺序摘要
     summaries: list[str] = []
     prev_summary = ""
     for i, chunk in enumerate(chunks):
-        logger.info(f"  正在摘要第 {i+1}/{len(chunks)} 块（{len(chunk)} 条消息）…")
+        logger.debug(f"正在摘要第 {i+1}/{len(chunks)} 块（{len(chunk)} 条消息）")
         summary = await _summarize_chunk(chunk, provider, prev_summary, identifier_instruction)
         summaries.append(summary)
         prev_summary = summary
 
     # 合并
     if len(summaries) > 1:
-        logger.info(f"  合并 {len(summaries)} 个部分摘要…")
+        logger.debug(f"正在合并 {len(summaries)} 个部分摘要")
         final_summary = await _merge_summaries(summaries, provider, identifier_instruction)
     else:
         final_summary = summaries[0]

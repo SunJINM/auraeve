@@ -1,3 +1,6 @@
+import { useEffect, useRef, type KeyboardEvent } from 'react'
+import { HiArrowUp, HiStop } from 'react-icons/hi2'
+
 export function ChatComposer({
   value,
   sending,
@@ -11,7 +14,18 @@ export function ChatComposer({
   onSubmit: () => void
   onAbort: () => void
 }) {
-  const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+  const ref = useRef<HTMLTextAreaElement>(null)
+
+  const resize = () => {
+    const el = ref.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${Math.min(el.scrollHeight, 180)}px`
+  }
+
+  useEffect(resize, [value])
+
+  const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       onSubmit()
@@ -20,43 +34,43 @@ export function ChatComposer({
 
   return (
     <div
-      className="border-t px-4 pb-4 pt-3"
-      style={{ borderColor: 'var(--glass-border)', background: 'var(--surface-1)' }}
+      className="composer flex items-end gap-2 rounded-[22px] border p-2 sm:gap-2.5"
+      style={{
+        borderColor: 'var(--glass-border)',
+        background: 'var(--input-bg)',
+        boxShadow: 'var(--shadow-soft)',
+      }}
     >
-      <div className="flex items-end gap-3">
-        <textarea
-          className="min-h-[48px] max-h-[180px] flex-1 resize-none rounded-2xl border px-4 py-3 text-sm focus:outline-none"
-          style={{
-            background: 'var(--input-bg)',
-            color: 'var(--text-primary)',
-            borderColor: 'var(--glass-border)',
-          }}
-          placeholder="输入消息，Enter 发送，Shift+Enter 换行..."
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          onKeyDown={onKeyDown}
-          rows={1}
-          disabled={sending}
-        />
-        {sending ? (
-          <button
-            onClick={onAbort}
-            className="rounded-2xl px-4 py-3 text-sm font-semibold"
-            style={{ background: 'var(--danger)', color: '#fff' }}
-          >
-            停止
-          </button>
-        ) : (
-          <button
-            onClick={onSubmit}
-            disabled={!value.trim()}
-            className="rounded-2xl px-4 py-3 text-sm font-semibold disabled:opacity-40"
-            style={{ background: 'var(--accent)', color: '#fff' }}
-          >
-            发送
-          </button>
-        )}
-      </div>
+      <textarea
+        ref={ref}
+        className="max-h-[180px] min-h-[40px] flex-1 resize-none border-0 bg-transparent px-3 py-2 text-[15px] leading-7 focus:outline-none"
+        style={{ color: 'var(--text-primary)' }}
+        placeholder="写点什么..."
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={onKeyDown}
+        rows={1}
+      />
+      {sending ? (
+        <button
+          onClick={onAbort}
+          aria-label="停止"
+          className="grid h-9 w-9 shrink-0 place-items-center rounded-full transition-transform active:scale-90"
+          style={{ background: 'var(--danger)', color: '#fff' }}
+        >
+          <HiStop size={17} />
+        </button>
+      ) : (
+        <button
+          onClick={onSubmit}
+          disabled={!value.trim()}
+          aria-label="发送"
+          className="grid h-9 w-9 shrink-0 place-items-center rounded-full transition-transform active:scale-90 disabled:cursor-not-allowed disabled:opacity-30"
+          style={{ background: 'var(--accent)', color: '#fff' }}
+        >
+          <HiArrowUp size={18} />
+        </button>
+      )}
     </div>
   )
 }

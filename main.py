@@ -1,4 +1,4 @@
-﻿"""`r`nAuraEve entrypoint.`r`n`r`nRun:`r`n    python main.py`r`n"""
+"""AuraEve runtime entrypoint."""
 
 import asyncio
 import json
@@ -15,8 +15,6 @@ from auraeve.observability.loguru_sink import loguru_sink
 from auraeve.bus.queue import OutboundDispatcher
 from auraeve.agent_runtime.kernel import RuntimeKernel
 from auraeve.cron.service import CronService
-from auraeve.plugins import PluginRegistry
-from auraeve.plugins.state import merge_plugin_settings_from_config
 from auraeve.heartbeat.service import HEARTBEAT_OK_TOKEN, HeartbeatService
 from auraeve.utils.helpers import ensure_dir
 from auraeve.channels.webui import WebUIChannel, WebUIChannelConfig
@@ -36,7 +34,7 @@ from auraeve.runtime_runner import AppRuntimeRunner
 
 
 class _OpenAIEmbedder:
-    """ OpenAI ?"""
+    """OpenAI-compatible embedding client."""
 
     def __init__(self, api_key: str, api_base: str | None, model: str):
         from openai import AsyncOpenAI
@@ -71,7 +69,7 @@ async def main(terminal_mode: bool = False) -> None:
     )
     logger.add(loguru_sink, level="TRACE", enqueue=False, backtrace=False, diagnose=False)
 
-    logger.info(" Eve ...")
+    logger.info("正在启动 AuraEve")
 
     # 工作区与模板区
     workspace = cfg.resolve_workspace_dir("default")
@@ -109,7 +107,7 @@ async def main(terminal_mode: bool = False) -> None:
                     )
                     sys.exit(1)
                 except (OSError, ProcessLookupError):
-                    pass  # PID 
+                    pass
 
     # 消息分发
     bus = OutboundDispatcher()
@@ -160,27 +158,6 @@ async def main(terminal_mode: bool = False) -> None:
     ensure_dir(cron_store_path.parent)
     cron_service = CronService(store_path=cron_store_path)
 
-    # plugin
-    plugin_settings = merge_plugin_settings_from_config(
-        {
-            "PLUGINS_ENABLED": getattr(cfg, "PLUGINS_ENABLED", True),
-            "PLUGINS_ALLOW": getattr(cfg, "PLUGINS_ALLOW", []),
-            "PLUGINS_DENY": getattr(cfg, "PLUGINS_DENY", []),
-            "PLUGINS_LOAD_PATHS": getattr(cfg, "PLUGINS_LOAD_PATHS", []),
-            "PLUGINS_ENTRIES": getattr(cfg, "PLUGINS_ENTRIES", {}),
-        }
-    )
-    plugin_registry = PluginRegistry()
-    plugin_registry.register_discovered(
-        workspace=workspace,
-        auto_discovery_enabled=getattr(cfg, "PLUGINS_AUTO_DISCOVERY_ENABLED", True),
-        enabled=plugin_settings.enabled,
-        allow=plugin_settings.allow,
-        deny=plugin_settings.deny,
-        load_paths=plugin_settings.load_paths,
-        entries=plugin_settings.entries,
-    )
-
     #  RuntimeKernel 
     agent = RuntimeKernel(
         bus=bus,
@@ -203,7 +180,6 @@ async def main(terminal_mode: bool = False) -> None:
         channel_users=getattr(cfg, "CHANNEL_USERS", {}),
         notify_channel=getattr(cfg, "NOTIFY_CHANNEL", ""),
         thinking_budget_tokens=primary_model.thinking_budget_tokens or None,
-        plugin_registry=plugin_registry,
         token_budget=getattr(cfg, "TOKEN_BUDGET", 120_000),
         global_deny_tools=set(getattr(cfg, "GLOBAL_DENY_TOOLS", []) or []),
         session_tool_policy=getattr(cfg, "SESSION_TOOL_POLICY", {}) or {},
@@ -219,7 +195,7 @@ async def main(terminal_mode: bool = False) -> None:
         ),
     )
 
-    # ?Cron ?on_job ?agent
+    # Cron jobs are routed through the main runtime queue.
     async def _on_cron_job(job):
         agent.command_queue.enqueue_command(
             agent.command_factory(
@@ -287,9 +263,6 @@ async def main(terminal_mode: bool = False) -> None:
             stt_runtime=stt_runtime,
             engine=engine,
             workspace=workspace,
-            plugin_registry=plugin_registry,
-            plugin_registry_factory=PluginRegistry,
-            merge_plugin_settings=merge_plugin_settings_from_config,
             channel_runtime=channel_runtime.build_hot_reload_controls(),
             message_tool_sync=lambda **kwargs: sync_message_tool_settings(agent, **kwargs),
             export_config=lambda: cfg.export_config(mask_sensitive=False),
@@ -312,7 +285,7 @@ async def main(terminal_mode: bool = False) -> None:
         )
         webui_channel = WebUIChannel(WebUIChannelConfig(), agent.command_queue, chat_svc)
         bus.subscribe_outbound("webui", webui_channel.send)
-        logger.info(f"WebUIttp://{getattr(cfg, 'WEBUI_HOST', '0.0.0.0')}:{webui_bind_port}")
+        logger.info(f"WebUI 已启动：http://{getattr(cfg, 'WEBUI_HOST', '0.0.0.0')}:{webui_bind_port}")
 
     # 子体 WebSocket 服务
     subagent_ws_server = None
@@ -341,14 +314,14 @@ async def main(terminal_mode: bool = False) -> None:
     if webui_server is not None:
         webui_server._restart_callback = lambda: runtime_runner.shutdown(restart=True)
 
-    #  ?/  
+    # Shutdown and restart signal handling.
     event_loop = asyncio.get_running_loop()
 
     def _on_sigterm():
         asyncio.create_task(runtime_runner.shutdown(restart=False))
 
     def _on_sigusr1():
-        logger.info(" SIGUSR1?..")
+        logger.info("收到 SIGUSR1，准备重启 AuraEve")
         asyncio.create_task(runtime_runner.shutdown(restart=True))
 
     for sig, handler in (
@@ -363,24 +336,23 @@ async def main(terminal_mode: bool = False) -> None:
                 _loop.call_soon_threadsafe(_h)
             signal.signal(sig, _win_handler)
 
-    # SIGUSR1?Unix?
+    # SIGUSR1 is available on Unix-like systems.
     if hasattr(signal, "SIGUSR1"):
         try:
             event_loop.add_signal_handler(signal.SIGUSR1, _on_sigusr1)
         except NotImplementedError:
             pass
 
-    logger.info(f"    : {primary_model.model}")
-    logger.info(f"API     : {primary_model.api_base or ' (OpenAI)'}")
-    logger.info(f"? : {workspace}")
-    logger.info(f": {sessions_dir}")
+    logger.info(f"主模型：{primary_model.model}")
+    logger.info(f"模型 API：{primary_model.api_base or 'OpenAI 默认端点'}")
+    logger.info(f"工作区：{workspace}")
+    logger.info(f"会话目录：{sessions_dir}")
 
-    logger.info(f"?{len(channel_runtime.channels)} ?..")
+    logger.info(f"已启动 {len(channel_runtime.channels)} 个消息渠道")
     await runtime_runner.run()
 
-    # SIGUSR1
     if runtime_runner.restart_requested:
-        logger.info("...")
+        logger.info("正在重启 AuraEve")
         os.execv(sys.executable, [sys.executable] + sys.argv)
 
 

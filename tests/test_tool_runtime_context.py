@@ -47,10 +47,6 @@ async def test_runner_exposes_file_read_state_inside_tool_execution() -> None:
         return await probe.execute()
 
     tools.execute = AsyncMock(side_effect=_execute)
-    hooks = MagicMock()
-    hooks.run_before_model_resolve = AsyncMock(return_value=None)
-    hooks.run_before_tool_call = AsyncMock(return_value=MagicMock(block=False, params=None))
-    hooks.run_after_tool_call = AsyncMock()
     policy = MagicMock()
     policy.infer_tool_group.return_value = "filesystem"
     policy.evaluate = AsyncMock(
@@ -61,7 +57,6 @@ async def test_runner_exposes_file_read_state_inside_tool_execution() -> None:
         provider=provider,
         tools=tools,
         policy=policy,
-        hooks=hooks,
         max_iterations=2,
     )
     result = await runner.run(
@@ -97,10 +92,6 @@ async def test_runner_emits_runtime_assistant_text_for_tool_call_rounds() -> Non
         return await probe.execute()
 
     tools.execute = AsyncMock(side_effect=_execute)
-    hooks = MagicMock()
-    hooks.run_before_model_resolve = AsyncMock(return_value=None)
-    hooks.run_before_tool_call = AsyncMock(return_value=MagicMock(block=False, params=None))
-    hooks.run_after_tool_call = AsyncMock()
     policy = MagicMock()
     policy.infer_tool_group.return_value = "filesystem"
     policy.evaluate = AsyncMock(
@@ -111,7 +102,6 @@ async def test_runner_emits_runtime_assistant_text_for_tool_call_rounds() -> Non
         provider=provider,
         tools=tools,
         policy=policy,
-        hooks=hooks,
         max_iterations=2,
     )
     runner._obs = MagicMock()  # noqa: SLF001

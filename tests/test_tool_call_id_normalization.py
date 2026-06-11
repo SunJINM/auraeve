@@ -183,11 +183,6 @@ async def test_session_attempt_runner_persists_non_empty_tool_call_ids() -> None
     tools.get_metadata.return_value = {}
     tools.execute = AsyncMock(return_value="ok")
 
-    hooks = MagicMock()
-    hooks.run_before_model_resolve = AsyncMock(return_value=None)
-    hooks.run_before_tool_call = AsyncMock(return_value=MagicMock(block=False, params=None))
-    hooks.run_after_tool_call = AsyncMock()
-
     policy = MagicMock()
     policy.infer_tool_group.return_value = "search"
     policy.evaluate = AsyncMock(return_value=MagicMock(allowed=True, rewritten_args={"q": "x"}, reason=""))
@@ -196,7 +191,6 @@ async def test_session_attempt_runner_persists_non_empty_tool_call_ids() -> None
         provider=provider,
         tools=tools,
         policy=policy,
-        hooks=hooks,
         max_iterations=2,
         runtime_execution={"maxTurns": 2, "maxToolCallsTotal": 10, "maxToolCallsPerTurn": 10},
     )
@@ -248,11 +242,6 @@ async def test_session_attempt_runner_preserves_structured_tool_results() -> Non
         )
     )
 
-    hooks = MagicMock()
-    hooks.run_before_model_resolve = AsyncMock(return_value=None)
-    hooks.run_before_tool_call = AsyncMock(return_value=MagicMock(block=False, params=None))
-    hooks.run_after_tool_call = AsyncMock()
-
     policy = MagicMock()
     policy.infer_tool_group.return_value = "filesystem"
     policy.evaluate = AsyncMock(
@@ -267,7 +256,6 @@ async def test_session_attempt_runner_preserves_structured_tool_results() -> Non
         provider=provider,
         tools=tools,
         policy=policy,
-        hooks=hooks,
         max_iterations=2,
         runtime_execution={"maxTurns": 2, "maxToolCallsTotal": 10, "maxToolCallsPerTurn": 10},
     )

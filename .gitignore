@@ -27,7 +27,9 @@ node_client/config.py
 .DS_Store
 
 # Claude Code 本地设置
+.claude/
 .claude/settings.local.json
+.subagents/
 
 # 运行时数据
 workspace/memory/
@@ -51,6 +53,7 @@ workspace/.auraeve/
 
 # Local assistant instructions (do not publish)
 AGENT.md
+AGENTS.md
 CLAUDE.md
 
 # Private design docs (local only)

@@ -116,19 +116,19 @@ class HeartbeatService:
                 logger.error(f"心跳服务出错：{e}")
 
     async def _tick(self) -> None:
-        logger.info("心跳：主动感知中...")
+        logger.debug("心跳检查开始")
         heartbeat_content = self._read_heartbeat_file()
         if _is_heartbeat_empty(heartbeat_content):
-            logger.info("心跳：HEARTBEAT.md 为空，跳过模型调用")
+            logger.debug("HEARTBEAT.md 没有待处理内容，跳过模型调用")
             return
         if self._is_template_heartbeat(heartbeat_content):
-            logger.info("心跳：HEARTBEAT.md 与模板一致，跳过模型调用")
+            logger.debug("HEARTBEAT.md 仍为模板内容，跳过模型调用")
             return
         if self.on_heartbeat:
             try:
                 response = await self.on_heartbeat(HEARTBEAT_PROMPT)
                 if HEARTBEAT_OK_TOKEN.replace("_", "") in response.upper().replace("_", ""):
-                    logger.info("心跳：安静（无需打扰主人）")
+                    logger.debug("心跳检查完成，无需主动通知")
                 else:
                     logger.info("心跳：已主动联系主人")
             except Exception as e:

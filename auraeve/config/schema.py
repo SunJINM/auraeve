@@ -537,18 +537,6 @@ _SCHEMA_GROUPS: list[tuple[str, str, list[str]]] = [
         ],
     ),
     (
-        "plugins",
-        "插件配置",
-        [
-            "PLUGINS_AUTO_DISCOVERY_ENABLED",
-            "PLUGINS_ENABLED",
-            "PLUGINS_LOAD_PATHS",
-            "PLUGINS_ALLOW",
-            "PLUGINS_DENY",
-            "PLUGINS_ENTRIES",
-        ],
-    ),
-    (
         "skills",
         "技能配置",
         [
@@ -666,12 +654,6 @@ HOT_KEYS = {
     "ASR",
     "CHANNEL_USERS",
     "NOTIFY_CHANNEL",
-    "PLUGINS_AUTO_DISCOVERY_ENABLED",
-    "PLUGINS_ENABLED",
-    "PLUGINS_LOAD_PATHS",
-    "PLUGINS_ALLOW",
-    "PLUGINS_DENY",
-    "PLUGINS_ENTRIES",
     "SKILLS_ENABLED",
     "SKILLS_ENTRIES",
     "SKILLS_LOAD_EXTRA_DIRS",
@@ -717,13 +699,6 @@ _LABEL_OVERRIDES = {
     "NOTIFY_CHANNEL": "通知渠道",
     # 语音转写
     "ASR": "语音转文本配置",
-    # 插件
-    "PLUGINS_AUTO_DISCOVERY_ENABLED": "自动发现插件",
-    "PLUGINS_ENABLED": "启用插件系统",
-    "PLUGINS_LOAD_PATHS": "插件加载路径",
-    "PLUGINS_ALLOW": "插件白名单",
-    "PLUGINS_DENY": "插件黑名单",
-    "PLUGINS_ENTRIES": "插件条目配置",
     # 技能
     "SKILLS_ENABLED": "启用技能系统",
     "SKILLS_ENTRIES": "技能条目配置",
@@ -809,13 +784,6 @@ _DESCRIPTION_OVERRIDES = {
     "NOTIFY_CHANNEL": "系统通知发送的目标渠道标识。",
     # 语音转写
     "ASR": "语音转文本运行参数与服务列表（JSON 对象）。",
-    # 插件
-    "PLUGINS_AUTO_DISCOVERY_ENABLED": "是否自动扫描并发现插件目录中的新插件。",
-    "PLUGINS_ENABLED": "是否启用插件系统。",
-    "PLUGINS_LOAD_PATHS": "额外的插件搜索路径列表。",
-    "PLUGINS_ALLOW": "仅允许加载的插件 ID 白名单，为空则不限制。",
-    "PLUGINS_DENY": "禁止加载的插件 ID 黑名单。",
-    "PLUGINS_ENTRIES": "按插件 ID 的启停与自定义配置（JSON 对象）。",
     # 技能
     "SKILLS_ENABLED": "是否启用技能系统。",
     "SKILLS_ENTRIES": "按技能 key 的启停与自定义配置（JSON 对象）。",

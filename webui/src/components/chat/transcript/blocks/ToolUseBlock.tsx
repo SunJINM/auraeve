@@ -1,27 +1,39 @@
 import { useState } from 'react'
+import type { IconType } from 'react-icons'
+import {
+  HiBolt,
+  HiChevronRight,
+  HiCodeBracketSquare,
+  HiCommandLine,
+  HiDocumentText,
+  HiGlobeAlt,
+  HiMagnifyingGlass,
+  HiPencilSquare,
+  HiWrenchScrewdriver,
+} from 'react-icons/hi2'
 
 import type { TranscriptToolUseBlock } from '../types'
 
-const TOOL_DISPLAY: Record<string, { icon: string; label: string }> = {
-  Read: { icon: '📄', label: 'Read' },
-  read: { icon: '📄', label: 'Read' },
-  read_file: { icon: '📄', label: 'Read' },
-  Grep: { icon: '🔍', label: 'Grep' },
-  Glob: { icon: '🔍', label: 'Glob' },
-  Bash: { icon: '⚡', label: 'Bash' },
-  bash: { icon: '⚡', label: 'Bash' },
-  Edit: { icon: '✏️', label: 'Edit' },
-  edit: { icon: '✏️', label: 'Edit' },
-  Write: { icon: '📝', label: 'Write' },
-  write: { icon: '📝', label: 'Write' },
-  create_file: { icon: '📝', label: 'Create' },
-  web_fetch: { icon: '🌐', label: 'Fetch' },
-  web_search: { icon: '🔎', label: 'Search' },
-  agent: { icon: '🤖', label: 'Agent' },
+const TOOL_DISPLAY: Record<string, { icon: IconType; label: string }> = {
+  Read: { icon: HiDocumentText, label: 'Read' },
+  read: { icon: HiDocumentText, label: 'Read' },
+  read_file: { icon: HiDocumentText, label: 'Read' },
+  Grep: { icon: HiMagnifyingGlass, label: 'Grep' },
+  Glob: { icon: HiMagnifyingGlass, label: 'Glob' },
+  Bash: { icon: HiCommandLine, label: 'Bash' },
+  bash: { icon: HiCommandLine, label: 'Bash' },
+  Edit: { icon: HiPencilSquare, label: 'Edit' },
+  edit: { icon: HiPencilSquare, label: 'Edit' },
+  Write: { icon: HiCodeBracketSquare, label: 'Write' },
+  write: { icon: HiCodeBracketSquare, label: 'Write' },
+  create_file: { icon: HiCodeBracketSquare, label: 'Create' },
+  web_fetch: { icon: HiGlobeAlt, label: 'Fetch' },
+  web_search: { icon: HiMagnifyingGlass, label: 'Search' },
+  agent: { icon: HiBolt, label: 'Agent' },
 }
 
 function getToolDisplay(toolName: string) {
-  return TOOL_DISPLAY[toolName] ?? { icon: '🔧', label: toolName }
+  return TOOL_DISPLAY[toolName] ?? { icon: HiWrenchScrewdriver, label: toolName }
 }
 
 /** 从参数中提取一行摘要 */
@@ -166,6 +178,7 @@ function StatusDot({ status }: { status: 'running' | 'success' | 'error' }) {
 export function ToolUseBlock({ block }: { block: TranscriptToolUseBlock }) {
   const [open, setOpen] = useState(false)
   const display = getToolDisplay(block.toolName)
+  const Icon = display.icon
   const summary = getToolSummary(block.toolName, block.arguments)
   const resultSummary = block.result
     ? getResultSummary(block.toolName, block.result, block.status)
@@ -173,7 +186,7 @@ export function ToolUseBlock({ block }: { block: TranscriptToolUseBlock }) {
 
   return (
     <div
-      className="rounded-lg border transition-colors"
+      className={`mx-auto max-w-[760px] overflow-hidden border transition-colors ${open ? 'rounded-[16px]' : 'rounded-full'}`}
       style={{
         borderColor: block.status === 'error'
           ? 'color-mix(in srgb, var(--danger) 30%, var(--glass-border))'
@@ -184,22 +197,22 @@ export function ToolUseBlock({ block }: { block: TranscriptToolUseBlock }) {
       {/* 头部 */}
       <button
         type="button"
-        className="flex w-full items-center gap-2 px-3 py-2 text-left"
+        className="row-btn flex w-full items-center gap-2.5 px-4 py-2.5 text-left"
         onClick={() => setOpen(!open)}
         style={{ cursor: 'pointer', background: 'transparent', border: 'none' }}
       >
         <StatusDot status={block.status} />
 
         <span
-          className="text-xs font-semibold shrink-0"
-          style={{ color: 'var(--accent)', minWidth: '3.5rem' }}
+          className="inline-flex min-w-[4.6rem] shrink-0 items-center gap-1.5 text-xs font-semibold"
+          style={{ color: 'var(--accent)' }}
         >
-          {display.icon} {display.label}
+          <Icon size={15} /> {display.label}
         </span>
 
         <span
           className="flex-1 truncate text-xs"
-          style={{ color: 'var(--text-secondary)', fontFamily: 'monospace' }}
+          style={{ color: 'var(--text-secondary)', fontFamily: 'ui-monospace, SFMono-Regular, Consolas, monospace' }}
         >
           {summary}
         </span>
@@ -220,17 +233,16 @@ export function ToolUseBlock({ block }: { block: TranscriptToolUseBlock }) {
           style={{
             color: 'var(--text-tertiary)',
             transform: open ? 'rotate(90deg)' : 'rotate(0deg)',
-            fontSize: '0.6rem',
           }}
         >
-          ▶
+          <HiChevronRight size={14} />
         </span>
       </button>
 
       {/* 展开区域 */}
       {open && (
         <div
-          className="border-t px-3 py-2 space-y-2"
+          className="reveal space-y-2 border-t px-3 py-2.5"
           style={{ borderColor: 'var(--glass-border)' }}
         >
           {/* 参数 */}
@@ -238,7 +250,7 @@ export function ToolUseBlock({ block }: { block: TranscriptToolUseBlock }) {
             <div>
               <div
                 className="text-xs font-medium mb-1"
-                style={{ color: 'var(--text-tertiary)', fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}
+                style={{ color: 'var(--text-tertiary)', fontSize: '0.65rem', textTransform: 'uppercase' }}
               >
                 参数
               </div>
@@ -266,7 +278,7 @@ export function ToolUseBlock({ block }: { block: TranscriptToolUseBlock }) {
             <div>
               <div
                 className="text-xs font-medium mb-1"
-                style={{ color: 'var(--text-tertiary)', fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}
+                style={{ color: 'var(--text-tertiary)', fontSize: '0.65rem', textTransform: 'uppercase' }}
               >
                 结果
               </div>

@@ -69,7 +69,6 @@ class SubagentExecutor:
         max_iterations: int = 200,
         thinking_budget_tokens: int = 0,
         prompt_assembler=None,
-        hooks=None,
         max_concurrent: int = 5,
         workspace: str = "",
         sessions_dir: str | Path | None = None,
@@ -85,7 +84,6 @@ class SubagentExecutor:
         self._max_iterations = max_iterations
         self._thinking_budget_tokens = thinking_budget_tokens
         self._prompt_assembler = prompt_assembler
-        self._hooks = hooks
         self._max_concurrent = max_concurrent
         self._workspace = workspace
         self._sessions = SessionManager(Path(sessions_dir) if sessions_dir else Path(workspace) / ".subagents")
@@ -274,7 +272,6 @@ class SubagentExecutor:
             max_iterations=self._max_iterations,
             thinking_budget_tokens=self._thinking_budget_tokens,
             reporter=reporter,
-            hooks=self._hooks,
             prompt_assembler=self._prompt_assembler,
             parent_workdir=self._workspace,
         )

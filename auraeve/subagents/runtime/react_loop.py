@@ -33,7 +33,6 @@ class ReActLoop:
         max_iterations: int = 200,
         thinking_budget_tokens: int = 0,
         reporter: TaskReporter | None = None,
-        hooks=None,
         prompt_assembler=None,
         parent_workdir: str = "",
     ) -> None:
@@ -46,7 +45,6 @@ class ReActLoop:
         self._max_iterations = max_iterations
         self._thinking_budget_tokens = thinking_budget_tokens
         self._reporter = reporter
-        self._hooks = hooks
         self._prompt_assembler = prompt_assembler
         self._parent_workdir = parent_workdir
         self._task: asyncio.Task | None = None
@@ -73,17 +71,10 @@ class ReActLoop:
             "maxWallTimeMs": 0,
         }
 
-        if self._hooks is None:
-            from auraeve.plugins import PluginRegistry
-            hooks = PluginRegistry().build_hook_runner()
-        else:
-            hooks = self._hooks
-
         runner = SessionAttemptRunner(
             provider=self._provider,
             tools=self._tools,
             policy=self._policy,
-            hooks=hooks,
             max_iterations=effective_max_steps,
             thinking_budget_tokens=self._thinking_budget_tokens,
             runtime_execution=runtime_execution,

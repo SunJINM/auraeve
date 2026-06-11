@@ -13,15 +13,6 @@ import typer
 
 import auraeve.config as cfg
 from auraeve.profile_transfer import export_profile_archive, import_profile_archive
-from auraeve.plugins.cli import (
-    disable_command as plugins_disable_command,
-    doctor_command as plugins_doctor_command,
-    enable_command as plugins_enable_command,
-    info_command as plugins_info_command,
-    install_command as plugins_install_command,
-    list_command as plugins_list_command,
-    uninstall_command as plugins_uninstall_command,
-)
 from auraeve.skill_system.cli import (
     disable_command as skills_disable_command,
     doctor_command as skills_doctor_command,
@@ -33,7 +24,6 @@ from auraeve.skill_system.cli import (
     sync_command as skills_sync_command,
 )
 from auraeve.skill_system.service import doctor_skills, list_skills
-from auraeve.plugins.service import list_plugins, plugin_doctor
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
@@ -49,7 +39,7 @@ app = typer.Typer(
         "Common workflows:\n"
         "  - Start runtime: auraeve run\n"
         "  - Diagnose config/runtime: auraeve doctor --fix\n"
-        "  - Manage plugins/skills: auraeve plugins --help / auraeve skills --help"
+        "  - Manage skills: auraeve skills --help"
     ),
     invoke_without_command=True,
     no_args_is_help=False,
@@ -61,9 +51,6 @@ config_app = typer.Typer(
 workspace_app = typer.Typer(
     help="Workspace path resolution for agents."
 )
-plugins_app = typer.Typer(
-    help="Plugin lifecycle management: list/info/install/uninstall/enable/disable/doctor."
-)
 skills_app = typer.Typer(
     help="Skill lifecycle management: list/info/status/install/enable/disable/doctor/sync."
 )
@@ -71,12 +58,11 @@ deploy_app = typer.Typer(
     help="Deployment helper commands that proxy scripts under deploy/."
 )
 profile_app = typer.Typer(
-    help="Export/import full personal runtime profile (config, memory, skills, plugins, state)."
+    help="Export/import full personal runtime profile (config, memory, skills, state)."
 )
 
 app.add_typer(config_app, name="config")
 app.add_typer(workspace_app, name="workspace")
-app.add_typer(plugins_app, name="plugins")
 app.add_typer(skills_app, name="skills")
 app.add_typer(deploy_app, name="deploy")
 app.add_typer(profile_app, name="profile")
@@ -205,7 +191,6 @@ def status_command(as_json: bool = typer.Option(False, "--json", help="JSON outp
     snapshot = cfg.read_snapshot()
     config_ok = snapshot.exists and snapshot.valid
     workspace = str(cfg.resolve_workspace_dir("default"))
-    plugin_count = len(list_plugins(cfg.resolve_workspace_dir("default"))) if config_ok else 0
     skill_count = len(list_skills(cfg.resolve_workspace_dir("default"))) if config_ok else 0
     payload = {
         "config": {
@@ -214,7 +199,6 @@ def status_command(as_json: bool = typer.Option(False, "--json", help="JSON outp
             "path": str(snapshot.path),
         },
         "workspace": workspace,
-        "plugins": {"count": plugin_count},
         "skills": {"count": skill_count},
     }
     if as_json:
@@ -223,7 +207,6 @@ def status_command(as_json: bool = typer.Option(False, "--json", help="JSON outp
         print(f"config: {'ok' if config_ok else 'invalid'}")
         print(f"config path: {payload['config']['path']}")
         print(f"workspace: {workspace}")
-        print(f"plugins: {plugin_count}")
         print(f"skills: {skill_count}")
     raise typer.Exit(code=0 if config_ok else 1)
 
@@ -233,88 +216,23 @@ def doctor_command(
     fix: bool = typer.Option(False, "--fix", help="Try to automatically fix config issues."),
     as_json: bool = typer.Option(False, "--json", help="JSON output."),
 ) -> None:
-    """Run aggregated diagnostics for config, plugins and skills."""
+    """Run aggregated diagnostics for config and skills."""
     config_report = cfg.run_config_doctor(fix=fix)
     workspace = cfg.resolve_workspace_dir("default")
-    plugins_report = plugin_doctor(workspace)
     skills_report = doctor_skills(workspace)
-    plugins_ok = bool(plugins_report.get("ok"))
     skills_ok = bool(skills_report.get("ok"))
-    ok = bool(config_report.get("ok")) and plugins_ok and skills_ok
+    ok = bool(config_report.get("ok")) and skills_ok
     payload = {
         "ok": ok,
         "config": config_report,
-        "plugins": plugins_report,
         "skills": skills_report,
     }
     if as_json:
         _print_json(payload)
     else:
         print(f"config doctor: {'ok' if config_report.get('ok') else 'failed'}")
-        print(f"plugins doctor: {'ok' if plugins_ok else 'failed'}")
         print(f"skills doctor: {'ok' if skills_ok else 'failed'}")
     raise typer.Exit(code=0 if ok else 1)
-
-
-@plugins_app.command("list")
-def plugins_list(as_json: bool = typer.Option(False, "--json", help="JSON output.")) -> None:
-    """List discovered plugins."""
-    _ensure_runtime_ready()
-    workspace = cfg.resolve_workspace_dir("default")
-    raise typer.Exit(code=plugins_list_command(workspace=workspace, as_json=as_json))
-
-
-@plugins_app.command("info")
-def plugins_info(
-    plugin_id: str = typer.Argument(..., help="Plugin ID."),
-    as_json: bool = typer.Option(False, "--json", help="JSON output."),
-) -> None:
-    """Show plugin details by plugin ID."""
-    _ensure_runtime_ready()
-    workspace = cfg.resolve_workspace_dir("default")
-    raise typer.Exit(code=plugins_info_command(workspace=workspace, plugin_id=plugin_id, as_json=as_json))
-
-
-@plugins_app.command("install")
-def plugins_install(
-    path_input: str = typer.Argument(..., help="Plugin path."),
-    link: bool = typer.Option(False, "--link", help="Install as symlink."),
-) -> None:
-    """Install a plugin from directory or package path."""
-    _ensure_runtime_ready()
-    raise typer.Exit(code=plugins_install_command(path_input=path_input, link=link))
-
-
-@plugins_app.command("uninstall")
-def plugins_uninstall(
-    plugin_id: str = typer.Argument(..., help="Plugin ID."),
-    keep_files: bool = typer.Option(False, "--keep-files", help="Keep plugin files."),
-) -> None:
-    """Uninstall a plugin by ID."""
-    _ensure_runtime_ready()
-    raise typer.Exit(code=plugins_uninstall_command(plugin_id=plugin_id, keep_files=keep_files))
-
-
-@plugins_app.command("enable")
-def plugins_enable(plugin_id: str = typer.Argument(..., help="Plugin ID.")) -> None:
-    """Enable a plugin by ID."""
-    _ensure_runtime_ready()
-    raise typer.Exit(code=plugins_enable_command(plugin_id=plugin_id))
-
-
-@plugins_app.command("disable")
-def plugins_disable(plugin_id: str = typer.Argument(..., help="Plugin ID.")) -> None:
-    """Disable a plugin by ID."""
-    _ensure_runtime_ready()
-    raise typer.Exit(code=plugins_disable_command(plugin_id=plugin_id))
-
-
-@plugins_app.command("doctor")
-def plugins_doctor(as_json: bool = typer.Option(False, "--json", help="JSON output.")) -> None:
-    """Diagnose plugin installation and state issues."""
-    _ensure_runtime_ready()
-    workspace = cfg.resolve_workspace_dir("default")
-    raise typer.Exit(code=plugins_doctor_command(workspace=workspace, as_json=as_json))
 
 
 @skills_app.command("list")

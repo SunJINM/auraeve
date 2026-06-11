@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
 
-from auraeve.plugins import PluginRegistry
 from auraeve.stt import runtime_config_from_dict
 
 CORE_RUNTIME_KEYS = {
@@ -33,14 +32,6 @@ CHANNEL_KEYS = {
 }
 STT_KEYS = {
     "ASR",
-}
-PLUGIN_KEYS = {
-    "PLUGINS_AUTO_DISCOVERY_ENABLED",
-    "PLUGINS_ENABLED",
-    "PLUGINS_LOAD_PATHS",
-    "PLUGINS_ALLOW",
-    "PLUGINS_DENY",
-    "PLUGINS_ENTRIES",
 }
 SKILL_KEYS = {
     "SKILLS_ENABLED",
@@ -78,9 +69,6 @@ class RuntimeHotApplyService:
         stt_runtime,
         engine,
         workspace,
-        plugin_registry,
-        plugin_registry_factory: Callable[[], PluginRegistry],
-        merge_plugin_settings: Callable[[dict], Any],
         channel_runtime: ChannelRuntimeControls,
         message_tool_sync: Callable[..., None],
         export_config: Callable[[], dict] | None = None,
@@ -91,9 +79,6 @@ class RuntimeHotApplyService:
         self.stt_runtime = stt_runtime
         self.engine = engine
         self.workspace = workspace
-        self.plugin_registry = plugin_registry
-        self.plugin_registry_factory = plugin_registry_factory
-        self.merge_plugin_settings = merge_plugin_settings
         self.channel_runtime = channel_runtime
         self.message_tool_sync = message_tool_sync
         self.export_config = export_config or (lambda: self.config.export_config(mask_sensitive=False))
@@ -152,16 +137,6 @@ class RuntimeHotApplyService:
 
         await self._apply_channel_changes(new_config, remaining, applied, restart, issues)
         remaining -= {key for key in remaining if key in CHANNEL_KEYS}
-
-        plugin_patch_keys = {key for key in remaining if key in PLUGIN_KEYS}
-        if plugin_patch_keys:
-            try:
-                self.plugin_registry = self._reload_plugins()
-                applied.update(plugin_patch_keys)
-            except Exception as exc:
-                restart.update(plugin_patch_keys)
-                issues.append({"code": "plugins_hot_reload_failed", "message": str(exc)})
-            remaining -= plugin_patch_keys
 
         skill_patch_keys = {key for key in remaining if key in SKILL_KEYS}
         if skill_patch_keys:
@@ -270,32 +245,6 @@ class RuntimeHotApplyService:
                 self.agent._notify_channel = notify_channel
                 self.message_tool_sync(notify_channel=notify_channel)
                 applied.add(key)
-
-    def _reload_plugins(self):
-        plugin_settings_next = self.merge_plugin_settings(
-            {
-                "PLUGINS_ENABLED": getattr(self.config, "PLUGINS_ENABLED", True),
-                "PLUGINS_ALLOW": getattr(self.config, "PLUGINS_ALLOW", []),
-                "PLUGINS_DENY": getattr(self.config, "PLUGINS_DENY", []),
-                "PLUGINS_LOAD_PATHS": getattr(self.config, "PLUGINS_LOAD_PATHS", []),
-                "PLUGINS_ENTRIES": getattr(self.config, "PLUGINS_ENTRIES", {}),
-            }
-        )
-        next_registry = self.plugin_registry_factory()
-        next_registry.register_discovered(
-            workspace=self.workspace,
-            auto_discovery_enabled=getattr(self.config, "PLUGINS_AUTO_DISCOVERY_ENABLED", True),
-            enabled=plugin_settings_next.enabled,
-            allow=plugin_settings_next.allow,
-            deny=plugin_settings_next.deny,
-            load_paths=plugin_settings_next.load_paths,
-            entries=plugin_settings_next.entries,
-        )
-        hooks = next_registry.build_hook_runner()
-        self.agent.hooks = hooks
-        self.agent.assembler._hooks = hooks
-        self.agent._runner._hooks = hooks
-        return next_registry
 
     def _reload_skills(self) -> None:
         context_builder = None

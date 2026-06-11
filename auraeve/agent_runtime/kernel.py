@@ -30,8 +30,6 @@ from auraeve.agent.tools.assembler import build_tool_registry, register_task_too
 from auraeve.agent.plan import PlanManager
 from auraeve.agent.context import ContextBuilder, SILENT_REPLY_TOKEN, HEARTBEAT_OK
 from auraeve.session.manager import SessionManager
-from auraeve.plugins import PluginRegistry
-from auraeve.plugins.base import HookMessageSendingEvent, HookSessionEvent
 from auraeve.mcp import MCPRuntimeManager
 
 from .prompt.assembler import PromptAssembler
@@ -71,7 +69,6 @@ class RuntimeKernel:
         channel_users: dict[str, str] | None = None,
         notify_channel: str = "",
         thinking_budget_tokens: int | None = None,
-        plugin_registry: PluginRegistry | None = None,
         token_budget: int = 120_000,
         global_deny_tools: set[str] | None = None,
         session_tool_policy: dict | None = None,
@@ -107,10 +104,6 @@ class RuntimeKernel:
         self._plan = PlanManager()
         self._task_base_dir = sessions_dir.parent / "tasks"
 
-        # 插件注册与 Hook 运行器
-        _registry = plugin_registry or PluginRegistry()
-        self.hooks = _registry.build_hook_runner()
-
         # Tool registry (main agent).
         self.tools = ToolRegistry()
 
@@ -124,7 +117,6 @@ class RuntimeKernel:
         # Prompt 组装器（含 token 预算控制）
         self.assembler = PromptAssembler(
             engine=self.engine,
-            hooks=self.hooks,
             token_budget=token_budget,
         )
         self._initialize_command_runtime()
@@ -171,7 +163,6 @@ class RuntimeKernel:
             max_iterations=50,
             thinking_budget_tokens=thinking_budget_tokens or 0,
             prompt_assembler=self.assembler,
-            hooks=self.hooks,
             max_concurrent=max_global_subagent_concurrent,
             workspace=str(workspace),
             sessions_dir=sessions_dir / "subagent_sessions",
@@ -182,7 +173,6 @@ class RuntimeKernel:
             provider=provider,
             tools=self.tools,
             policy=self.policy,
-            hooks=self.hooks,
             checkpoint_drain=self._drain_checkpoint_messages,
             max_iterations=max_iterations,
             thinking_budget_tokens=thinking_budget_tokens,
@@ -215,7 +205,7 @@ class RuntimeKernel:
         )
 
     def stop(self) -> None:
-        logger.info("[kernel] RuntimeKernel stopping")
+        logger.info("运行内核正在停止")
 
     async def close_mcp(self) -> None:
         await self._mcp_runtime.stop()
@@ -527,10 +517,13 @@ class RuntimeKernel:
         media = list(media or [])
         attachments = list(attachments or [])
 
-        preview = content[:80] + "..." if len(content) > 80 else content
-        logger.bind(fullContent=content).info(
-            f"[kernel] processing {channel}:{sender_id}: {preview}"
-        )
+        logger.bind(
+            sessionKey=session_key,
+            channel=channel,
+            senderId=sender_id,
+            contentLength=len(content),
+            contentPreview=self._log_preview(content, 80),
+        ).debug("收到用户消息，开始处理")
 
         key = session_key
         session = self.sessions.get_or_create(key)
@@ -556,16 +549,11 @@ class RuntimeKernel:
 
         runtime_tools = self._resolve_runtime_tools(channel, chat_id, thread_id)
 
-        # session_start hook (fire-and-forget)
-        asyncio.create_task(self.hooks.run_session_start(
-            HookSessionEvent(session_id=session.key, channel=channel, chat_id=chat_id)
-        ))
-
         current_message = content
 
         extracted_attachments = await self._extract_attachments_legacy(attachments)
 
-        # PromptAssembler (includes before_prompt_build hook)
+        # PromptAssembler
         runtime_instruction = build_task_runtime_instruction(
             session_key=session.key,
             session_messages=session.messages,
@@ -585,7 +573,7 @@ class RuntimeKernel:
         )
         if assemble_result.compacted_messages is not None:
             session.replace_history(assemble_result.compacted_messages)
-            logger.info(f"[kernel] context compacted: {assemble_result.estimated_tokens} tokens")
+            logger.info(f"上下文已压缩，估算 token：{assemble_result.estimated_tokens}")
 
         # 通过统一编排器执行（含恢复策略）
         recovery_result = await self._orchestrator.run(
@@ -603,17 +591,17 @@ class RuntimeKernel:
         tools_used = recovery_result.tools_used
 
         if recovery_result.recovery_actions:
-            logger.debug(f"[kernel] recovery actions: {recovery_result.recovery_actions}")
+            logger.debug(f"模型恢复动作：{recovery_result.recovery_actions}")
 
         command_mode = str(metadata.get("command_mode") or "prompt")
         allow_silent_response = is_meta_event or command_mode in {"heartbeat", "cron", "task-notification"}
         sanitized_content = self._sanitize_assistant_output(final_content)
         if sanitized_content is None and not allow_silent_response:
             logger.warning(
-                "[kernel] unexpected silent response; "
+                "模型返回了空回复，已使用兜底文案；"
                 f"command_mode={command_mode} "
                 f"is_meta_event={is_meta_event} "
-                f"raw_final_content={final_content!r}"
+                f"rawLength={len(str(final_content or ''))}"
             )
             sanitized_content = self.UNEXPECTED_SILENT_FALLBACK
         persist_content = sanitized_content if sanitized_content is not None else SILENT_REPLY_TOKEN
@@ -644,40 +632,23 @@ class RuntimeKernel:
                 )
             )
 
-        # session_end hook (fire-and-forget)
-        asyncio.create_task(self.hooks.run_session_end(
-            HookSessionEvent(session_id=session.key, channel=channel, chat_id=chat_id)
-        ))
-
         # Silent token handling
         if sanitized_content is None:
             logger.debug(
-                "[kernel] silent/heartbeat token detected, skip outbound; "
+                "检测到静默回复，跳过对外发送；"
                 f"command_mode={command_mode} "
-                f"is_meta_event={is_meta_event} "
-                f"raw_final_content={final_content!r}"
+                f"is_meta_event={is_meta_event}"
             )
             return None
         final_content = sanitized_content
 
-        # message_sending hook
-        send_event = HookMessageSendingEvent(
-            content=final_content,
+        logger.bind(
+            sessionKey=session_key,
             channel=channel,
-            chat_id=chat_id,
-            session_id=session.key,
-            metadata=metadata,
-        )
-        send_result = await self.hooks.run_message_sending(send_event)
-        if send_result.cancel:
-            logger.info(f"[kernel] message sending cancelled by plugin (session={session.key})")
-            return None
-        final_content = send_result.content if send_result.content is not None else final_content
-
-        preview = final_content[:120] + "..." if len(final_content) > 120 else final_content
-        logger.bind(fullContent=final_content).info(
-            f"[kernel] response {channel}:{sender_id}: {preview}"
-        )
+            senderId=sender_id,
+            contentLength=len(final_content),
+            contentPreview=self._log_preview(final_content, 120),
+        ).debug("助手回复已生成")
 
         return OutboundMessage(
             channel=channel,
@@ -685,3 +656,10 @@ class RuntimeKernel:
             content=final_content,
             metadata=metadata,
         )
+
+    @staticmethod
+    def _log_preview(content: str | None, limit: int = 120) -> str:
+        text = str(content or "").replace("\r", " ").replace("\n", " ").strip()
+        if len(text) <= limit:
+            return text
+        return f"{text[:limit]}…"

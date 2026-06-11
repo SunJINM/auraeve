@@ -73,7 +73,7 @@ class AppRuntimeRunner:
             self._gather_task = asyncio.ensure_future(asyncio.gather(*tasks))
             await self._gather_task
         except (KeyboardInterrupt, asyncio.CancelledError):
-            logger.info("?..")
+            logger.info("收到停止信号，正在关闭 AuraEve")
         finally:
             await self._cleanup()
 
@@ -96,4 +96,4 @@ class AppRuntimeRunner:
         self.bus.stop()
         if self.pid_file is not None:
             self.pid_file.unlink(missing_ok=True)
-        logger.info("auraeve stopped.")
+        logger.info("AuraEve 已停止")

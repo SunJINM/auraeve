@@ -15,7 +15,6 @@ class PolicyContext:
     chat_id: str | None = None
     is_subagent: bool = False
     tool_group: str | None = None
-    plugin_id: str | None = None
     mcp_server: str | None = None
     tool_metadata: dict | None = None
 

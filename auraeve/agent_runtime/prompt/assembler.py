@@ -1,10 +1,9 @@
-"""PromptAssembler：分段 Prompt 管线 + before_prompt_build hook 接入 + 预算报告。
+"""PromptAssembler：分段 Prompt 管线 + 预算报告。
 
 流程：
-  1. 运行 before_prompt_build hook → 获取 prepend/append 上下文
-  2. 调用 ContextEngine.assemble()（已支持 prepend/append 参数）
-  3. 生成 BudgetReport（用于 debug/审计）
-  4. 返回 AssemblerResult
+  1. 调用 ContextEngine.assemble()
+  2. 生成 BudgetReport（用于 debug/审计）
+  3. 返回 AssemblerResult
 """
 
 from __future__ import annotations
@@ -18,7 +17,6 @@ from .segments import BudgetReport, PromptSegment, estimate_tokens
 
 if TYPE_CHECKING:
     from auraeve.agent.engines.base import AssembleResult, ContextEngine
-    from auraeve.plugins.hooks import HookRunner
 
 
 @dataclass
@@ -37,18 +35,15 @@ class PromptAssembler:
 
     参数：
         engine:       ContextEngine 实例（负责压缩和 token 预算控制）
-        hooks:        HookRunner 实例（用于 before_prompt_build）
         token_budget: 总 token 预算（与 engine 对齐）
     """
 
     def __init__(
         self,
         engine: "ContextEngine",
-        hooks: "HookRunner",
         token_budget: int = 120_000,
     ) -> None:
         self._engine = engine
-        self._hooks = hooks
         self._token_budget = token_budget
 
     async def assemble(
@@ -68,40 +63,12 @@ class PromptAssembler:
         append_context: str | None = None,
     ) -> AssemblerResult:
         """
-        执行完整 Prompt 组装管线：
-
-        1. 触发 before_prompt_build hook（取 prepend/append 注入）
-        2. 调用 engine.assemble()（透传 hook 输出）
-        3. 生成预算报告
-        4. 返回 AssemblerResult
+        执行完整 Prompt 组装管线。
         """
-        from auraeve.plugins.base import HookBeforePromptBuildEvent
+        effective_prepend_context = prepend_context
+        effective_append_context = append_context
 
-        # ── Step 1: before_prompt_build hook ──────────────────────────────
-        hook_prepend_context: str | None = None
-        hook_append_context: str | None = None
-        try:
-            hook_event = HookBeforePromptBuildEvent(
-                session_id=session_id,
-                channel=channel,
-                chat_id=chat_id,
-                current_query=current_query,
-            )
-            hook_result = await self._hooks.run_before_prompt_build(hook_event)
-            hook_prepend_context = hook_result.prepend_context or None
-            hook_append_context = hook_result.append_context or None
-            if hook_prepend_context or hook_append_context:
-                logger.debug(
-                    f"[assembler] before_prompt_build hook 注入："
-                    f"prepend={bool(hook_prepend_context)}, append={bool(hook_append_context)}"
-                )
-        except Exception as e:
-            logger.error(f"[assembler] before_prompt_build hook 失败：{e}")
-
-        effective_prepend_context = _merge_contexts(prepend_context, hook_prepend_context)
-        effective_append_context = _merge_contexts(hook_append_context, append_context)
-
-        # ── Step 2: engine.assemble()（含压缩逻辑）────────────────────────
+        # ── Step 1: engine.assemble()（含压缩逻辑）────────────────────────
         assemble_result: AssembleResult = await self._engine.assemble(
             session_id=session_id,
             messages=messages,
@@ -116,7 +83,7 @@ class PromptAssembler:
             append_context=effective_append_context,
         )
 
-        # ── Step 3: 提取 system_prompt，生成预算报告 ─────────────────────
+        # ── Step 2: 提取 system_prompt，生成预算报告 ─────────────────────
         system_prompt = ""
         if assemble_result.messages and assemble_result.messages[0].get("role") == "system":
             system_prompt = assemble_result.messages[0].get("content", "")
@@ -178,13 +145,6 @@ def _make_segments(
         segments.append(PromptSegment(name=name, content=part))
 
     if append_context:
-        segments.append(PromptSegment(name="hook_append", content=append_context))
+        segments.append(PromptSegment(name="append_context", content=append_context))
 
     return segments
-
-
-def _merge_contexts(*parts: str | None) -> str | None:
-    merged = [part.strip() for part in parts if part and part.strip()]
-    if not merged:
-        return None
-    return "\n\n---\n\n".join(merged)

@@ -124,7 +124,7 @@ def test_context_builder_uses_read_write_tool_names_without_removed_tools(tmp_pa
     assert "- Write: 创建或覆盖文件" in prompt
     assert "- Edit: 精确编辑文件片段" in prompt
     assert "- Bash: 执行 Bash Shell 命令" in prompt
-    assert "高风险操作（Bash / Write / Edit）先用一句话说明再执行。" in prompt
+    assert "阶段性说明的目的，是让用户知道你做到哪里了、现在判断是什么、下一步计划是什么" in prompt
     assert "为了高质量完成任务，积极使用最能提升结论质量的工具组合" in prompt
     assert "需要长时间运行且不必立刻读取结果时，使用 run_in_background" in prompt
     assert "每次调用都应明显减少不确定性" in prompt

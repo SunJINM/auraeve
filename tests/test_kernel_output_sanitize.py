@@ -69,9 +69,10 @@ async def test_prompt_message_does_not_silently_drop_control_token(tmp_path: Pat
     assert result.content == "我这边没有生成可发送的回复，请再试一次。"
     warning_mock.assert_called_once()
     warning_message = warning_mock.call_args.args[0]
-    assert "unexpected silent response" in warning_message
+    assert "模型返回了空回复" in warning_message
     assert "command_mode=prompt" in warning_message
-    assert "__SILENT__" in warning_message
+    assert "rawLength=10" in warning_message
+    assert "__SILENT__" not in warning_message
 
 
 @pytest.mark.asyncio

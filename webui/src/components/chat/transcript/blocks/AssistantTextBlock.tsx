@@ -5,16 +5,16 @@ import type { TranscriptAssistantTextBlock } from '../types'
 
 export function AssistantTextBlock({ block }: { block: TranscriptAssistantTextBlock }) {
   return (
-    <div className="flex justify-start">
+    <div className="msg-enter flex justify-start gap-3">
+      <img
+        src="/auraeve.png"
+        alt="AuraEve"
+        className="mt-0.5 h-7 w-7 shrink-0 rounded-[9px]"
+      />
       <div
-        className="max-w-[88%] rounded-[22px] rounded-bl-md border px-4 py-3 text-sm leading-7 shadow-sm"
-        style={{
-          background: 'var(--msg-agent)',
-          color: 'var(--text-primary)',
-          borderColor: 'var(--glass-border)',
-        }}
+        className="min-w-0 flex-1 pt-0.5 text-[15px] leading-7"
+        style={{ color: 'var(--text-primary)' }}
       >
-        <div className="mb-2 text-[11px]" style={{ color: 'var(--text-secondary)' }}>AuraEve</div>
         <div className="chat-markdown">
           <ReactMarkdown remarkPlugins={[remarkGfm]}>{block.content}</ReactMarkdown>
         </div>

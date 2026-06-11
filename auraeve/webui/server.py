@@ -20,8 +20,6 @@ from auraeve.webui.chat_service import ChatService
 from auraeve.webui.chat_console_service import ChatConsoleService
 from auraeve.webui.config_service import ConfigService
 from auraeve.webui.mcp_service import MCPWebService
-from auraeve.webui.plugin_service import PluginWebService
-from auraeve.webui.log_service import LogWebService
 from auraeve.webui.skill_service import SkillWebService
 from auraeve.webui.upload_service import UploadWebService
 from auraeve.webui.profile_service import ProfileWebService
@@ -51,12 +49,6 @@ from auraeve.webui.schemas import (
     MCPTestResponse,
     MCPValidateRequest,
     MCPValidateResponse,
-    PluginActionResponse,
-    PluginEnableRequest,
-    PluginInfoResponse,
-    PluginInstallRequest,
-    PluginListResponse,
-    PluginUninstallRequest,
     SkillActionResponse,
     SkillEnableRequest,
     SkillHubInstallRequest,
@@ -66,12 +58,6 @@ from auraeve.webui.schemas import (
     SkillUploadInstallRequest,
     SkillUploadResponse,
     SkillSyncRequest,
-    LogsTailResponse,
-    LogsSearchRequest,
-    LogsSearchResponse,
-    LogsStatsResponse,
-    LogsContextResponse,
-    LogsExportRequest,
     ProfileImportResponse,
     RestartResponse,
     NodeListResponse,
@@ -114,7 +100,6 @@ class WebUIServer:
         self._token = token
         self._static_dir = static_dir
         resolved_workspace = workspace or cfg.resolve_workspace_dir("default")
-        self._plugins = PluginWebService(resolved_workspace)
         self._skills = SkillWebService(resolved_workspace)
         self._mcp = (
             MCPWebService(
@@ -136,7 +121,6 @@ class WebUIServer:
         self._restart_callback = restart_callback
         self._upload = UploadWebService()
         self._profile = ProfileWebService()
-        self._logs = LogWebService()
         self._app = self._build_app()
 
     async def start(self) -> None:
@@ -148,7 +132,7 @@ class WebUIServer:
             access_log=False,
         )
         self._server = uvicorn.Server(config)
-        logger.info(f"WebUI started: http://{self._host}:{self._port}")
+        logger.info(f"WebUI 服务监听：http://{self._host}:{self._port}")
         await self._server.serve()
 
     async def stop(self) -> None:
@@ -256,95 +240,6 @@ class WebUIServer:
                 },
             )
 
-        @app.get("/api/webui/logs/stream", dependencies=[auth])
-        async def logs_stream(
-            levels: str = Query(default=""),
-            subsystems: str = Query(default=""),
-            text: str = Query(default="", max_length=500),
-        ) -> StreamingResponse:
-            level_list = [item.strip() for item in levels.split(",") if item.strip()]
-            subsystem_list = [item.strip() for item in subsystems.split(",") if item.strip()]
-
-            async def _stream():
-                async for item in self._logs.subscribe(
-                    levels=level_list,
-                    subsystems=subsystem_list,
-                    text=text,
-                ):
-                    data = json.dumps(item, ensure_ascii=False)
-                    yield f"data: {data}\n\n"
-
-            return StreamingResponse(
-                _stream(),
-                media_type="text/event-stream",
-                headers={
-                    "Cache-Control": "no-cache",
-                    "X-Accel-Buffering": "no",
-                    "Connection": "keep-alive",
-                },
-            )
-
-        @app.get("/api/webui/logs/tail", response_model=LogsTailResponse, dependencies=[auth])
-        async def logs_tail(
-            cursor: int | None = Query(default=None, ge=0),
-            limit: int = Query(default=500, ge=1, le=5000),
-            maxBytes: int = Query(default=250000, ge=1, le=1000000),
-        ) -> LogsTailResponse:
-            return LogsTailResponse(**self._logs.tail(cursor=cursor, limit=limit, max_bytes=maxBytes))
-
-        @app.post("/api/webui/logs/search", response_model=LogsSearchResponse, dependencies=[auth])
-        async def logs_search(req: LogsSearchRequest) -> LogsSearchResponse:
-            result = self._logs.search(
-                levels=req.levels,
-                subsystems=req.subsystems,
-                kinds=req.kinds,
-                text=req.text,
-                session_key=req.sessionKey,
-                run_id=req.runId,
-                channel=req.channel,
-                ts_from=req.fromTs,
-                ts_to=req.toTs,
-                limit=req.limit,
-                offset=req.offset,
-            )
-            return LogsSearchResponse(**result)
-
-        @app.get("/api/webui/logs/stats", response_model=LogsStatsResponse, dependencies=[auth])
-        async def logs_stats(
-            fromTs: str | None = Query(default=None),
-            toTs: str | None = Query(default=None),
-        ) -> LogsStatsResponse:
-            return LogsStatsResponse(**self._logs.stats(ts_from=fromTs, ts_to=toTs))
-
-        @app.get("/api/webui/logs/context", response_model=LogsContextResponse, dependencies=[auth])
-        async def logs_context(
-            eventId: str = Query(min_length=1, max_length=80),
-            before: int = Query(default=20, ge=0, le=200),
-            after: int = Query(default=20, ge=0, le=200),
-        ) -> LogsContextResponse:
-            return LogsContextResponse(**self._logs.context(event_id=eventId, before=before, after=after))
-
-        @app.post("/api/webui/logs/export", dependencies=[auth])
-        async def logs_export(req: LogsExportRequest):
-            content, media_type, filename = self._logs.export(
-                export_format=req.format,
-                levels=req.levels,
-                subsystems=req.subsystems,
-                kinds=req.kinds,
-                text=req.text,
-                session_key=req.sessionKey,
-                run_id=req.runId,
-                channel=req.channel,
-                ts_from=req.fromTs,
-                ts_to=req.toTs,
-                limit=req.limit,
-            )
-            return StreamingResponse(
-                iter([content.encode("utf-8")]),
-                media_type=media_type,
-                headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-            )
-
         @app.get("/api/webui/profile/export", dependencies=[auth])
         async def profile_export():
             content, filename = self._profile.export_archive()
@@ -438,34 +333,6 @@ class WebUIServer:
             async def mcp_audit(limit: int = Query(default=100, ge=1, le=500)) -> MCPAuditResponse:
                 return MCPAuditResponse(**self._mcp.audit(limit))
 
-        @app.get("/api/webui/plugins/list", response_model=PluginListResponse, dependencies=[auth])
-        async def plugins_list() -> PluginListResponse:
-            return PluginListResponse(**self._plugins.list())
-
-        @app.get("/api/webui/plugins/info", response_model=PluginInfoResponse, dependencies=[auth])
-        async def plugins_info(id: str = Query(min_length=1, max_length=200)) -> PluginInfoResponse:
-            return PluginInfoResponse(**self._plugins.info(id))
-
-        @app.post("/api/webui/plugins/install", response_model=PluginActionResponse, dependencies=[auth])
-        async def plugins_install(req: PluginInstallRequest) -> PluginActionResponse:
-            return PluginActionResponse(**self._plugins.install(req.path, req.link))
-
-        @app.post("/api/webui/plugins/uninstall", response_model=PluginActionResponse, dependencies=[auth])
-        async def plugins_uninstall(req: PluginUninstallRequest) -> PluginActionResponse:
-            return PluginActionResponse(**self._plugins.uninstall(req.id, req.keepFiles))
-
-        @app.post("/api/webui/plugins/enable", response_model=PluginActionResponse, dependencies=[auth])
-        async def plugins_enable(req: PluginEnableRequest) -> PluginActionResponse:
-            return PluginActionResponse(**self._plugins.enable(req.id))
-
-        @app.post("/api/webui/plugins/disable", response_model=PluginActionResponse, dependencies=[auth])
-        async def plugins_disable(req: PluginEnableRequest) -> PluginActionResponse:
-            return PluginActionResponse(**self._plugins.disable(req.id))
-
-        @app.get("/api/webui/plugins/doctor", response_model=dict[str, Any], dependencies=[auth])
-        async def plugins_doctor() -> dict[str, Any]:
-            return self._plugins.doctor()
-
         @app.get("/api/webui/skills/list", response_model=SkillListResponse, dependencies=[auth])
         async def skills_list() -> SkillListResponse:
             return SkillListResponse(**self._skills.list())
@@ -513,7 +380,7 @@ class WebUIServer:
         if self._restart_callback is not None:
             @app.post("/api/webui/restart", response_model=RestartResponse, dependencies=[auth])
             async def restart_service() -> RestartResponse:
-                logger.info("WebUI 收到重启请求，即将重启服务...")
+                logger.info("WebUI 收到重启请求，准备重启 AuraEve")
                 asyncio.get_running_loop().call_later(0.5, lambda: asyncio.create_task(self._restart_callback()))  # type: ignore[misc]
                 return RestartResponse(ok=True, message="服务即将重启，请稍候...")
 

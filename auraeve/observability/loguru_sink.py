@@ -4,6 +4,27 @@ from typing import Any
 
 from .manager import get_observability
 
+_SENSITIVE_ATTR_KEYS = {
+    "content",
+    "fullContent",
+    "message",
+    "prompt",
+    "apiKey",
+    "api_key",
+    "token",
+    "password",
+    "secret",
+}
+
+
+def _clean_attr(key: str, value: Any) -> Any:
+    if key in _SENSITIVE_ATTR_KEYS:
+        text = str(value or "")
+        return {"omitted": True, "length": len(text)}
+    if isinstance(value, str) and len(value) > 500:
+        return f"{value[:500]}...(truncated,{len(value)} chars)"
+    return value
+
 
 def loguru_sink(message: Any) -> None:
     record = message.record
@@ -20,7 +41,7 @@ def loguru_sink(message: Any) -> None:
         for key, value in extra.items():
             if key in {"subsystem", "module"}:
                 continue
-            attrs[key] = value
+            attrs[key] = _clean_attr(str(key), value)
 
     try:
         get_observability().emit(

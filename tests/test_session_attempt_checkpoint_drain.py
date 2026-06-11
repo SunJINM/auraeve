@@ -18,14 +18,10 @@ async def test_checkpoint_messages_are_injected_before_provider_call() -> None:
     tools = MagicMock()
     tools.get_definitions.return_value = []
 
-    hooks = MagicMock()
-    hooks.run_before_model_resolve = AsyncMock(return_value=None)
-
     runner = SessionAttemptRunner(
         provider=provider,
         tools=tools,
         policy=MagicMock(),
-        hooks=hooks,
         checkpoint_drain=lambda **_: [{"role": "user", "content": "checkpoint event"}],
     )
 
@@ -51,14 +47,10 @@ async def test_empty_model_response_returns_none_content() -> None:
     tools = MagicMock()
     tools.get_definitions.return_value = []
 
-    hooks = MagicMock()
-    hooks.run_before_model_resolve = AsyncMock(return_value=None)
-
     runner = SessionAttemptRunner(
         provider=provider,
         tools=tools,
         policy=MagicMock(),
-        hooks=hooks,
     )
 
     with patch("auraeve.agent_runtime.session_attempt.logger.warning") as warning_mock:
@@ -105,16 +97,10 @@ async def test_tool_turn_transition_text_is_preserved_without_runtime_reminder()
     policy.infer_tool_group.return_value = "network"
     policy.evaluate = AsyncMock(return_value=policy_result)
 
-    hooks = MagicMock()
-    hooks.run_before_model_resolve = AsyncMock(return_value=None)
-    hooks.run_before_tool_call = AsyncMock(return_value=MagicMock(block=False, params=None))
-    hooks.run_after_tool_call = AsyncMock()
-
     runner = SessionAttemptRunner(
         provider=provider,
         tools=tools,
         policy=policy,
-        hooks=hooks,
     )
 
     result = await runner.run(
@@ -164,16 +150,10 @@ async def test_tool_only_turn_does_not_inject_progress_reminder() -> None:
     policy.infer_tool_group.return_value = "network"
     policy.evaluate = AsyncMock(return_value=policy_result)
 
-    hooks = MagicMock()
-    hooks.run_before_model_resolve = AsyncMock(return_value=None)
-    hooks.run_before_tool_call = AsyncMock(return_value=MagicMock(block=False, params=None))
-    hooks.run_after_tool_call = AsyncMock()
-
     runner = SessionAttemptRunner(
         provider=provider,
         tools=tools,
         policy=policy,
-        hooks=hooks,
     )
 
     result = await runner.run(

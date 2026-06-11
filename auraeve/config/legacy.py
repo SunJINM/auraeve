@@ -27,6 +27,15 @@ _LEGACY_STT_KEYS = {
     "STT_PROVIDERS",
 }
 
+_REMOVED_PLUGIN_KEYS = {
+    "PLUGINS_AUTO_DISCOVERY_ENABLED",
+    "PLUGINS_ENABLED",
+    "PLUGINS_LOAD_PATHS",
+    "PLUGINS_ALLOW",
+    "PLUGINS_DENY",
+    "PLUGINS_ENTRIES",
+}
+
 
 def _is_number(value: Any) -> bool:
     return isinstance(value, int | float) and not isinstance(value, bool)
@@ -263,6 +272,16 @@ def _migrate_legacy_media_understanding(raw_obj: dict[str, Any]) -> tuple[dict[s
     return out, notes
 
 
+def _remove_legacy_plugin_keys(raw_obj: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+    out = dict(raw_obj)
+    present = [key for key in _REMOVED_PLUGIN_KEYS if key in out]
+    if not present:
+        return out, []
+    for key in _REMOVED_PLUGIN_KEYS:
+        out.pop(key, None)
+    return out, ["removed legacy plugin config keys"]
+
+
 def migrate_legacy_config_object(raw_obj: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
     current = dict(raw_obj)
     notes: list[str] = []
@@ -271,6 +290,7 @@ def migrate_legacy_config_object(raw_obj: dict[str, Any]) -> tuple[dict[str, Any
         _migrate_legacy_stt_keys,
         _migrate_legacy_media_understanding,
         _migrate_legacy_mcp_keys,
+        _remove_legacy_plugin_keys,
     ):
         current, extra = migrate(current)
         notes.extend(extra)

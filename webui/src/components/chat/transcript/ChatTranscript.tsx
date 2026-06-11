@@ -6,7 +6,7 @@ export function ChatTranscript({ blocks }: { blocks: TranscriptBlock[] }) {
   const grouped = groupTranscriptBlocks(blocks)
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-5">
       {grouped.map((block) => (
         <TranscriptBlockRenderer key={block.id} block={block} />
       ))}

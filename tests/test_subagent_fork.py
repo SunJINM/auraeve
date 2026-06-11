@@ -113,8 +113,6 @@ async def test_subagent_run_uses_prompt_assembler_runtime_messages():
     tools.get_definitions.return_value = []
 
     policy = MagicMock()
-    hooks = MagicMock()
-    hooks.run_before_model_resolve = AsyncMock(return_value=None)
 
     prompt_assembler = MagicMock()
     prompt_assembler.assemble = AsyncMock(
@@ -133,7 +131,6 @@ async def test_subagent_run_uses_prompt_assembler_runtime_messages():
         provider=provider,
         tools=tools,
         policy=policy,
-        hooks=hooks,
         prompt_assembler=prompt_assembler,
         parent_workdir="D:/repo",
         model="test-model",
@@ -168,7 +165,6 @@ async def test_subagent_run_uses_prompt_assembler_runtime_messages():
     provider.chat.assert_awaited_once()
     provider_messages = provider.chat.await_args.kwargs["messages"]
     assert provider_messages[0]["content"] == "主运行时 system prompt + 子体角色"
-    hooks.run_before_model_resolve.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -181,8 +177,6 @@ async def test_fork_worktree_notice_is_added_to_runtime_instruction():
     tools.get_definitions.return_value = []
 
     policy = MagicMock()
-    hooks = MagicMock()
-    hooks.run_before_model_resolve = AsyncMock(return_value=None)
 
     prompt_assembler = MagicMock()
     prompt_assembler.assemble = AsyncMock(
@@ -200,7 +194,6 @@ async def test_fork_worktree_notice_is_added_to_runtime_instruction():
         provider=provider,
         tools=tools,
         policy=policy,
-        hooks=hooks,
         prompt_assembler=prompt_assembler,
         model="test-model",
     )

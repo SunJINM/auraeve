@@ -5,11 +5,7 @@ from auraeve.agent_runtime.prompt.assembler import PromptAssembler
 
 def _make_assembler():
     engine = MagicMock()
-    hooks = MagicMock()
-    hooks.run_before_prompt_build = AsyncMock(return_value=MagicMock(
-        prepend_context=None, append_context=None
-    ))
-    assembler = PromptAssembler(engine=engine, hooks=hooks, token_budget=10000)
+    assembler = PromptAssembler(engine=engine, token_budget=10000)
     return assembler, engine
 
 

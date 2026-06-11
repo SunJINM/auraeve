@@ -36,6 +36,16 @@ def _iter_files(base: Path) -> list[Path]:
     return out
 
 
+def _is_plugin_state_path(rel: Path) -> bool:
+    parts = rel.parts
+    return bool(parts and parts[0] == "plugins")
+
+
+def _is_plugin_state_archive_member(name: str) -> bool:
+    parts = PurePosixPath(name).parts
+    return len(parts) >= 2 and parts[0] == "state" and parts[1] == "plugins"
+
+
 def export_profile_archive(output_path: str | Path) -> dict[str, Any]:
     state_dir = cfg.resolve_state_dir().resolve()
     config_path = cfg.resolve_config_path().resolve()
@@ -54,7 +64,10 @@ def export_profile_archive(output_path: str | Path) -> dict[str, Any]:
         for file_path in state_files:
             if file_path == target:
                 continue
-            rel = file_path.relative_to(state_dir).as_posix()
+            rel_path = file_path.relative_to(state_dir)
+            if _is_plugin_state_path(rel_path):
+                continue
+            rel = rel_path.as_posix()
             arcname = f"state/{rel}"
             zf.write(file_path, arcname=arcname)
             total_files += 1
@@ -122,6 +135,8 @@ def import_profile_archive(archive_path: str | Path, *, force: bool = False) -> 
             for name in names:
                 _validate_archive_member(name)
                 if name.endswith("/"):
+                    continue
+                if _is_plugin_state_archive_member(name):
                     continue
                 dst = temp_root / PurePosixPath(name)
                 dst.parent.mkdir(parents=True, exist_ok=True)

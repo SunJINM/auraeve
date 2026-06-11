@@ -137,7 +137,7 @@ def run_config_doctor(*, fix: bool = False) -> dict[str, Any]:
             "fixed": bool(ok),
             "path": str(next_snapshot.path),
             "issues": write_issues,
-            "warnings": [*next_snapshot.warnings, *({"path": "MCP", "message": n} for n in migration_notes)],
+            "warnings": [*next_snapshot.warnings, *({"path": "legacy", "message": n} for n in migration_notes)],
             "changed": changed,
             "requiresRestart": requires_restart,
         }

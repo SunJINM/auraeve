@@ -21,11 +21,6 @@ from auraeve.agent_runtime.tool_runtime_context import (
     ToolRuntimeContext,
     use_tool_runtime_context,
 )
-from auraeve.plugins.base import (
-    HookAfterToolCallEvent,
-    HookBeforeModelResolveEvent,
-    HookBeforeToolCallEvent,
-)
 from auraeve.providers.base import normalize_tool_call_requests
 
 from .budget import ExecutionBudget, normalize_runtime_execution_config
@@ -34,7 +29,6 @@ from .trace import RunTrace
 if TYPE_CHECKING:
     from auraeve.agent.tools.registry import ToolRegistry
     from auraeve.agent_runtime.tool_policy.engine import ToolPolicyEngine
-    from auraeve.plugins.hooks import HookRunner
     from auraeve.providers.base import LLMProvider
 
 
@@ -93,7 +87,6 @@ class SessionAttemptRunner:
         provider: "LLMProvider",
         tools: "ToolRegistry",
         policy: "ToolPolicyEngine",
-        hooks: "HookRunner",
         checkpoint_drain=None,
         max_iterations: int = 100,
         thinking_budget_tokens: int | None = None,
@@ -103,7 +96,6 @@ class SessionAttemptRunner:
         self._provider = provider
         self._tools = tools
         self._policy = policy
-        self._hooks = hooks
         self._checkpoint_drain = checkpoint_drain
         self._max_iterations = max_iterations
         self._thinking_budget_tokens = thinking_budget_tokens
@@ -210,16 +202,7 @@ class SessionAttemptRunner:
                     transcript_messages.append(steer_message)
                     trace.add("steer_injected", message=str(steer_msg)[:200])
 
-            model_override = await self._hooks.run_before_model_resolve(
-                HookBeforeModelResolveEvent(
-                    current_query="",
-                    session_id=thread_id,
-                    default_model=model,
-                    channel=channel,
-                    chat_id=chat_id,
-                )
-            )
-            effective_model = model_override or model
+            effective_model = model
             if self._checkpoint_drain is not None:
                 drained_messages = self._checkpoint_drain(
                     thread_id=thread_id,
@@ -371,7 +354,7 @@ class SessionAttemptRunner:
             async def _exec(tc: Any) -> tuple[Any, Any, dict[str, Any]]:
                 async with semaphore:
                     args_str = _safe_json(tc.arguments)
-                    logger.info(f"[attempt] tool={tc.name} args={args_str[:200]}")
+                    logger.debug(f"准备执行工具：{tc.name}，参数预览：{args_str[:200]}")
                     started_at = time.perf_counter()
                     tool_meta = active_tools.get_metadata(tc.name)
                     meta_group = None
@@ -442,42 +425,6 @@ class SessionAttemptRunner:
                         }
                     effective_args = policy_result.rewritten_args
 
-                    before_result = await self._hooks.run_before_tool_call(
-                        HookBeforeToolCallEvent(
-                            tool_name=tc.name,
-                            params=effective_args,
-                            session_id=thread_id,
-                            channel=channel,
-                            chat_id=chat_id,
-                        )
-                    )
-                    if before_result.block:
-                        reason = before_result.block_reason or "插件阻止了此工具调用"
-                        duration_ms = int((time.perf_counter() - started_at) * 1000)
-                        self._obs.emit(
-                            level="warn",
-                            kind="event",
-                            subsystem="runtime/tools",
-                            message="tool_call_hook_blocked",
-                            attrs={
-                                "toolName": tc.name,
-                                "toolCallId": getattr(tc, "id", None),
-                                "toolGroup": tool_group,
-                                "status": "hook_blocked",
-                                "durationMs": duration_ms,
-                                "reason": reason,
-                            },
-                            session_key=thread_id,
-                            channel=channel,
-                        )
-                        return tc, f"[工具调用被拦截：{reason}]", {
-                            "status": "hook_blocked",
-                            "errorKind": "hook_blocked",
-                            "durationMs": duration_ms,
-                        }
-                    if before_result.params is not None:
-                        effective_args = before_result.params
-
                     async def _run_tool() -> Any:
                         tool_obj = active_tools.get(tc.name)
                         try:
@@ -490,18 +437,6 @@ class SessionAttemptRunner:
                         finally:
                             if tool_obj is not None and hasattr(tool_obj, "_current_tool_call_id"):
                                 setattr(tool_obj, "_current_tool_call_id", "")
-                        asyncio.create_task(
-                            self._hooks.run_after_tool_call(
-                                HookAfterToolCallEvent(
-                                    tool_name=tc.name,
-                                    params=effective_args,
-                                    result=_tool_result_text(result),
-                                    session_id=thread_id,
-                                    channel=channel,
-                                    chat_id=chat_id,
-                                )
-                            )
-                        )
                         return result
 
                     status = "success"

@@ -2,11 +2,6 @@
 
 import os
 from pathlib import Path
-from typing import Any
-
-from auraeve.plugins.discovery import discover_plugin_manifests
-from auraeve.plugins.loader import _is_enabled
-from auraeve.plugins.state import merge_plugin_settings_from_config
 
 from .manifest import parse_skill_entry
 from .models import SkillEntry
@@ -50,45 +45,6 @@ def _scan_skill_root(root: Path, source: str, max_skill_file_bytes: int) -> list
     return entries
 
 
-def _resolve_plugin_skill_dirs(workspace: Path) -> list[Path]:
-    try:
-        import auraeve.config as cfg
-    except Exception:
-        return []
-
-    plugin_cfg: dict[str, Any] = {
-        "PLUGINS_ENABLED": getattr(cfg, "PLUGINS_ENABLED", True),
-        "PLUGINS_ALLOW": getattr(cfg, "PLUGINS_ALLOW", []),
-        "PLUGINS_DENY": getattr(cfg, "PLUGINS_DENY", []),
-        "PLUGINS_LOAD_PATHS": getattr(cfg, "PLUGINS_LOAD_PATHS", []),
-        "PLUGINS_ENTRIES": getattr(cfg, "PLUGINS_ENTRIES", {}),
-    }
-    settings = merge_plugin_settings_from_config(plugin_cfg)
-    manifests = discover_plugin_manifests(workspace=workspace, extra_paths=settings.load_paths)
-
-    out: list[Path] = []
-    seen: set[str] = set()
-    for manifest in manifests:
-        if not _is_enabled(
-            manifest.plugin_id,
-            enabled=settings.enabled,
-            allow=settings.allow,
-            deny=settings.deny,
-            entries=settings.entries,
-        ):
-            continue
-        for rel in manifest.skills or []:
-            p = (manifest.root / rel).resolve()
-            if not p.exists() or not p.is_dir():
-                continue
-            key = str(p)
-            if key in seen:
-                continue
-            seen.add(key)
-            out.append(p)
-    return out
-
-
 def discover_skill_entries(
     workspace: Path,
     *,
@@ -100,7 +56,6 @@ def discover_skill_entries(
     workspace_skills = (workspace / "skills").resolve()
     builtin = resolve_builtin_skills_dir().resolve()
 
-    plugin_dirs = _resolve_plugin_skill_dirs(workspace)
     normalized_extra = []
     for raw in extra_dirs or []:
         val = str(raw).strip()
@@ -110,7 +65,6 @@ def discover_skill_entries(
 
     sources: list[tuple[Path, str]] = [
         (builtin, "builtin"),
-        *[(p, "plugin") for p in plugin_dirs],
         (managed, "managed"),
         (workspace_skills, "workspace"),
     ]

@@ -11,6 +11,45 @@ from auraeve.config.io import read_config_snapshot
 
 
 class ConfigLegacyMigrationTests(unittest.TestCase):
+    def test_read_config_snapshot_ignores_removed_plugin_keys(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            old_state_dir = os.environ.get("AURAEVE_STATE_DIR")
+            old_config_path = os.environ.get("AURAEVE_CONFIG_PATH")
+            try:
+                os.environ["AURAEVE_STATE_DIR"] = temp_dir
+                os.environ.pop("AURAEVE_CONFIG_PATH", None)
+
+                cfg_path = Path(temp_dir) / "auraeve.json"
+                cfg_path.write_text(
+                    json.dumps(
+                        {
+                            "LLM_API_KEY": "test-key",
+                            "PLUGINS_AUTO_DISCOVERY_ENABLED": True,
+                            "PLUGINS_ENABLED": True,
+                            "PLUGINS_LOAD_PATHS": ["plugins"],
+                            "PLUGINS_ALLOW": [],
+                            "PLUGINS_DENY": [],
+                            "PLUGINS_ENTRIES": {"demo": {"enabled": True}},
+                        },
+                        ensure_ascii=False,
+                        indent=2,
+                    ),
+                    encoding="utf-8",
+                )
+
+                snapshot = read_config_snapshot()
+                self.assertTrue(snapshot.valid, snapshot.issues)
+                self.assertFalse(any(key.startswith("PLUGINS_") for key in snapshot.resolved))
+            finally:
+                if old_state_dir is None:
+                    os.environ.pop("AURAEVE_STATE_DIR", None)
+                else:
+                    os.environ["AURAEVE_STATE_DIR"] = old_state_dir
+                if old_config_path is None:
+                    os.environ.pop("AURAEVE_CONFIG_PATH", None)
+                else:
+                    os.environ["AURAEVE_CONFIG_PATH"] = old_config_path
+
     def test_read_config_snapshot_accepts_legacy_llm_and_asr_keys(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             old_state_dir = os.environ.get("AURAEVE_STATE_DIR")

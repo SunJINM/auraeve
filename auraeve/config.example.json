@@ -126,12 +126,6 @@
     "defaultTimeoutMs": 20000,
     "servers": {}
   },
-  "PLUGINS_AUTO_DISCOVERY_ENABLED": true,
-  "PLUGINS_ENABLED": true,
-  "PLUGINS_LOAD_PATHS": [],
-  "PLUGINS_ALLOW": [],
-  "PLUGINS_DENY": [],
-  "PLUGINS_ENTRIES": {},
   "SKILLS_ENABLED": true,
   "SKILLS_ENTRIES": {},
   "SKILLS_LOAD_EXTRA_DIRS": [],

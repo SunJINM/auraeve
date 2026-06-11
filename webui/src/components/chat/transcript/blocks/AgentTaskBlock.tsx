@@ -12,7 +12,7 @@ export function AgentTaskBlock({
   const [open, setOpen] = useState(false)
 
   return (
-    <div className="rounded-[22px] border px-4 py-3" style={{ borderColor: 'var(--glass-border)' }}>
+    <div className="rounded-2xl border px-4 py-3" style={{ borderColor: 'var(--glass-border)', background: 'var(--surface-2)' }}>
       <button className="w-full text-left" onClick={() => setOpen((value) => !value)}>
         <div className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{block.summary}</div>
         <div className="mt-1 text-xs" style={{ color: 'var(--text-secondary)' }}>{block.status}</div>

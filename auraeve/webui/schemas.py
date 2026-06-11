@@ -199,41 +199,6 @@ class ConfigWriteResponse(BaseModel):
     issues: list[dict[str, Any]] = Field(default_factory=list)
 
 
-class PluginInstallRequest(BaseModel):
-    path: str = Field(min_length=1, max_length=1000)
-    link: bool = False
-
-
-class PluginEnableRequest(BaseModel):
-    id: str = Field(min_length=1, max_length=200)
-
-
-class PluginUninstallRequest(BaseModel):
-    id: str = Field(min_length=1, max_length=200)
-    keepFiles: bool = False
-
-
-class PluginInfoResponse(BaseModel):
-    ok: bool
-    plugin: dict[str, Any] | None = None
-    message: str | None = None
-
-
-class PluginListResponse(BaseModel):
-    ok: bool
-    plugins: list[dict[str, Any]] = Field(default_factory=list)
-    message: str | None = None
-
-
-class PluginActionResponse(BaseModel):
-    ok: bool
-    message: str | None = None
-    id: str | None = None
-    installPath: str | None = None
-    removedFiles: bool | None = None
-    enabled: bool | None = None
-
-
 class SkillInstallRequest(BaseModel):
     id: str = Field(min_length=1, max_length=200)
     installId: str | None = Field(default=None, max_length=200)
@@ -368,66 +333,6 @@ class MCPMetricsResponse(BaseModel):
 class MCPAuditResponse(BaseModel):
     ok: bool
     records: list[dict[str, Any]] = Field(default_factory=list)
-
-
-class LogsTailResponse(BaseModel):
-    file: str
-    cursor: int
-    size: int
-    events: list[dict[str, Any]] = Field(default_factory=list)
-    truncated: bool = False
-    reset: bool = False
-
-
-class LogsSearchRequest(BaseModel):
-    levels: list[str] = Field(default_factory=list)
-    subsystems: list[str] = Field(default_factory=list)
-    kinds: list[str] = Field(default_factory=list)
-    text: str | None = Field(default=None, max_length=500)
-    sessionKey: str | None = Field(default=None, max_length=200)
-    runId: str | None = Field(default=None, max_length=200)
-    channel: str | None = Field(default=None, max_length=100)
-    fromTs: str | None = None
-    toTs: str | None = None
-    limit: int = Field(default=200, ge=1, le=5000)
-    offset: int = Field(default=0, ge=0, le=200000)
-
-
-class LogsSearchResponse(BaseModel):
-    total: int
-    limit: int
-    offset: int
-    hasMore: bool
-    events: list[dict[str, Any]] = Field(default_factory=list)
-
-
-class LogsStatsResponse(BaseModel):
-    total: int
-    byLevel: dict[str, int] = Field(default_factory=dict)
-    byKind: dict[str, int] = Field(default_factory=dict)
-    topSubsystems: list[dict[str, Any]] = Field(default_factory=list)
-    topKinds: list[dict[str, Any]] = Field(default_factory=list)
-    topChannels: list[dict[str, Any]] = Field(default_factory=list)
-    recentErrors: list[dict[str, Any]] = Field(default_factory=list)
-
-
-class LogsContextResponse(BaseModel):
-    ok: bool
-    events: list[dict[str, Any]] = Field(default_factory=list)
-
-
-class LogsExportRequest(BaseModel):
-    format: Literal["jsonl", "csv"] = "jsonl"
-    levels: list[str] = Field(default_factory=list)
-    subsystems: list[str] = Field(default_factory=list)
-    kinds: list[str] = Field(default_factory=list)
-    text: str | None = Field(default=None, max_length=500)
-    sessionKey: str | None = Field(default=None, max_length=200)
-    runId: str | None = Field(default=None, max_length=200)
-    channel: str | None = Field(default=None, max_length=100)
-    fromTs: str | None = None
-    toTs: str | None = None
-    limit: int = Field(default=5000, ge=1, le=10000)
 
 
 class ProfileImportResponse(BaseModel):
