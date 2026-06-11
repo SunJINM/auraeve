@@ -1,7 +1,6 @@
 import { AgentTaskBlock } from './blocks/AgentTaskBlock'
 import { AssistantTextBlock } from './blocks/AssistantTextBlock'
 import { CollapsedActivityBlock } from './blocks/CollapsedActivityBlock'
-import { RunStatusBlock } from './blocks/RunStatusBlock'
 import { SystemNoticeBlock } from './blocks/SystemNoticeBlock'
 import { ToolUseBlock } from './blocks/ToolUseBlock'
 import { UserBlock } from './blocks/UserBlock'
@@ -13,8 +12,6 @@ export function TranscriptBlockRenderer({ block }: { block: TranscriptBlock }) {
       return <UserBlock block={block} />
     case 'assistant_text':
       return <AssistantTextBlock block={block} />
-    case 'run_status':
-      return <RunStatusBlock block={block} />
     case 'tool_use':
       return <ToolUseBlock block={block} />
     case 'collapsed_activity':

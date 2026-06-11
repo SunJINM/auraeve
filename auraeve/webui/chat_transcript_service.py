@@ -33,6 +33,19 @@ def project_history_into_transcript_blocks(messages: list[dict[str, Any]]) -> li
             continue
 
         if role == "assistant":
+            # 与流式输出顺序保持一致：同一轮次内叙述文本先于工具调用，
+            # 故先投影 assistant_text，再投影 tool_use，避免 reload 后工具块错位到文本上方。
+            content = str(message.get("content") or "")
+            if content.strip():
+                blocks.append(
+                    {
+                        "id": f"assistant_text:{message_index}",
+                        "type": "assistant_text",
+                        "content": content,
+                        "timestamp": str(message.get("timestamp") or ""),
+                    }
+                )
+
             tool_calls = message.get("tool_calls") or []
             for call_index, item in enumerate(tool_calls):
                 function = item.get("function") or {}
@@ -52,17 +65,6 @@ def project_history_into_transcript_blocks(messages: list[dict[str, Any]]) -> li
                 }
                 pending_tool_uses[tool_call_id] = len(blocks)
                 blocks.append(block)
-
-            content = str(message.get("content") or "")
-            if content.strip():
-                blocks.append(
-                    {
-                        "id": f"assistant_text:{message_index}",
-                        "type": "assistant_text",
-                        "content": content,
-                        "timestamp": str(message.get("timestamp") or ""),
-                    }
-                )
             continue
 
         if role == "tool":

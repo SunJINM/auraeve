@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { v4 as uuid } from 'uuid'
 import { HiArrowLeftOnRectangle, HiBolt, HiCircleStack, HiSparkles } from 'react-icons/hi2'
 
 import { ChatComposer } from '../components/chat/ChatComposer'
+import { SessionSwitcher } from '../components/chat/SessionSwitcher'
+import { ThinkingIndicator } from '../components/chat/ThinkingIndicator'
 import { ChatTranscript } from '../components/chat/transcript/ChatTranscript'
 import { ThemeSwitch } from '../components/ThemeSwitch'
 import { useChatTranscript } from '../components/chat/transcript/useChatTranscript'
@@ -11,27 +13,22 @@ import { chatApi } from '../api/client'
 import { useAppStore } from '../store/app'
 
 export function ChatPage() {
-  const { sessionKey, logout } = useAppStore()
-  const { blocks, run, loading, load, applyEvent } = useChatTranscript(sessionKey)
+  const { sessionKey, logout, sessions, touchSession } = useAppStore()
+  const { blocks, run, loading, loadedKey, load, applyEvent } = useChatTranscript(sessionKey)
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
   const [runId, setRunId] = useState<string | null>(null)
+  const [thinkingStartedAt, setThinkingStartedAt] = useState<number | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
-
-  const scrollToBottom = useCallback(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [])
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const didInitialScrollRef = useRef(false)
 
   useEffect(() => {
     void load()
 
     const unsubscribe = chatApi.transcriptEvents(sessionKey, (event: ChatTranscriptEvent) => {
       applyEvent(event)
-
-      if (event.type === 'transcript.block' && event.block.type === 'run_status') {
-        setSending(event.block.status === 'started' || event.block.status === 'running')
-      }
 
       if (event.type === 'transcript.done') {
         setSending(false)
@@ -42,9 +39,27 @@ export function ChatPage() {
     return unsubscribe
   }, [applyEvent, load, sessionKey])
 
+  // 切换会话时重置首屏定位标记
   useEffect(() => {
-    scrollToBottom()
-  }, [blocks, scrollToBottom, sending])
+    didInitialScrollRef.current = false
+  }, [sessionKey])
+
+  useLayoutEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    if (!didInitialScrollRef.current) {
+      if (loading) return
+      // 进入或切换会话：瞬间定位到底部，无滚动动画
+      el.scrollTop = el.scrollHeight
+      didInitialScrollRef.current = true
+      return
+    }
+    // 后续新内容：仅当用户已贴近底部时才平滑跟随，向上翻看时不打扰
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 160
+    if (nearBottom) {
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    }
+  }, [blocks, sending, loading, sessionKey])
 
   useEffect(() => {
     if (run?.runId) {
@@ -54,6 +69,27 @@ export function ChatPage() {
       setSending(false)
     }
   }, [run])
+
+  // 发送后开始计时，结束后清零（保留首次开始时间，跨工具执行不重置）
+  useEffect(() => {
+    if (sending) {
+      setThinkingStartedAt((prev) => prev ?? Date.now())
+    } else {
+      setThinkingStartedAt(null)
+    }
+  }, [sending])
+
+  // 用首条用户消息自动命名会话（仅当 blocks 确属当前会话，避免切换时把旧消息带过来）
+  useEffect(() => {
+    if (loadedKey !== sessionKey) return
+    const meta = sessions.find((s) => s.key === sessionKey)
+    if (!meta || (meta.title !== '新对话' && meta.title !== '默认对话')) return
+    const firstUser = blocks.find((b) => b.type === 'user')
+    if (firstUser && 'content' in firstUser && firstUser.content.trim()) {
+      const title = firstUser.content.trim().replace(/\s+/g, ' ').slice(0, 24)
+      touchSession(sessionKey, { title })
+    }
+  }, [blocks, sessionKey, sessions, touchSession, loadedKey])
 
   const send = async () => {
     const text = input.trim()
@@ -76,6 +112,7 @@ export function ChatPage() {
         timestamp: new Date().toISOString(),
       },
     })
+    touchSession(sessionKey, { updatedAt: Date.now() })
 
     try {
       const resp = await chatApi.send(sessionKey, text, idempotencyKey)
@@ -94,6 +131,11 @@ export function ChatPage() {
 
   const statusText = sending ? '正在想' : run?.status === 'completed' ? '已收好' : '等你'
 
+  // 等待回复时显示「正在思考」指示：刚发出、或工具执行中（即末块不是正在流式的助手文本）
+  const lastBlock = blocks[blocks.length - 1]
+  const waitingForResponse =
+    sending && thinkingStartedAt != null && lastBlock?.type !== 'assistant_text'
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       <header
@@ -104,17 +146,14 @@ export function ChatPage() {
           <div className="flex min-w-0 items-center gap-3">
             <img src="/auraeve.png" alt="AuraEve" className="h-9 w-9 shrink-0 rounded-[12px]" />
             <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <span className="text-[15px] font-semibold tracking-tight" style={{ color: 'var(--text-primary)' }}>AuraEve</span>
-                <span className="inline-flex items-center gap-1.5 text-[11px] font-medium" style={{ color: 'var(--text-tertiary)' }}>
-                  <span
-                    className="inline-block h-1.5 w-1.5 rounded-full"
-                    style={{ background: sending ? 'var(--accent)' : 'var(--success)', animation: sending ? 'pulse 1.4s ease-in-out infinite' : undefined }}
-                  />
-                  {statusText}
-                </span>
+              <SessionSwitcher />
+              <div className="ml-1.5 mt-0.5 flex items-center gap-1.5 text-[11px] font-medium" style={{ color: 'var(--text-tertiary)' }}>
+                <span
+                  className="inline-block h-1.5 w-1.5 rounded-full"
+                  style={{ background: sending ? 'var(--accent)' : 'var(--success)', animation: sending ? 'pulse 1.4s ease-in-out infinite' : undefined }}
+                />
+                {statusText}
               </div>
-              <div className="mt-0.5 max-w-[48vw] truncate text-xs sm:max-w-[420px]" style={{ color: 'var(--text-tertiary)' }}>{sessionKey}</div>
             </div>
           </div>
 
@@ -128,7 +167,7 @@ export function ChatPage() {
       </header>
 
       <main className="flex min-h-0 flex-1 flex-col">
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-8 pt-6 sm:px-6 sm:pt-8">
+        <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-4 pb-8 pt-6 sm:px-6 sm:pt-8">
           <div className="mx-auto w-full max-w-[860px] pb-28">
             {!loading && blocks.length === 0 ? (
               <div
@@ -165,6 +204,11 @@ export function ChatPage() {
               </div>
             ) : (
               <ChatTranscript blocks={blocks} />
+            )}
+            {waitingForResponse && thinkingStartedAt != null && (
+              <div className="mt-5">
+                <ThinkingIndicator startedAt={thinkingStartedAt} />
+              </div>
             )}
             <div ref={bottomRef} />
           </div>

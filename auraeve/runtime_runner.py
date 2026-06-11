@@ -17,7 +17,6 @@ class AppRuntimeRunner:
         channel_runtime,
         webui_server=None,
         webui_channel=None,
-        subagent_ws_server=None,
         pid_file: Path | None = None,
         on_engine_cleanup=None,
     ) -> None:
@@ -28,7 +27,6 @@ class AppRuntimeRunner:
         self.channel_runtime = channel_runtime
         self.webui_server = webui_server
         self.webui_channel = webui_channel
-        self.subagent_ws_server = subagent_ws_server
         self.pid_file = pid_file
         self.on_engine_cleanup = on_engine_cleanup
         self.restart_requested = False
@@ -42,8 +40,6 @@ class AppRuntimeRunner:
         self.bus.stop()
         if self.webui_server:
             await self.webui_server.stop()
-        if self.subagent_ws_server:
-            await self.subagent_ws_server.stop()
         if self._gather_task and not self._gather_task.done():
             self._gather_task.cancel()
             try:
@@ -64,8 +60,6 @@ class AppRuntimeRunner:
                 self.bus.dispatch_outbound(),
                 *self.channel_runtime.channel_tasks.values(),
             ]
-            if self.subagent_ws_server:
-                tasks.append(self.subagent_ws_server.start())
             if self.webui_server:
                 tasks.append(self.webui_server.start())
             if self.webui_channel:
@@ -91,8 +85,6 @@ class AppRuntimeRunner:
             await self.webui_channel.stop()
         if self.webui_server:
             await self.webui_server.stop()
-        if self.subagent_ws_server:
-            await self.subagent_ws_server.stop()
         self.bus.stop()
         if self.pid_file is not None:
             self.pid_file.unlink(missing_ok=True)

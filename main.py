@@ -240,11 +240,6 @@ async def main(terminal_mode: bool = False) -> None:
         bus.subscribe_outbound("webui", webui_channel.send)
         logger.info(f"WebUI 已启动：http://{getattr(cfg, 'WEBUI_HOST', '0.0.0.0')}:{webui_bind_port}")
 
-    # 子体 WebSocket 服务
-    subagent_ws_server = None
-    if getattr(cfg, "NODE_ENABLED", False):
-        logger.warning("NODE_ENABLED 已废弃，远程子体传输层已在本次重构中移除，忽略该配置。")
-
     # PID
     pid_file.write_text(str(os.getpid()))
 
@@ -256,7 +251,6 @@ async def main(terminal_mode: bool = False) -> None:
         channel_runtime=channel_runtime,
         webui_server=webui_server,
         webui_channel=webui_channel,
-        subagent_ws_server=subagent_ws_server,
         pid_file=pid_file,
         on_engine_cleanup=None,
     )

@@ -1,55 +1,37 @@
 import { useState } from 'react'
-import { HiChevronRight, HiMagnifyingGlass } from 'react-icons/hi2'
+import { HiChevronRight } from 'react-icons/hi2'
 
 import type { TranscriptCollapsedActivityBlock } from '../types'
 import { ToolUseBlock } from './ToolUseBlock'
 
 export function CollapsedActivityBlock({ block }: { block: TranscriptCollapsedActivityBlock }) {
   const [open, setOpen] = useState(false)
-  const title = block.activityType === 'search' ? '联网检索' : '读取/搜索'
+  const title =
+    block.activityType === 'search'
+      ? `联网检索了 ${block.count} 次`
+      : `读取了 ${block.count} 个文件`
 
   return (
-    <div
-      className="overflow-hidden rounded-[16px] border transition-colors"
-      style={{
-        borderColor: 'var(--glass-border)',
-        background: 'var(--surface-2)',
-      }}
-    >
+    <div className="ml-10 max-w-[760px]">
       <button
         type="button"
-        className="row-btn flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left"
         onClick={() => setOpen(!open)}
-        style={{ cursor: 'pointer', background: 'transparent', border: 'none' }}
+        className="row-btn group flex w-full items-center gap-1.5 rounded-[10px] px-2 py-1.5 text-left"
       >
-        <HiMagnifyingGlass className="shrink-0" size={16} style={{ color: 'var(--accent)' }} />
-
-        <span className="text-xs font-semibold" style={{ color: 'var(--accent)' }}>
+        <span className="min-w-0 flex-1 truncate text-[13px] font-medium" style={{ color: 'var(--text-secondary)' }}>
           {title}
         </span>
-
-        <span className="flex-1 text-xs" style={{ color: 'var(--text-secondary)' }}>
-          {block.count} 次操作已折叠
-        </span>
-
-        <span
-          className="shrink-0 text-xs transition-transform"
-          style={{
-            color: 'var(--text-tertiary)',
-            transform: open ? 'rotate(90deg)' : 'rotate(0deg)',
-          }}
-        >
-          <HiChevronRight size={14} />
-        </span>
+        <HiChevronRight
+          size={14}
+          className="shrink-0 opacity-0 transition group-hover:opacity-60"
+          style={{ color: 'var(--text-tertiary)', transform: open ? 'rotate(90deg)' : 'none' }}
+        />
       </button>
 
       {open && (
-        <div
-          className="reveal border-t px-3 py-2 space-y-1.5"
-          style={{ borderColor: 'var(--glass-border)' }}
-        >
+        <div className="reveal mt-0.5 space-y-0.5 pl-1">
           {block.blocks.map((child) => (
-            <ToolUseBlock key={child.id} block={child} />
+            <ToolUseBlock key={child.id} block={child} nested />
           ))}
         </div>
       )}

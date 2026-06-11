@@ -6,7 +6,12 @@ import { ChatPage } from '../ChatPage'
 vi.mock('../../store/app', () => ({
   useAppStore: () => ({
     sessionKey: 'webui:test',
+    sessions: [{ key: 'webui:test', title: '默认对话', createdAt: 0, updatedAt: 0 }],
     setSessionKey: vi.fn(),
+    switchSession: vi.fn(),
+    createSession: vi.fn(),
+    deleteSession: vi.fn(),
+    touchSession: vi.fn(),
     logout: vi.fn(),
     dark: false,
     toggleDark: vi.fn(),
@@ -39,7 +44,7 @@ describe('ChatPage', () => {
   it('renders chat-only layout', async () => {
     render(<ChatPage />)
 
-    expect(screen.getByText('AuraEve')).toBeInTheDocument()
+    expect(screen.getByText('默认对话')).toBeInTheDocument()
     expect(screen.getByText('想聊什么？')).toBeInTheDocument()
   })
 

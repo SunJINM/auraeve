@@ -12,7 +12,6 @@ services:
       - ${HOME}/.auraeve:/app/.auraeve
     ports:
       - "${BACKEND_PORT:-18080}:8080"
-      - "${NODE_PORT:-8765}:8765"
 
   webui:
     build:

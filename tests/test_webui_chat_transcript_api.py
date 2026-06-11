@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
@@ -46,6 +47,40 @@ def _build_server(chat_service, workspace: Path) -> TestClient:
         workspace=workspace,
     )
     return TestClient(server._app)
+
+
+def test_webui_server_start_uses_embedded_uvicorn_without_signal_capture(tmp_path: Path) -> None:
+    calls: list[str] = []
+
+    class _FakeServer:
+        def __init__(self, config):
+            self.config = config
+            self.should_exit = False
+
+        async def serve(self):
+            calls.append("serve")
+
+        async def _serve(self):
+            calls.append("_serve")
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir(parents=True, exist_ok=True)
+    server = WebUIServer(
+        chat_service=_StubChatService(),
+        config_service=MagicMock(),
+        token="secret",
+        workspace=workspace,
+    )
+
+    with patch("auraeve.webui.server.uvicorn.Config", return_value=SimpleNamespace()), patch(
+        "auraeve.webui.server.uvicorn.Server",
+        _FakeServer,
+    ):
+        import asyncio
+
+        asyncio.run(server.start())
+
+    assert calls == ["_serve"]
 
 
 def test_chat_transcript_route_returns_blocks_and_run_state(tmp_path: Path) -> None:

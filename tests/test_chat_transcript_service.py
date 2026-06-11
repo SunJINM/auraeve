@@ -51,6 +51,43 @@ def test_project_history_into_transcript_blocks(tmp_path: Path) -> None:
     assert [item["id"] for item in blocks] == [item["id"] for item in blocks_again]
 
 
+def test_assistant_text_precedes_tool_use_in_same_turn(tmp_path: Path) -> None:
+    """同一 assistant 轮次内先叙述、再调用工具时，文本块应排在工具块之前。
+
+    复现 bug：reload 历史后工具块错位到叙述文本上方；流式输出时顺序正常
+    （文本 delta 先于工具事件到达）。投影必须与流式顺序一致：text → tool。
+    """
+    sm = SessionManager(tmp_path / "sessions")
+    session = sm.get_or_create("webui:test-user")
+    session.add_message("user", "音频内容是啥？")
+    session.add_message(
+        "assistant",
+        "我先直接听一下这段音频，确认它到底在说什么。",
+        tool_calls=[
+            {
+                "id": "read_audio",
+                "type": "function",
+                "function": {"name": "Read", "arguments": "{\"file_path\":\"audio.m4a\"}"},
+            }
+        ],
+    )
+    session.add_message("tool", "大熊猫长得非常可爱。", tool_call_id="read_audio", name="Read")
+    session.add_message("assistant", "这段音频在描述大熊猫的外形。")
+
+    blocks = project_history_into_transcript_blocks(session.messages)
+
+    assert [item["type"] for item in blocks] == [
+        "user",
+        "assistant_text",
+        "tool_use",
+        "assistant_text",
+    ]
+    assert blocks[1]["content"].startswith("我先直接听")
+    assert blocks[2]["toolName"] == "Read"
+    assert blocks[2]["result"] == "大熊猫长得非常可爱。"
+    assert blocks[2]["status"] == "success"
+
+
 def test_collapse_readonly_activity_into_single_block(tmp_path: Path) -> None:
     sm = SessionManager(tmp_path / "sessions")
     session = sm.get_or_create("webui:test-user")

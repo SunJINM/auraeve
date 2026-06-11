@@ -357,7 +357,6 @@ def config_path(
         "defaultWorkspace": str(cfg.resolve_workspace_dir("default")),
         "sessionsDir": str(cfg.resolve_sessions_dir()),
         "cronStorePath": str(cfg.resolve_cron_store_path()),
-        "nodesDir": str(cfg.resolve_nodes_dir()),
         "workspace": workspace_explain["workspace"],
         "env": {
             "AURAEVE_STATE_DIR": os.environ.get("AURAEVE_STATE_DIR", ""),
@@ -378,7 +377,6 @@ def config_path(
         print(f"workspace[{agent}]: {payload['workspace']}")
         print(f"sessionsDir: {payload['sessionsDir']}")
         print(f"cronStorePath: {payload['cronStorePath']}")
-        print(f"nodesDir: {payload['nodesDir']}")
         print(f"AURAEVE_STATE_DIR={payload['env']['AURAEVE_STATE_DIR']}")
         print(f"AURAEVE_CONFIG_PATH={payload['env']['AURAEVE_CONFIG_PATH']}")
         if explain:

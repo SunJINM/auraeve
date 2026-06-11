@@ -59,10 +59,15 @@ class HostOpsFsTests(unittest.TestCase):
         self.assertEqual(posix, "/d/WorkProjects/auraeve/foo/bar.txt")
         self.assertEqual(posix_path_to_windows_path(posix), original)
 
-    def test_guard_shell_command_blocks_destructive_git_operations(self) -> None:
-        blocked = guard_shell_command("git reset --hard HEAD~1", os.getcwd())
-        self.assertIsNotNone(blocked)
-        self.assertIn("blocked", blocked or "")
+    def test_guard_shell_command_allows_any_command_by_default(self) -> None:
+        # 防护黑名单已清空：默认允许任意命令（包含此前会被拦截的危险命令）。
+        self.assertIsNone(guard_shell_command("git reset --hard HEAD~1", os.getcwd()))
+        self.assertIsNone(
+            guard_shell_command(
+                'powershell -NoProfile -Command "Get-PSDrive | Format-Table"',
+                os.getcwd(),
+            )
+        )
 
 
 if __name__ == "__main__":

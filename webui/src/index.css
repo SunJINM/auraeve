@@ -288,12 +288,45 @@ body {
   }
 }
 
+@keyframes thinkingBounce {
+  0%,
+  80%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.45;
+  }
+  40% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
+}
+
+.thinking-dot {
+  animation: thinkingBounce 1.2s var(--ease) infinite;
+}
+
+@keyframes softPulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.activity-pulse {
+  animation: softPulse 1.5s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .msg-enter,
   .reveal,
   .cursor-blink,
   .suggest-chip,
-  .icon-btn {
+  .icon-btn,
+  .thinking-dot,
+  .activity-pulse {
     animation: none !important;
     transition: none !important;
   }

@@ -1,11 +1,10 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 import { chatApi } from '../../../api/client'
 import type {
   ChatTranscriptEvent,
   TranscriptBlock,
   TranscriptRun,
-  TranscriptRunStatusBlock,
   TranscriptToolUseBlock,
 } from './types'
 
@@ -38,14 +37,19 @@ function upsertBlock(blocks: TranscriptBlock[], nextBlock: TranscriptBlock, op: 
   return [...blocks, nextBlock]
 }
 
-function isRunStatusBlock(block: TranscriptBlock): block is TranscriptRunStatusBlock {
-  return block.type === 'run_status'
-}
-
 export function useChatTranscript(sessionKey: string) {
   const [blocks, setBlocks] = useState<TranscriptBlock[]>([])
   const [run, setRun] = useState<TranscriptRun | null>(null)
   const [loading, setLoading] = useState(false)
+  // 当前 blocks 实际归属的会话 key，用于区分「切换中的旧数据」与「本会话数据」
+  const [loadedKey, setLoadedKey] = useState<string | null>(null)
+
+  // 切换会话时立即清空，避免短暂闪现上一个会话的内容
+  useEffect(() => {
+    setBlocks([])
+    setRun(null)
+    setLoadedKey(null)
+  }, [sessionKey])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -53,6 +57,7 @@ export function useChatTranscript(sessionKey: string) {
       const resp = await chatApi.transcript(sessionKey)
       setBlocks(resp.blocks)
       setRun(resp.run)
+      setLoadedKey(sessionKey)
     } finally {
       setLoading(false)
     }
@@ -60,18 +65,6 @@ export function useChatTranscript(sessionKey: string) {
 
   const applyEvent = useCallback((event: ChatTranscriptEvent) => {
     if (event.type === 'transcript.block') {
-      if (isRunStatusBlock(event.block)) {
-        const runBlock = event.block
-        setRun((prev) => ({
-          runId: event.runId ?? prev?.runId ?? null,
-          status:
-            runBlock.status === 'started' || runBlock.status === 'running'
-              ? 'running'
-              : runBlock.status,
-          done: runBlock.status === 'completed' || runBlock.status === 'aborted',
-          aborted: runBlock.status === 'aborted',
-        }))
-      }
       setBlocks((prev) => upsertBlock(prev, event.block, event.op))
       return
     }
@@ -99,6 +92,7 @@ export function useChatTranscript(sessionKey: string) {
     blocks,
     run,
     loading,
+    loadedKey,
     load,
     applyEvent,
   }

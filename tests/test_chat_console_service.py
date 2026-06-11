@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -87,7 +88,6 @@ def test_chat_console_snapshot_filters_session_tasks_and_extracts_tools(tmp_path
     assert snapshot["summary"]["runningMainTasks"] == 0
     assert snapshot["summary"]["pendingApprovals"] == 0
     assert snapshot["approvals"] == []
-    assert snapshot["nodes"] == []
     assert snapshot["timeline"] == []
     assert snapshot["mainTasks"] == []
 
@@ -190,29 +190,74 @@ async def test_chat_service_enqueues_prompt_command(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_chat_service_send_broadcasts_transcript_run_started_event(tmp_path: Path) -> None:
+async def test_chat_service_send_does_not_broadcast_run_status_block(tmp_path: Path) -> None:
     queue = RuntimeCommandQueue()
     session_manager = SessionManager(tmp_path / "sessions")
     service = ChatService(session_manager=session_manager, command_queue=queue)
+    service._broadcast = AsyncMock()  # type: ignore[method-assign]
 
-    events_task = asyncio.create_task(_collect_events(service, "webui:s1", expected_count=1))
-    await asyncio.sleep(0)
-
-    run_id, status = await service.send(
+    _, status = await service.send(
         session_key="webui:s1",
         message="hello",
         idempotency_key="idem-1",
         user_id="u1",
     )
-    events = await asyncio.wait_for(events_task, timeout=2)
 
     assert status == "started"
-    assert len(events) == 1
-    event = ChatTranscriptBlockEvent.model_validate(events[0]).model_dump()
-    assert event["sessionKey"] == "webui:s1"
-    assert event["runId"] == run_id
-    assert event["block"]["type"] == "run_status"
-    assert event["block"]["status"] == "started"
+    service._broadcast.assert_not_awaited()  # type: ignore[attr-defined]
+
+
+@pytest.mark.asyncio
+async def test_chat_service_abort_only_broadcasts_done_event(tmp_path: Path) -> None:
+    queue = RuntimeCommandQueue()
+    session_manager = SessionManager(tmp_path / "sessions")
+    service = ChatService(session_manager=session_manager, command_queue=queue)
+    run_id, _ = await service.send(
+        session_key="webui:s1",
+        message="hello",
+        idempotency_key="idem-1",
+        user_id="u1",
+    )
+
+    events_task = asyncio.create_task(_collect_events(service, "webui:s1", expected_count=1))
+    await asyncio.sleep(0)
+
+    ok, aborted_run_id, status = await service.abort("webui:s1", run_id)
+    events = await asyncio.wait_for(events_task, timeout=2)
+
+    assert ok is True
+    assert aborted_run_id == run_id
+    assert status == "aborted"
+    assert events == [
+        {
+            "type": "transcript.done",
+            "sessionKey": "webui:s1",
+            "runId": run_id,
+            "seq": 0,
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_chat_service_close_releases_sse_subscribers(tmp_path: Path) -> None:
+    queue = RuntimeCommandQueue()
+    session_manager = SessionManager(tmp_path / "sessions")
+    service = ChatService(session_manager=session_manager, command_queue=queue)
+
+    async def consume() -> list[dict]:
+        events: list[dict] = []
+        async for event in service.subscribe("webui:s1"):
+            events.append(event)
+        return events
+
+    task = asyncio.create_task(consume())
+    await asyncio.sleep(0)
+
+    await service.close()
+    events = await asyncio.wait_for(task, timeout=1)
+
+    assert events == []
+    assert service._sse_queues == {}  # noqa: SLF001
 
 
 @pytest.mark.asyncio

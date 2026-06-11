@@ -1,7 +1,6 @@
 """子智能体数据模型。
 
-对标 Claude Code 的 LocalAgentTaskState，去掉了远程节点、审批、
-记忆增量、DAG 依赖、Saga 补偿等不再需要的概念。
+对标 Claude Code 的 LocalAgentTaskState，只保留本地任务执行需要的概念。
 """
 from __future__ import annotations
 

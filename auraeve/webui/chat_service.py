@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import uuid
 from dataclasses import dataclass, field
@@ -128,22 +129,6 @@ class ChatService:
             )
         )
 
-        await self._broadcast(
-            session_key,
-            self._build_block_event(
-                session_key=session_key,
-                run_id=run_id,
-                seq=self._next_seq(run_id),
-                block={
-                    "id": f"run_status:{run_id}:started",
-                    "type": "run_status",
-                    "status": "started",
-                    "content": "run.started",
-                    "timestamp": datetime.now().isoformat(),
-                },
-            ),
-        )
-
         # 启动 obs 监听（如果尚未启动）
         self._ensure_obs_listener()
 
@@ -169,21 +154,6 @@ class ChatService:
         target.done = True
         target.aborted = True
 
-        await self._broadcast(
-            session_key,
-            self._build_block_event(
-                session_key=session_key,
-                run_id=target.run_id,
-                seq=self._next_seq(target.run_id),
-                block={
-                    "id": f"run_status:{target.run_id}:aborted",
-                    "type": "run_status",
-                    "status": "aborted",
-                    "content": "run.aborted",
-                    "timestamp": datetime.now().isoformat(),
-                },
-            ),
-        )
         await self._broadcast(
             session_key,
             self._build_done_event(
@@ -456,6 +426,25 @@ class ChatService:
             queues = self._sse_queues.get(session_key, [])
             if q in queues:
                 queues.remove(q)
+            if not queues:
+                self._sse_queues.pop(session_key, None)
+
+    async def close(self) -> None:
+        """关闭实时事件流，释放所有 SSE 订阅者。"""
+        queues_by_session = list(self._sse_queues.items())
+        self._sse_queues.clear()
+        for _, queues in queues_by_session:
+            for q in list(queues):
+                try:
+                    q.put_nowait(None)
+                except asyncio.QueueFull:
+                    pass
+
+        if self._obs_task is not None and not self._obs_task.done():
+            self._obs_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._obs_task
+        self._obs_task = None
 
     async def _broadcast(self, session_key: str, event: dict) -> None:
         for q in list(self._sse_queues.get(session_key, [])):

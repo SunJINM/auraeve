@@ -2,7 +2,6 @@ export type TranscriptBlock =
   | TranscriptUserBlock
   | TranscriptToolUseBlock
   | TranscriptAssistantTextBlock
-  | TranscriptRunStatusBlock
   | TranscriptAgentTaskBlock
   | TranscriptCollapsedActivityBlock
   | TranscriptSystemNoticeBlock
@@ -27,14 +26,6 @@ export interface TranscriptToolUseBlock {
 export interface TranscriptAssistantTextBlock {
   id: string
   type: 'assistant_text'
-  content: string
-  timestamp: string
-}
-
-export interface TranscriptRunStatusBlock {
-  id: string
-  type: 'run_status'
-  status: 'started' | 'running' | 'completed' | 'aborted'
   content: string
   timestamp: string
 }

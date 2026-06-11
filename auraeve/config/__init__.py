@@ -19,7 +19,6 @@ from .paths import (
     resolve_config_path,
     resolve_cron_store_path,
     resolve_default_workspace_dir,
-    resolve_nodes_dir,
     resolve_sessions_dir,
     resolve_state_dir,
 )

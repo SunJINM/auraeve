@@ -20,6 +20,11 @@ DEPRECATED_IGNORED_CONFIG_KEYS = {
     "MEMORY_TEMPORAL_HALF_LIFE_DAYS",
     "MEMORY_INCLUDE_SESSIONS",
     "MEMORY_SESSIONS_MAX_MESSAGES",
+    "NODE_ENABLED",
+    "NODE_HOST",
+    "NODE_PORT",
+    "NODE_TOKENS",
+    "SUBAGENT_WS_PORT",
 }
 
 
@@ -604,16 +609,6 @@ _SCHEMA_GROUPS: list[tuple[str, str, list[str]]] = [
         ],
     ),
     (
-        "node",
-        "子体系统",
-        [
-            "NODE_ENABLED",
-            "NODE_HOST",
-            "NODE_TOKENS",
-            "SUBAGENT_WS_PORT",
-        ],
-    ),
-    (
         "heartbeat",
         "心跳配置",
         [
@@ -730,11 +725,6 @@ _LABEL_OVERRIDES = {
     "AGENTS_LIST": "多 Agent 列表",
     "WORKSPACE_PATH": "工作区路径",
     "SESSIONS_DIR": "会话目录",
-    # 子体系统
-    "NODE_ENABLED": "启用子体系统",
-    "NODE_HOST": "子体监听地址",
-    "NODE_TOKENS": "子体认证令牌",
-    "SUBAGENT_WS_PORT": "子体 WebSocket 端口",
     # 心跳
     "HEARTBEAT_ENABLED": "启用心跳",
     "HEARTBEAT_INTERVAL_S": "心跳间隔(秒)",
@@ -804,10 +794,6 @@ _DESCRIPTION_OVERRIDES = {
     "WORKSPACE_PATH": "主工作区的文件系统路径。",
     "SESSIONS_DIR": "会话数据的存储目录。",
     # 子体系统
-    "NODE_ENABLED": "是否启用子体（远程节点）系统。",
-    "NODE_HOST": "子体服务监听的网络地址。",
-    "NODE_TOKENS": "子体节点的认证令牌映射（JSON 对象）。",
-    "SUBAGENT_WS_PORT": "子体 WebSocket 通信端口。",
     # 心跳
     "HEARTBEAT_ENABLED": "是否启用定时心跳自省任务。",
     "HEARTBEAT_INTERVAL_S": "心跳自省的执行间隔（秒）。",

@@ -12,20 +12,10 @@ from pathlib import Path
 from typing import Any
 
 
-DEFAULT_DENY_PATTERNS = [
-    r"\brm\s+-[rf]{1,2}\b",
-    r"\bdel\s+/[fq]\b",
-    r"\brmdir\s+/s\b",
-    r"\b(format|mkfs|diskpart)\b",
-    r"\bdd\s+if=",
-    r">\s*/dev/sd",
-    r"\b(shutdown|reboot|poweroff)\b",
-    r":\(\)\s*\{.*\};\s*:",
-    r"\bgit\s+reset\s+--hard\b",
-    r"\bgit\s+checkout\s+--\b",
-    r"\bgit\s+restore\b.*(?:--staged|--source=)",
-    r"\bgit\s+clean\s+-f\b",
-]
+# 命令防护黑名单已按用户要求清空：不再拦截任何命令，允许执行任意 shell 命令。
+# （此前的危险命令正则会误伤正常命令，例如 PowerShell 的 `Format-Table` 被 `\bformat\b` 命中。）
+# 如需重新启用防护，将需要拦截的正则重新填回此列表即可。
+DEFAULT_DENY_PATTERNS: list[str] = []
 
 
 @dataclass(slots=True)

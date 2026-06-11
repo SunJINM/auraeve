@@ -39,7 +39,6 @@ class ChatConsoleService:
             "tasks": tasks,
             "mainTasks": main_tasks,
             "approvals": [],
-            "nodes": [],
             "timeline": [],
             "summary": summary,
         }
