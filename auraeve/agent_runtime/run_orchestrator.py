@@ -47,14 +47,20 @@ class RunOrchestrator:
         provider: "LLMProvider",
         max_retries: int = 8,
         is_subagent: bool = False,
+        token_budget: int = 120_000,
     ) -> None:
         self._runner = runner
         self._provider = provider
         self._max_retries = max_retries
         self._is_subagent = is_subagent
+        self._token_budget = token_budget
         self._rate_backoff = _SUB_RATE_LIMIT_BACKOFF if is_subagent else _RATE_LIMIT_BACKOFF
         self._overload_backoff = _SUB_OVERLOAD_BACKOFF if is_subagent else _OVERLOAD_BACKOFF
         self._obs = get_observability()
+
+    def set_token_budget(self, token_budget: int) -> None:
+        if token_budget > 0:
+            self._token_budget = token_budget
 
     async def run(
         self,
@@ -215,7 +221,7 @@ class RunOrchestrator:
             history_msgs = [m for m in messages if m.get("role") != "system"]
             if not history_msgs:
                 return None
-            result = await compact_messages(history_msgs, 80_000, self._provider)
+            result = await compact_messages(history_msgs, self._token_budget, self._provider)
             if result.compacted and result.compacted_messages:
                 return system_msgs + result.compacted_messages
         except Exception as exc:  # noqa: BLE001

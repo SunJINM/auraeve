@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import unittest
 
+from auraeve.agent.engines.compaction import clear_tool_results
 from auraeve.agent_runtime.session_attempt import _compact_tool_result
 
 
@@ -22,6 +23,19 @@ class ToolResultCompactionTests(unittest.TestCase):
         raw = "x" * 20000
         compacted = _compact_tool_result("web_fetch", raw)
         self.assertEqual(compacted, raw)
+
+    def test_clear_tool_results_replaces_old_large_tool_outputs_only(self) -> None:
+        messages = [
+            {"role": "tool", "tool_call_id": "old", "name": "read", "content": "a" * 1000},
+            {"role": "assistant", "content": "继续"},
+            {"role": "tool", "tool_call_id": "recent", "name": "read", "content": "b" * 1000},
+        ]
+
+        cleared = clear_tool_results(messages, keep_recent=1, min_chars=600)
+
+        self.assertIn("工具结果已清理", cleared[0]["content"])
+        self.assertEqual(cleared[0]["tool_call_id"], "old")
+        self.assertEqual(cleared[2]["content"], "b" * 1000)
 
 
 if __name__ == "__main__":

@@ -96,16 +96,6 @@ def build_defaults() -> dict[str, Any]:
             "imageToTextPrompt": "你是图片理解器。请提取主体、关键文字、与用户问题相关结论，保持简洁。",
         },
         "LLM_MAX_TOOL_ITERATIONS": 20,
-        "RUNTIME_EXECUTION": {
-            "maxTurns": 64,
-            "maxToolCallsTotal": 256,
-            "maxToolCallsPerTurn": 16,
-            "maxWallTimeMs": 900000,
-            "maxRecoveryAttempts": 12,
-            "toolConcurrency": 8,
-            "toolTimeoutMs": 60000,
-            "toolFailurePolicy": "best_effort",
-        },
         "RUNTIME_LOOP_GUARD": {
             "mode": "balanced",
             "fingerprintWindow": 3,

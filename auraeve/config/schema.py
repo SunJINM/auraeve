@@ -8,6 +8,7 @@ from auraeve.mcp.config import validate_mcp_config
 
 
 DEPRECATED_IGNORED_CONFIG_KEYS = {
+    "RUNTIME_EXECUTION",
     "CONTEXT_ENGINE",
     "EMBEDDING_MODEL",
     "EMBEDDING_API_KEY",
@@ -59,15 +60,29 @@ def _validate_runtime_execution(
         issues.append({"path": path, "message": f"expected object, got {_type_name(value)}"})
         return
 
-    int_positive_fields = (
+    # 0 表示「不限制」：轮数、工具调用次数、墙钟时间允许为 0
+    int_nonneg_fields = (
         "maxTurns",
         "maxToolCallsTotal",
         "maxToolCallsPerTurn",
         "maxWallTimeMs",
+    )
+    int_positive_fields = (
         "maxRecoveryAttempts",
         "toolConcurrency",
         "toolTimeoutMs",
     )
+    for field in int_nonneg_fields:
+        if field not in value:
+            continue
+        raw = value.get(field)
+        if not isinstance(raw, int) or isinstance(raw, bool) or raw < 0:
+            issues.append(
+                {
+                    "path": f"{path}.{field}",
+                    "message": f"expected non-negative integer (0 = unlimited), got {_type_name(raw)}",
+                }
+            )
     for field in int_positive_fields:
         if field not in value:
             continue
@@ -448,14 +463,9 @@ def normalize_config_object(raw: dict[str, Any]) -> dict[str, Any]:
         if isinstance(value, Path):
             merged[key] = str(value)
 
-    runtime_execution_defaults = DEFAULTS.get("RUNTIME_EXECUTION", {})
     runtime_execution = merged.get("RUNTIME_EXECUTION")
-    if not isinstance(runtime_execution, dict):
-        merged["RUNTIME_EXECUTION"] = dict(runtime_execution_defaults)
-    else:
-        normalized_runtime_execution = dict(runtime_execution_defaults)
-        normalized_runtime_execution.update(runtime_execution)
-        merged["RUNTIME_EXECUTION"] = normalized_runtime_execution
+    if "RUNTIME_EXECUTION" in merged and not isinstance(runtime_execution, dict):
+        merged.pop("RUNTIME_EXECUTION", None)
 
     runtime_loop_defaults = DEFAULTS.get("RUNTIME_LOOP_GUARD", {})
     runtime_loop_guard = merged.get("RUNTIME_LOOP_GUARD")
@@ -516,7 +526,6 @@ _SCHEMA_GROUPS: list[tuple[str, str, list[str]]] = [
             "LLM_MODELS",
             "READ_ROUTING",
             "LLM_MAX_TOOL_ITERATIONS",
-            "RUNTIME_EXECUTION",
             "RUNTIME_LOOP_GUARD",
             "LLM_MEMORY_WINDOW",
         ],
@@ -634,7 +643,6 @@ HOT_KEYS = {
     "LLM_MODELS",
     "READ_ROUTING",
     "LLM_MAX_TOOL_ITERATIONS",
-    "RUNTIME_EXECUTION",
     "RUNTIME_LOOP_GUARD",
     "LLM_MEMORY_WINDOW",
     "TOKEN_BUDGET",
@@ -675,7 +683,6 @@ _LABEL_OVERRIDES = {
     "READ_ROUTING": "读取路由策略",
     "LLM_MAX_TOOL_ITERATIONS": "工具最大迭代次数",
     "LLM_MEMORY_WINDOW": "记忆窗口",
-    "RUNTIME_EXECUTION": "执行预算与并发",
     "RUNTIME_LOOP_GUARD": "循环防护策略",
     # 运行时配置
     "TOKEN_BUDGET": "Token 预算",
@@ -743,7 +750,6 @@ _DESCRIPTION_OVERRIDES = {
     "READ_ROUTING": "Read 工具的图片降级和失败策略（JSON 对象）。",
     "LLM_MAX_TOOL_ITERATIONS": "单轮对话中模型调用工具的最大迭代次数。",
     "LLM_MEMORY_WINDOW": "发送给模型的历史消息条数上限。",
-    "RUNTIME_EXECUTION": "运行时执行预算与工具并发策略（JSON 对象）。",
     "RUNTIME_LOOP_GUARD": "循环检测与降速/阻断策略（JSON 对象）。",
     # 运行时配置
     "TOKEN_BUDGET": "单次会话的总 Token 预算，超出后触发上下文压缩。",

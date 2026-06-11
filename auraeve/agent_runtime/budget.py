@@ -45,9 +45,10 @@ def normalize_runtime_execution_config(
         policy = base.tool_failure_policy
 
     return RuntimeExecutionConfig(
-        max_turns=_as_positive_int(raw.get("maxTurns"), base.max_turns),
-        max_tool_calls_total=_as_positive_int(raw.get("maxToolCallsTotal"), base.max_tool_calls_total),
-        max_tool_calls_per_turn=_as_positive_int(raw.get("maxToolCallsPerTurn"), base.max_tool_calls_per_turn),
+        # maxTurns / maxToolCalls* / maxWallTimeMs 均支持 0 = 不限制（长时智能体）
+        max_turns=_as_nonnegative_int(raw.get("maxTurns"), base.max_turns),
+        max_tool_calls_total=_as_nonnegative_int(raw.get("maxToolCallsTotal"), base.max_tool_calls_total),
+        max_tool_calls_per_turn=_as_nonnegative_int(raw.get("maxToolCallsPerTurn"), base.max_tool_calls_per_turn),
         max_wall_time_ms=_as_nonnegative_int(raw.get("maxWallTimeMs"), base.max_wall_time_ms),
         max_recovery_attempts=_as_positive_int(raw.get("maxRecoveryAttempts"), base.max_recovery_attempts),
         tool_concurrency=_as_positive_int(raw.get("toolConcurrency"), base.tool_concurrency),
@@ -66,7 +67,8 @@ class ExecutionBudget:
         self.tool_calls_used = 0
 
     def check_turn_budget(self) -> tuple[bool, str | None]:
-        if self.turns_used >= self.cfg.max_turns:
+        # max_turns == 0 表示不限制轮数
+        if self.cfg.max_turns > 0 and self.turns_used >= self.cfg.max_turns:
             return False, "max_turns_exhausted"
         elapsed_ms = int((time.monotonic() - self.started_at) * 1000)
         if self.cfg.max_wall_time_ms > 0 and elapsed_ms >= self.cfg.max_wall_time_ms:
@@ -77,8 +79,12 @@ class ExecutionBudget:
         self.turns_used += 1
 
     def admit_tool_calls(self, requested: int) -> int:
-        remaining_total = max(self.cfg.max_tool_calls_total - self.tool_calls_used, 0)
-        admitted = min(max(requested, 0), self.cfg.max_tool_calls_per_turn, remaining_total)
+        # 每轮 / 总计上限为 0 时表示不限制
+        admitted = max(requested, 0)
+        if self.cfg.max_tool_calls_per_turn > 0:
+            admitted = min(admitted, self.cfg.max_tool_calls_per_turn)
+        if self.cfg.max_tool_calls_total > 0:
+            admitted = min(admitted, max(self.cfg.max_tool_calls_total - self.tool_calls_used, 0))
         return admitted
 
     def consume_tool_calls(self, executed: int) -> None:

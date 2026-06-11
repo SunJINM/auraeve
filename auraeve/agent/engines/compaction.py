@@ -168,6 +168,42 @@ def should_compact(
     return estimated > budget * threshold_ratio
 
 
+def clear_tool_results(
+    messages: list[dict],
+    keep_recent: int = 6,
+    min_chars: int = 600,
+) -> list[dict]:
+    """工具结果清理：最轻量、可恢复的压缩（Anthropic「tool-result clearing」）。
+
+    将较早且体量较大的工具结果正文替换为占位提示，保留 role/tool_call_id/name 等结构字段，
+    保留最近 keep_recent 个工具结果原文。智能体如再次需要可重新调用对应工具获取，信息可恢复。
+    不调用 LLM，几乎零成本，应作为压缩的第一层。
+    """
+    tool_positions = [i for i, m in enumerate(messages) if m.get("role") == "tool"]
+    if len(tool_positions) <= keep_recent:
+        return messages
+
+    elide_before = tool_positions[-keep_recent]
+    out: list[dict] = []
+    for i, m in enumerate(messages):
+        content = m.get("content")
+        if (
+            i < elide_before
+            and m.get("role") == "tool"
+            and isinstance(content, str)
+            and len(content) > min_chars
+        ):
+            cleared = dict(m)
+            cleared["content"] = (
+                f"[工具结果已清理以节省上下文（原 {len(content)} 字符）；"
+                "如需该结果请重新调用对应工具。]"
+            )
+            out.append(cleared)
+        else:
+            out.append(m)
+    return out
+
+
 # ── 消息分块 ──────────────────────────────────────────────────
 
 

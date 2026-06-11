@@ -44,6 +44,25 @@ if TYPE_CHECKING:
     from auraeve.memory_lifecycle import MemoryLifecycleService
 
 
+def _force_unlimited_main_budget(raw: dict | None) -> dict:
+    """主智能体固定不设执行预算上限（面向长时运行）。
+
+    强制把轮数 / 工具调用次数 / 墙钟时间上限写死为 0（= 不限制），
+    无视配置文件里的历史值；上下文增长改由主动压缩 + 工具结果清理控制。
+    子体在 react_loop 中各自构造 runner 并带步数上限，不受此影响。
+    """
+    base = dict(raw or {})
+    base.update(
+        {
+            "maxTurns": 0,
+            "maxToolCallsTotal": 0,
+            "maxToolCallsPerTurn": 0,
+            "maxWallTimeMs": 0,
+        }
+    )
+    return base
+
+
 class RuntimeKernel:
     """Runtime kernel main entry."""
 
@@ -176,14 +195,16 @@ class RuntimeKernel:
             checkpoint_drain=self._drain_checkpoint_messages,
             max_iterations=max_iterations,
             thinking_budget_tokens=thinking_budget_tokens,
-            runtime_execution=runtime_execution,
+            runtime_execution=_force_unlimited_main_budget(runtime_execution),
             runtime_loop_guard=runtime_loop_guard,
+            token_budget=token_budget,
         )
         self._orchestrator = RunOrchestrator(
             runner=self._runner,
             provider=provider,
             max_retries=8,
             is_subagent=False,
+            token_budget=token_budget,
         )
 
         self._register_default_tools()
@@ -355,9 +376,6 @@ class RuntimeKernel:
                 self.max_iterations = int(new_config["LLM_MAX_TOOL_ITERATIONS"])
                 self._runner.apply_runtime_controls(max_iterations=self.max_iterations)
                 applied.append("LLM_MAX_TOOL_ITERATIONS")
-            if "RUNTIME_EXECUTION" in new_config:
-                self._runner.apply_runtime_controls(runtime_execution=new_config["RUNTIME_EXECUTION"])
-                applied.append("RUNTIME_EXECUTION")
             if "RUNTIME_LOOP_GUARD" in new_config:
                 self._runner.apply_runtime_controls(runtime_loop_guard=new_config["RUNTIME_LOOP_GUARD"])
                 applied.append("RUNTIME_LOOP_GUARD")
@@ -389,6 +407,8 @@ class RuntimeKernel:
                 self.assembler._token_budget = int(new_config["TOKEN_BUDGET"])
                 if hasattr(self.engine, "token_budget"):
                     setattr(self.engine, "token_budget", int(new_config["TOKEN_BUDGET"]))
+                self._runner.apply_runtime_controls(token_budget=int(new_config["TOKEN_BUDGET"]))
+                self._orchestrator.set_token_budget(int(new_config["TOKEN_BUDGET"]))
                 applied.append("TOKEN_BUDGET")
 
         return {

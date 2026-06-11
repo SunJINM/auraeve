@@ -15,6 +15,11 @@ class RuntimeExecutionConfigTests(unittest.TestCase):
     def test_default_session_subagent_concurrency_is_eight(self) -> None:
         self.assertEqual(DEFAULTS["MAX_SESSION_SUBAGENT_CONCURRENT"], 8)
 
+    def test_runtime_execution_is_not_a_default_config_entry(self) -> None:
+        normalized = normalize_config_object(dict(DEFAULTS))
+        self.assertNotIn("RUNTIME_EXECUTION", DEFAULTS)
+        self.assertNotIn("RUNTIME_EXECUTION", normalized)
+
     def test_validate_runtime_execution_shape(self) -> None:
         payload = dict(DEFAULTS)
         payload["RUNTIME_EXECUTION"] = {"maxTurns": "64"}
@@ -29,13 +34,11 @@ class RuntimeExecutionConfigTests(unittest.TestCase):
         self.assertFalse(ok)
         self.assertTrue(any(i.get("path") == "RUNTIME_LOOP_GUARD.onRepeat" for i in issues))
 
-    def test_normalize_runtime_execution_partial_merge(self) -> None:
+    def test_normalize_runtime_execution_drops_legacy_config(self) -> None:
         payload = dict(DEFAULTS)
         payload["RUNTIME_EXECUTION"] = {"maxTurns": 10}
         normalized = normalize_config_object(payload)
-        runtime_execution = normalized["RUNTIME_EXECUTION"]
-        self.assertEqual(runtime_execution["maxTurns"], 10)
-        self.assertIn("toolConcurrency", runtime_execution)
+        self.assertNotIn("RUNTIME_EXECUTION", normalized)
 
     def test_budget_admit_and_consume(self) -> None:
         cfg = RuntimeExecutionConfig(
@@ -65,6 +68,20 @@ class RuntimeExecutionConfigTests(unittest.TestCase):
         budget = ExecutionBudget(cfg)
 
         self.assertEqual(budget.check_turn_budget(), (True, None))
+
+    def test_zero_turn_and_tool_limits_are_unlimited(self) -> None:
+        cfg = RuntimeExecutionConfig(
+            max_turns=0,
+            max_tool_calls_total=0,
+            max_tool_calls_per_turn=0,
+            max_wall_time_ms=0,
+        )
+
+        budget = ExecutionBudget(cfg)
+        for _ in range(100):
+            self.assertEqual(budget.check_turn_budget(), (True, None))
+            budget.mark_turn_started()
+        self.assertEqual(budget.admit_tool_calls(1000), 1000)
 
     def test_runtime_execution_normalization_with_fallback(self) -> None:
         cfg = normalize_runtime_execution_config({"maxTurns": 8}, fallback_max_turns=20)

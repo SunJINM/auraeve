@@ -92,6 +92,7 @@ class SessionAttemptRunner:
         thinking_budget_tokens: int | None = None,
         runtime_execution: dict[str, Any] | None = None,
         runtime_loop_guard: dict[str, Any] | None = None,
+        token_budget: int = 120_000,
     ) -> None:
         self._provider = provider
         self._tools = tools
@@ -99,6 +100,7 @@ class SessionAttemptRunner:
         self._checkpoint_drain = checkpoint_drain
         self._max_iterations = max_iterations
         self._thinking_budget_tokens = thinking_budget_tokens
+        self._token_budget = token_budget
         self._execution_cfg = normalize_runtime_execution_config(
             runtime_execution,
             fallback_max_turns=max_iterations,
@@ -112,6 +114,7 @@ class SessionAttemptRunner:
         max_iterations: int | None = None,
         runtime_execution: dict[str, Any] | None = None,
         runtime_loop_guard: dict[str, Any] | None = None,
+        token_budget: int | None = None,
     ) -> None:
         if max_iterations is not None and max_iterations > 0:
             self._max_iterations = max_iterations
@@ -122,6 +125,65 @@ class SessionAttemptRunner:
             )
         if runtime_loop_guard is not None:
             self._loop_guard_cfg = _normalize_loop_guard(runtime_loop_guard)
+        if token_budget is not None and token_budget > 0:
+            self._token_budget = token_budget
+
+    async def _maybe_compact_context(
+        self,
+        msgs: list[dict[str, Any]],
+        thread_id: str,
+        channel: str | None,
+    ) -> list[dict[str, Any]]:
+        """主动上下文压缩（Anthropic 上下文工程）：接近预算阈值时先做工具结果清理，
+        仍超阈值再做 LLM 摘要兜底。只压缩送入模型的上下文，不影响 transcript。"""
+        budget = self._token_budget
+        if budget <= 0:
+            return msgs
+
+        from auraeve.agent.engines.compaction import (
+            clear_tool_results,
+            compact_messages,
+            estimate_tokens,
+            should_compact,
+        )
+
+        if not should_compact(msgs, budget):
+            return msgs
+
+        system_msgs = [m for m in msgs if m.get("role") == "system"]
+        history = [m for m in msgs if m.get("role") != "system"]
+
+        # 第一层：工具结果清理（可恢复、无需 LLM）
+        cleared = clear_tool_results(history)
+        if not should_compact(system_msgs + cleared, budget):
+            self._obs.emit(
+                level="info",
+                kind="trace",
+                subsystem="runtime/compaction",
+                message="tool_results_cleared",
+                attrs={"tokensAfter": estimate_tokens(system_msgs + cleared)},
+                session_key=thread_id,
+                channel=channel,
+            )
+            return system_msgs + cleared
+
+        # 第二层：LLM 摘要兜底
+        try:
+            result = await compact_messages(cleared, budget, self._provider)
+            if result.compacted and result.compacted_messages:
+                self._obs.emit(
+                    level="info",
+                    kind="trace",
+                    subsystem="runtime/compaction",
+                    message="context_compacted",
+                    attrs={"tokensBefore": result.tokens_before, "tokensAfter": result.tokens_after},
+                    session_key=thread_id,
+                    channel=channel,
+                )
+                return system_msgs + result.compacted_messages
+        except Exception as exc:
+            logger.warning(f"[session_attempt] 主动压缩失败: {exc}")
+        return system_msgs + cleared
 
     async def run(
         self,
@@ -221,6 +283,9 @@ class SessionAttemptRunner:
                     session_key=thread_id,
                     channel=channel,
                 )
+
+            # 主动压缩：每轮调用模型前按 token 预算阈值压缩上下文
+            msgs = await self._maybe_compact_context(msgs, thread_id, channel)
 
             response = await self._provider.chat(
                 messages=msgs,
