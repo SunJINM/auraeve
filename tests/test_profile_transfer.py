@@ -30,13 +30,13 @@ class ProfileTransferTests(unittest.TestCase):
             "# long memory\n- foo\n",
             encoding="utf-8",
         )
-        (self.state_dir / "workspace" / "memory" / "2026-03-14.md").write_text(
+        (self.state_dir / "workspace" / "memory" / "logs").mkdir(parents=True, exist_ok=True)
+        (self.state_dir / "workspace" / "memory" / "logs" / "2026-03-14.md").write_text(
             "# daily\n- bar\n",
             encoding="utf-8",
         )
         (self.state_dir / "skills" / "state.json").write_text('{"entries":{"demo":{"enabled":true}}}\n', encoding="utf-8")
         (self.state_dir / "plugins" / "state.json").write_text('{"entries":{"p.demo":{"enabled":true}}}\n', encoding="utf-8")
-        (self.state_dir / "memory.db").write_bytes(b"sqlite-bytes")
         (self.state_dir / "auraeve.json").write_text('{"LLM_API_KEY":"test-key"}\n', encoding="utf-8")
 
     def test_export_import_roundtrip(self) -> None:
@@ -52,8 +52,8 @@ class ProfileTransferTests(unittest.TestCase):
         self.assertTrue(imported["ok"])
 
         self.assertTrue((self.state_dir / "auraeve.json").exists())
-        self.assertTrue((self.state_dir / "memory.db").exists())
         self.assertTrue((self.state_dir / "workspace" / "memory" / "MEMORY.md").exists())
+        self.assertTrue((self.state_dir / "workspace" / "memory" / "logs" / "2026-03-14.md").exists())
         self.assertTrue((self.state_dir / "skills" / "state.json").exists())
         self.assertFalse((self.state_dir / "plugins" / "state.json").exists())
 

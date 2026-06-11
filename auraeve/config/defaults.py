@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .paths import resolve_default_workspace_dir, resolve_sessions_dir, resolve_vector_db_path
+from .paths import resolve_default_workspace_dir, resolve_sessions_dir
 
 
 def build_defaults() -> dict[str, Any]:
@@ -144,18 +144,6 @@ def build_defaults() -> dict[str, Any]:
         "RUNTIME_HOT_APPLY_ENABLED": True,
         "CHANNEL_USERS": {},
         "NOTIFY_CHANNEL": "",
-        "CONTEXT_ENGINE": "vector",
-        "EMBEDDING_MODEL": "text-embedding-3-small",
-        "EMBEDDING_API_KEY": "",
-        "EMBEDDING_API_BASE": None,
-        "VECTOR_DB_PATH": str(resolve_vector_db_path()),
-        "MEMORY_SEARCH_LIMIT": 8,
-        "MEMORY_VECTOR_WEIGHT": 0.7,
-        "MEMORY_TEXT_WEIGHT": 0.3,
-        "MEMORY_MMR_LAMBDA": 0.7,
-        "MEMORY_TEMPORAL_HALF_LIFE_DAYS": 30.0,
-        "MEMORY_INCLUDE_SESSIONS": False,
-        "MEMORY_SESSIONS_MAX_MESSAGES": 400,
         "TOKEN_BUDGET": 120000,
         "COMPACTION_THRESHOLD_RATIO": 0.85,
         "NODE_ENABLED": True,
@@ -192,12 +180,11 @@ def build_defaults() -> dict[str, Any]:
 
 
 DEFAULTS = build_defaults()
-PATH_KEYS = {"WORKSPACE_PATH", "SESSIONS_DIR", "VECTOR_DB_PATH"}
+PATH_KEYS = {"WORKSPACE_PATH", "SESSIONS_DIR"}
 SENSITIVE_KEYS = {
     "DINGTALK_CLIENT_SECRET",
     "NAPCAT_ACCESS_TOKEN",
     "LLM_API_KEY",
-    "EMBEDDING_API_KEY",
     "TAVILY_API_KEY",
     "BRAVE_API_KEY",
     "GIT_TOKEN",

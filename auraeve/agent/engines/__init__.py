@@ -2,12 +2,10 @@
 
 from .base import ContextEngine, AssembleResult, CompactResult
 from .legacy import LegacyContextEngine
-from .vector.engine import VectorContextEngine
 
 __all__ = [
     "ContextEngine",
     "AssembleResult",
     "CompactResult",
     "LegacyContextEngine",
-    "VectorContextEngine",
 ]

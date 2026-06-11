@@ -120,17 +120,4 @@ def build_tool_registry(
         task_base_dir=task_base_dir,
     )
 
-    if engine is not None:
-        from auraeve.agent.engines.vector.engine import VectorContextEngine
-        if isinstance(engine, VectorContextEngine):
-            from auraeve.agent.tools.memory_search import MemorySearchTool
-            from auraeve.agent.tools.memory_get import MemoryGetTool
-            from auraeve.agent.tools.memory_status import MemoryStatusTool
-            registry.register(MemorySearchTool(
-                manager=engine.memory_manager,
-                search_limit=engine.search_limit,
-            ))
-            registry.register(MemoryGetTool(manager=engine.memory_manager))
-            registry.register(MemoryStatusTool(manager=engine.memory_manager))
-
     return registry

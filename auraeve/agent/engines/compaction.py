@@ -87,7 +87,7 @@ _CL100K_SPECIAL_TOKENS = {
 
 
 def _resolve_project_root() -> Path:
-    # compaction.py -> vector -> engines -> agent -> auraeve -> project root
+    # compaction.py -> engines -> agent -> auraeve -> project root
     return Path(__file__).resolve().parents[4]
 
 

@@ -1,7 +1,6 @@
 """AuraEve runtime entrypoint."""
 
 import asyncio
-import json
 import os
 import signal
 import sys
@@ -31,19 +30,6 @@ from auraeve.runtime_hot_reload import (
 )
 from auraeve.runtime_channels import ChannelRuntimeManager
 from auraeve.runtime_runner import AppRuntimeRunner
-
-
-class _OpenAIEmbedder:
-    """OpenAI-compatible embedding client."""
-
-    def __init__(self, api_key: str, api_base: str | None, model: str):
-        from openai import AsyncOpenAI
-        self._client = AsyncOpenAI(api_key=api_key, base_url=api_base or None)
-        self.model = model
-
-    async def embed(self, text: str) -> list[float]:
-        r = await self._client.embeddings.create(input=text, model=self.model)
-        return r.data[0].embedding
 
 
 def _build_provider():
@@ -116,42 +102,12 @@ async def main(terminal_mode: bool = False) -> None:
     stt_runtime = build_runtime_from_config(cfg.export_config(mask_sensitive=False))
     execution_workspace = str(workspace.expanduser().resolve())
 
-    # memory
-    memory_file_change_notifier = None
-    engine_type = getattr(cfg, "CONTEXT_ENGINE", "vector")
-    if engine_type == "vector":
-        from auraeve.agent.engines.vector.engine import VectorContextEngine
-        embedder = _OpenAIEmbedder(
-            api_key=getattr(cfg, "EMBEDDING_API_KEY", primary_model.api_key),
-            api_base=getattr(cfg, "EMBEDDING_API_BASE", None),
-            model=getattr(cfg, "EMBEDDING_MODEL", "text-embedding-3-small"),
-        )
-        engine = VectorContextEngine(
-            workspace=workspace,
-            db_path=getattr(cfg, "VECTOR_DB_PATH", cfg.resolve_vector_db_path()),
-            embedder=embedder,
-            provider=provider,
-            token_budget=getattr(cfg, "TOKEN_BUDGET", 120_000),
-            compact_threshold=getattr(cfg, "COMPACTION_THRESHOLD_RATIO", 0.85),
-            search_limit=getattr(cfg, "MEMORY_SEARCH_LIMIT", 8),
-            vector_weight=getattr(cfg, "MEMORY_VECTOR_WEIGHT", 0.7),
-            text_weight=getattr(cfg, "MEMORY_TEXT_WEIGHT", 0.3),
-            mmr_lambda=getattr(cfg, "MEMORY_MMR_LAMBDA", 0.7),
-            half_life_days=getattr(cfg, "MEMORY_TEMPORAL_HALF_LIFE_DAYS", 30.0),
-            sessions_dir=sessions_dir,
-            include_sessions=bool(getattr(cfg, "MEMORY_INCLUDE_SESSIONS", False)),
-            sessions_max_messages=int(getattr(cfg, "MEMORY_SESSIONS_MAX_MESSAGES", 400)),
-            execution_workspace=execution_workspace,
-        )
-        await engine.bootstrap()
-        memory_file_change_notifier = engine.memory_manager.mark_dirty
-    else:
-        from auraeve.agent.engines.legacy import LegacyContextEngine
-        engine = LegacyContextEngine(
-            workspace=workspace,
-            memory_window=getattr(cfg, "LLM_MEMORY_WINDOW", 50),
-            execution_workspace=execution_workspace,
-        )
+    from auraeve.agent.engines.legacy import LegacyContextEngine
+    engine = LegacyContextEngine(
+        workspace=workspace,
+        memory_window=getattr(cfg, "LLM_MEMORY_WINDOW", 50),
+        execution_workspace=execution_workspace,
+    )
 
     # Cron
     cron_store_path = cfg.resolve_cron_store_path()
@@ -188,10 +144,7 @@ async def main(terminal_mode: bool = False) -> None:
         execution_workspace=execution_workspace,
         memory_lifecycle=MemoryLifecycleService(
             workspace=workspace,
-            provider=provider,
-            model=primary_model.model,
             timezone=os.getenv("AURAEVE_TIMEZONE") or os.getenv("TZ") or "Asia/Shanghai",
-            on_memory_file_changed=memory_file_change_notifier,
         ),
     )
 
@@ -305,11 +258,7 @@ async def main(terminal_mode: bool = False) -> None:
         webui_channel=webui_channel,
         subagent_ws_server=subagent_ws_server,
         pid_file=pid_file,
-        on_engine_cleanup=(
-            engine.memory_manager.close
-            if engine_type == "vector" and hasattr(engine, "memory_manager")
-            else None
-        ),
+        on_engine_cleanup=None,
     )
     if webui_server is not None:
         webui_server._restart_callback = lambda: runtime_runner.shutdown(restart=True)

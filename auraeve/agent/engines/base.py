@@ -29,9 +29,9 @@ class ContextEngine(ABC):
     上下文引擎接口。
 
     核心方法：
-    - assemble()   → 组装完整消息列表（含系统提示词 + 记忆检索 + 压缩）
-    - after_turn() → 每轮结束后触发（默认 no-op，用于重索引记忆文件）
-    - bootstrap()  → 启动时初始化（默认 no-op，用于首次索引）
+    - assemble()   → 组装完整消息列表（含系统提示词）
+    - after_turn() → 每轮结束后触发（默认 no-op）
+    - bootstrap()  → 启动时初始化（默认 no-op）
     """
 
     @abstractmethod
@@ -56,7 +56,7 @@ class ContextEngine(ABC):
         参数：
             session_id:    会话标识
             messages:      历史消息（完整列表，引擎负责预算控制）
-            current_query: 当前用户消息（用于语义检索 + 作为最终用户消息）
+            current_query: 当前用户消息
             channel:       渠道名（注入系统提示词）
             chat_id:       聊天 ID（注入系统提示词）
             media:         媒体文件路径列表
@@ -68,7 +68,7 @@ class ContextEngine(ABC):
         """
 
     async def after_turn(self, session_id: str, messages: list[dict]) -> None:
-        """每轮结束后调用（默认 no-op）。VectorContextEngine 用此重索引记忆文件。"""
+        """每轮结束后调用（默认 no-op）。"""
 
     async def bootstrap(self) -> None:
-        """启动时调用（默认 no-op）。VectorContextEngine 用此进行首次全量索引。"""
+        """启动时调用（默认 no-op）。"""

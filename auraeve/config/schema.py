@@ -7,6 +7,22 @@ from .defaults import DEFAULTS, PATH_KEYS, SENSITIVE_KEYS
 from auraeve.mcp.config import validate_mcp_config
 
 
+DEPRECATED_IGNORED_CONFIG_KEYS = {
+    "CONTEXT_ENGINE",
+    "EMBEDDING_MODEL",
+    "EMBEDDING_API_KEY",
+    "EMBEDDING_API_BASE",
+    "VECTOR_DB_PATH",
+    "MEMORY_SEARCH_LIMIT",
+    "MEMORY_VECTOR_WEIGHT",
+    "MEMORY_TEXT_WEIGHT",
+    "MEMORY_MMR_LAMBDA",
+    "MEMORY_TEMPORAL_HALF_LIFE_DAYS",
+    "MEMORY_INCLUDE_SESSIONS",
+    "MEMORY_SESSIONS_MAX_MESSAGES",
+}
+
+
 def _is_number(value: Any) -> bool:
     return isinstance(value, int | float) and not isinstance(value, bool)
 
@@ -255,7 +271,7 @@ def _validate_asr(
 
 def validate_config_object(raw: dict[str, Any]) -> tuple[bool, list[dict[str, str]]]:
     issues: list[dict[str, str]] = []
-    allowed = set(DEFAULTS.keys()) | {"META"}
+    allowed = set(DEFAULTS.keys()) | {"META"} | DEPRECATED_IGNORED_CONFIG_KEYS
 
     for key in raw.keys():
         if key not in allowed:
@@ -394,6 +410,8 @@ def validate_config_object(raw: dict[str, Any]) -> tuple[bool, list[dict[str, st
 def normalize_config_object(raw: dict[str, Any]) -> dict[str, Any]:
     merged = dict(DEFAULTS)
     merged.update(raw)
+    for key in DEPRECATED_IGNORED_CONFIG_KEYS:
+        merged.pop(key, None)
 
     agents_defaults = merged.get("AGENTS_DEFAULTS")
     if not isinstance(agents_defaults, dict):
@@ -583,18 +601,6 @@ _SCHEMA_GROUPS: list[tuple[str, str, list[str]]] = [
             "AGENTS_LIST",
             "WORKSPACE_PATH",
             "SESSIONS_DIR",
-            "VECTOR_DB_PATH",
-            "CONTEXT_ENGINE",
-            "EMBEDDING_MODEL",
-            "EMBEDDING_API_KEY",
-            "EMBEDDING_API_BASE",
-            "MEMORY_SEARCH_LIMIT",
-            "MEMORY_VECTOR_WEIGHT",
-            "MEMORY_TEXT_WEIGHT",
-            "MEMORY_MMR_LAMBDA",
-            "MEMORY_TEMPORAL_HALF_LIFE_DAYS",
-            "MEMORY_INCLUDE_SESSIONS",
-            "MEMORY_SESSIONS_MAX_MESSAGES",
         ],
     ),
     (
@@ -724,18 +730,6 @@ _LABEL_OVERRIDES = {
     "AGENTS_LIST": "多 Agent 列表",
     "WORKSPACE_PATH": "工作区路径",
     "SESSIONS_DIR": "会话目录",
-    "VECTOR_DB_PATH": "向量库路径",
-    "CONTEXT_ENGINE": "上下文引擎",
-    "EMBEDDING_MODEL": "嵌入模型",
-    "EMBEDDING_API_KEY": "嵌入 API 密钥",
-    "EMBEDDING_API_BASE": "嵌入 API 地址",
-    "MEMORY_SEARCH_LIMIT": "记忆检索条数",
-    "MEMORY_VECTOR_WEIGHT": "向量权重",
-    "MEMORY_TEXT_WEIGHT": "文本权重",
-    "MEMORY_MMR_LAMBDA": "MMR 多样性系数",
-    "MEMORY_TEMPORAL_HALF_LIFE_DAYS": "时间衰减半衰期(天)",
-    "MEMORY_INCLUDE_SESSIONS": "包含会话记忆",
-    "MEMORY_SESSIONS_MAX_MESSAGES": "会话记忆最大条数",
     # 子体系统
     "NODE_ENABLED": "启用子体系统",
     "NODE_HOST": "子体监听地址",
@@ -809,18 +803,6 @@ _DESCRIPTION_OVERRIDES = {
     "AGENTS_LIST": "Agent 列表，每项可定义 id、workspace 等属性。",
     "WORKSPACE_PATH": "主工作区的文件系统路径。",
     "SESSIONS_DIR": "会话数据的存储目录。",
-    "VECTOR_DB_PATH": "向量数据库的存储路径。",
-    "CONTEXT_ENGINE": "上下文引擎类型（vector 或其他）。",
-    "EMBEDDING_MODEL": "文本嵌入使用的模型名称。",
-    "EMBEDDING_API_KEY": "嵌入模型服务的 API 密钥。",
-    "EMBEDDING_API_BASE": "嵌入模型的 API 地址，留空使用默认。",
-    "MEMORY_SEARCH_LIMIT": "每次记忆检索返回的最大条目数。",
-    "MEMORY_VECTOR_WEIGHT": "记忆排序中向量相似度的权重（0-1）。",
-    "MEMORY_TEXT_WEIGHT": "记忆排序中文本匹配的权重（0-1）。",
-    "MEMORY_MMR_LAMBDA": "MMR 多样性系数，越大结果越相关，越小越多样（0-1）。",
-    "MEMORY_TEMPORAL_HALF_LIFE_DAYS": "记忆时间衰减的半衰期天数，越小越偏好新记忆。",
-    "MEMORY_INCLUDE_SESSIONS": "是否将历史会话消息纳入记忆检索。",
-    "MEMORY_SESSIONS_MAX_MESSAGES": "纳入记忆的历史会话最大消息条数。",
     # 子体系统
     "NODE_ENABLED": "是否启用子体（远程节点）系统。",
     "NODE_HOST": "子体服务监听的网络地址。",

@@ -157,11 +157,6 @@ def explain_workspace_resolution(
     }
 
 
-def resolve_vector_db_path(env: dict[str, str] | None = None) -> Path:
-    effective_env = env if env is not None else os.environ
-    return resolve_state_dir(effective_env) / "memory.db"
-
-
 def resolve_nodes_dir(env: dict[str, str] | None = None) -> Path:
     effective_env = env if env is not None else os.environ
     return resolve_state_dir(effective_env) / "nodes"

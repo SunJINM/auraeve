@@ -6,7 +6,7 @@ import auraeve.config  # noqa: F401
 
 from auraeve.agent.tools.assembler import build_tool_registry
 from auraeve.agent.tools.base import ToolExecutionResult
-from auraeve.agent.engines.vector.compaction import compact_messages
+from auraeve.agent.engines.compaction import compact_messages
 from auraeve.session.manager import Session
 from auraeve.agent_runtime.session_attempt import SessionAttemptRunner
 from auraeve.providers.base import LLMResponse, ToolCallRequest, normalize_tool_call_ids_in_messages

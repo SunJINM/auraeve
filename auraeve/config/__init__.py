@@ -22,7 +22,6 @@ from .paths import (
     resolve_nodes_dir,
     resolve_sessions_dir,
     resolve_state_dir,
-    resolve_vector_db_path,
 )
 
 _RUNTIME_CONFIG: dict[str, Any] = {}

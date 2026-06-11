@@ -1,4 +1,4 @@
-"""LegacyContextEngine：包装现有 ContextBuilder，不做记忆检索和压缩。"""
+"""LegacyContextEngine：简单上下文引擎。"""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from auraeve.agent.engines.base import AssembleResult, ContextEngine
 
 
 class LegacyContextEngine(ContextEngine):
-    """直接调用 ContextBuilder，不做记忆检索和压缩。"""
+    """直接调用 ContextBuilder，仅保留最近消息窗口。"""
 
     def __init__(
         self,

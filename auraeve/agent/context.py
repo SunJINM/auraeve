@@ -1,8 +1,8 @@
 """Agent 上下文构建器：模块化系统提示词 + 消息列表组装。
 
-提示词架构（对标 openclaw system-prompt.ts）：
+提示词架构：
 - 每个 section 是独立函数，返回 list[str]（空列表 = 禁用）
-- 基于 available_tools 条件注入（记忆 section 仅在 memory_search 可用时出现）
+- 长期记忆从 memory/MEMORY.md 直接注入，历史日志通过 Grep/Read 搜索
 - PromptMode：full（主 Agent）/ minimal（子 Agent，减少 token）
 - 静默令牌 SILENT_REPLY_TOKEN：无需回复时的专用信号
 - 心跳协议 HEARTBEAT_OK：心跳轮询的精确应答
@@ -90,7 +90,7 @@ class ContextBuilder:
         if skills_section:
             sections.append("\n".join(skills_section))
 
-        # 记忆召回（条件：memory_search 工具可用 + 非 minimal）
+        # 简单记忆（非 minimal）
         memory_section = self._section_memory(tools, is_minimal)
         if memory_section:
             sections.append("\n".join(memory_section))
@@ -153,9 +153,6 @@ class ContextBuilder:
             "Bash":           "执行 Bash Shell 命令",
             "web_search":     "搜索网页（Tavily 优先，Brave / DuckDuckGo 降级）",
             "web_fetch":      "抓取 URL 可读内容（三层提取管道）",
-            "memory_search":  "语义搜索历史记忆（向量 + BM25 混合检索）",
-            "memory_get":     "按路径读取记忆文件片段（行范围）",
-            "memory_status":  "查看记忆索引状态与降级信息",
             "agent":          "启动子智能体执行复杂多步骤任务，支持查询和管理已创建的子智能体",
             "cron":           "管理定时任务和唤醒事件（用于提醒；设置提醒时，写入自然语言描述以便触发时读起来像提醒）",
             "todo":           "管理当前任务规划列表",
@@ -167,7 +164,7 @@ class ContextBuilder:
         TOOL_ORDER = [
             "Read", "Write", "Edit", "Grep", "Glob", "Bash",
             "web_search", "web_fetch",
-            "memory_search", "memory_get", "memory_status", "agent", "cron",
+            "agent", "cron",
             "TaskCreate", "TaskGet", "TaskUpdate", "TaskList", "todo",
         ]
 
@@ -305,24 +302,40 @@ class ContextBuilder:
 
     def _section_memory(self, tools: set[str], is_minimal: bool) -> list[str]:
         """
-        记忆召回规则（条件：memory_search 工具可用 + 非 minimal 模式）。
-
-        使用强制语言（"必须先运行"），而非建议性措辞，
-        确保 Eve 在回答历史相关问题前主动检索记忆。
+        简单记忆规则：
+        - MEMORY.md 直接进入上下文
+        - 历史日志由 Grep/Read 按需检索
+        - 只有用户明确要求记住时才编辑 MEMORY.md
         """
         if is_minimal:
             return []
-        if "memory_search" not in tools:
-            return []
-        return [
+        memory_text = self._load_long_term_memory()
+        lines = [
             "## 记忆召回",
-            "在回答任何关于历史工作、决策、日期、人物、偏好或待办事项的问题前，"
-            "**必须先运行** `memory_search` 搜索 MEMORY.md 和 memory/*.md；"
-            "然后根据搜索结果用 `memory_get` 精确读取所需行范围。",
-            "检索后如果置信度仍低，如实告知用户你已检索但信息不足。",
-            "引用记忆时注明来源文件（如 memory/MEMORY.md#42 行），方便用户核实。",
+            f"- 长期记忆文件：{self.workspace / 'memory' / 'MEMORY.md'}",
+            f"- 对话日志目录：{self.workspace / 'memory' / 'logs'}",
+            "- 长期记忆已在下方注入；它只保存稳定偏好、身份信息和长期项目事实。",
+            "- 用户明确说“记住/以后都按这个/这是我的偏好”时，使用 Edit 更新 MEMORY.md。",
+            "- 回答历史工作、日期、决策、待办等问题时，使用 Grep 搜索 memory/logs/*.md，再用 Read 精确读取相关片段。",
+            "- 日志只是追溯材料，不要把临时细节自动写入长期记忆。",
             "",
         ]
+        if memory_text:
+            lines.extend(["## 长期记忆", memory_text, ""])
+        return lines
+
+    def _load_long_term_memory(self) -> str:
+        memory_file = self.workspace / "memory" / "MEMORY.md"
+        try:
+            text = memory_file.read_text(encoding="utf-8", errors="replace").strip()
+        except FileNotFoundError:
+            return ""
+        except Exception as exc:  # noqa: BLE001
+            return f"(读取长期记忆失败：{exc})"
+        max_chars = 12000
+        if len(text) <= max_chars:
+            return text
+        return text[:max_chars].rstrip() + "\n\n...(长期记忆过长，已截断)"
 
     def _section_workspace(self) -> list[str]:
         """工作区信息 + 问题解决策略。"""
@@ -347,7 +360,7 @@ class ContextBuilder:
         workspace_lines.extend(
             [
                 f"- 长期记忆：{workspace_path}/memory/MEMORY.md",
-                f"- 每日笔记：{workspace_path}/memory/YYYY-MM-DD.md",
+                f"- 对话日志：{workspace_path}/memory/logs/YYYY-MM-DD.md",
                 f"- 自定义技能：{workspace_path}/skills/{{skill-name}}/SKILL.md",
                 "",
                 "## 问题解决策略",

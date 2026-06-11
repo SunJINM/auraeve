@@ -209,7 +209,7 @@ class RunOrchestrator:
 
     async def _compact_messages(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]] | None:
         try:
-            from auraeve.agent.engines.vector.compaction import compact_messages
+            from auraeve.agent.engines.compaction import compact_messages
 
             system_msgs = [m for m in messages if m.get("role") == "system"]
             history_msgs = [m for m in messages if m.get("role") != "system"]
