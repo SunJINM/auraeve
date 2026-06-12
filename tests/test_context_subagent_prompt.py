@@ -35,7 +35,7 @@ def test_subagent_prompt_includes_tool_efficiency_protocol() -> None:
         budget=TaskBudget(max_steps=12, max_tool_calls=20, max_duration_s=60),
     )
 
-    prompt = loop._build_system_prompt(task)  # noqa: SLF001
+    prompt = loop._build_runtime_instruction(task)  # noqa: SLF001
 
     assert "通过工具调用显著提升结论质量" in prompt
     assert "扩大信息增量" in prompt

@@ -16,7 +16,6 @@ async def test_hot_apply_returns_restart_only_when_disabled() -> None:
         engine=MagicMock(),
         workspace=MagicMock(),
         channel_runtime=MagicMock(),
-        message_tool_sync=MagicMock(),
     )
 
     result = await service.apply({"LLM_TEMPERATURE": 0.3}, ["LLM_TEMPERATURE"])
@@ -42,7 +41,6 @@ async def test_hot_apply_delegates_core_runtime_patch() -> None:
         engine=MagicMock(),
         workspace=MagicMock(),
         channel_runtime=MagicMock(),
-        message_tool_sync=MagicMock(),
     )
 
     result = await service.apply({"LLM_TEMPERATURE": 0.3}, ["LLM_TEMPERATURE"])

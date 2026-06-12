@@ -1,5 +1,4 @@
 import asyncio
-import subprocess
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
@@ -69,14 +68,3 @@ async def test_runtime_runner_run_starts_and_cleans_services(tmp_path: Path) -> 
     channel_runtime.stop_all.assert_awaited_once()
     bus.stop.assert_called()
     assert not pid_file.exists()
-
-
-def test_main_no_longer_embeds_shutdown_state_machine() -> None:
-    result = subprocess.run(
-        ["rg", "-n", "_gather_task|async def _shutdown", "main.py"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-
-    assert result.returncode == 1

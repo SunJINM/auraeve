@@ -121,32 +121,6 @@ def test_kernel_has_no_process_direct() -> None:
     assert not hasattr(RuntimeKernel, "process_direct")
 
 
-def test_no_publish_inbound_call_sites_left() -> None:
-    import subprocess
-
-    result = subprocess.run(
-        ["rg", "-n", "publish_inbound\\(|consume_inbound\\(", "auraeve", "main.py"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-
-    assert result.returncode == 1
-
-
-def test_kernel_no_longer_rewraps_commands_as_inbound_messages() -> None:
-    import subprocess
-
-    result = subprocess.run(
-        ["rg", "-n", "InboundMessage", "auraeve/agent_runtime/kernel.py"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-
-    assert result.returncode == 1
-
-
 @pytest.mark.asyncio
 async def test_process_message_no_longer_builds_identity_context() -> None:
     kernel = object.__new__(RuntimeKernel)

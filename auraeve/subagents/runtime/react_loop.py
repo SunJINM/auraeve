@@ -8,7 +8,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from datetime import datetime, timezone
 
 from auraeve.agent.agents.definitions import find_agent
 from auraeve.subagents.data.models import Task, ProgressTracker
@@ -129,44 +128,6 @@ class ReActLoop:
         if self._task and not self._task.done():
             self._task.cancel()
 
-    def _build_system_prompt(self, task: Task) -> str:
-        now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
-        agent_def = find_agent(task.agent_type)
-        parts = [
-            f"当前时间: {now}",
-            "",
-            "你正在作为子智能体执行任务。",
-            f"子智能体类型: {task.agent_type}",
-            f"执行模式: {task.execution_mode}",
-            f"上下文模式: {task.context_mode}",
-            f"执行预算: 最多 {task.budget.max_steps} 步, "
-            f"最多 {task.budget.max_tool_calls} 次工具调用；"
-            "无总时长超时，但必须避免空转和重复搜索。",
-            "",
-            "角色说明:",
-            agent_def.system_prompt or "按分配目标完成任务。",
-            "",
-            "执行约束:",
-            "- 专注于你的任务目标，不要偏离",
-            "- 高效使用工具，避免重复操作",
-            "- 在阶段边界先输出一两句进度，像正常对话一样说明“目前已获取到……接下来我会……”；不要只连续调用工具",
-            "- 通过工具调用显著提升结论质量；每次调用都应扩大信息增量、减少不确定性，并推动下一步判断",
-            "- 积极组合使用 Read、Grep、Glob、Bash 和其他可用工具，而不是停留在单一视角",
-            "- 只有彼此独立、互不依赖的只读工具调用，才应并发发出",
-            "- 依赖前一步结果的调用必须串行执行",
-            "- 默认给出清晰、详细、结构化的结果，优先覆盖关键事实、分析逻辑、风险、未决问题和后续建议",
-            "- 详细不等于堆砌；不要为了显得详细而堆砌无关内容",
-            "- 禁止截断已收集到的关键信息；必要时分多轮继续读取或继续收集",
-            "- 如果结果天然很长，可写入本地 Markdown 文档并返回路径，再补一个高质量摘要",
-            "- 完成后输出清晰、结构化的结果",
-            "- 如果发现任务无法完成，说明原因并返回已有成果",
-        ]
-
-        if task.role_prompt:
-            parts.extend(["", "角色配置:", task.role_prompt])
-
-        return "\n".join(parts)
-
     def _build_agent_context(self, task: Task) -> str:
         agent_def = find_agent(task.agent_type)
         parts = [
@@ -213,26 +174,13 @@ class ReActLoop:
             )
         return "\n".join(lines)
 
-    def _prepare_messages(
-        self,
-        task: Task,
-        history_messages: list[dict] | None = None,
-    ) -> list[dict]:
-        messages: list[dict] = [
-            {"role": "system", "content": self._build_system_prompt(task)},
-        ]
-        if history_messages:
-            messages.extend(history_messages)
-        messages.append({"role": "user", "content": task.goal})
-        return messages
-
     async def _prepare_messages_for_run(
         self,
         task: Task,
         history_messages: list[dict] | None = None,
     ) -> list[dict]:
         if self._prompt_assembler is None:
-            return self._prepare_messages(task, history_messages)
+            raise ValueError("ReActLoop requires a prompt_assembler")
 
         available_tools = set(getattr(self._tools, "tool_names", []) or [])
         base_history = list(history_messages or [])

@@ -69,7 +69,6 @@ class RuntimeHotApplyService:
         engine,
         workspace,
         channel_runtime: ChannelRuntimeControls,
-        message_tool_sync: Callable[..., None],
         export_config: Callable[[], dict] | None = None,
     ) -> None:
         self.config = config
@@ -79,7 +78,6 @@ class RuntimeHotApplyService:
         self.engine = engine
         self.workspace = workspace
         self.channel_runtime = channel_runtime
-        self.message_tool_sync = message_tool_sync
         self.export_config = export_config or (lambda: self.config.export_config(mask_sensitive=False))
 
     async def apply(self, new_config: dict, hot_keys: list[str]) -> dict:
@@ -235,14 +233,10 @@ class RuntimeHotApplyService:
                     channel.config.allow_groups = list(new_config.get(key) or [])
                     applied.add(key)
             elif key == "CHANNEL_USERS":
-                channel_users = dict(new_config.get(key) or {})
-                self.agent._channel_users = channel_users
-                self.message_tool_sync(channel_users=channel_users)
+                self.agent._channel_users = dict(new_config.get(key) or {})
                 applied.add(key)
             elif key == "NOTIFY_CHANNEL":
-                notify_channel = str(new_config.get(key) or "")
-                self.agent._notify_channel = notify_channel
-                self.message_tool_sync(notify_channel=notify_channel)
+                self.agent._notify_channel = str(new_config.get(key) or "")
                 applied.add(key)
 
     def _reload_skills(self) -> None:
@@ -262,7 +256,3 @@ class RuntimeHotApplyService:
             skills_loader.max_skill_file_bytes = int(getattr(self.config, "SKILLS_LIMIT_MAX_FILE_BYTES", 256000))
         if hasattr(skills_loader, "invalidate_cache"):
             skills_loader.invalidate_cache()
-
-
-def sync_message_tool_settings(agent, *, channel_users: dict | None = None, notify_channel: str | None = None) -> None:
-    return None

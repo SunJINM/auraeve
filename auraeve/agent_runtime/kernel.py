@@ -215,9 +215,6 @@ class RuntimeKernel:
     def register_tool(self, tool) -> None:
         self.tools.register(tool)
 
-    def register_channel_sender(self, channel: str, sender) -> None:
-        return None
-
     def _initialize_command_runtime(self) -> None:
         self.command_queue = RuntimeCommandQueue()
         self.scheduler = RuntimeScheduler(

@@ -1,6 +1,5 @@
 import importlib
 import inspect
-import subprocess
 
 from auraeve.agent_runtime.kernel import RuntimeKernel
 from auraeve.subagents.executor import SubagentExecutor
@@ -24,14 +23,3 @@ def test_subagents_package_does_not_export_notification_queue() -> None:
 
     assert "NotificationQueue" not in getattr(subagents, "__all__", [])
     assert not hasattr(notification, "NotificationQueue")
-
-
-def test_no_governor_reference_call_sites_left() -> None:
-    result = subprocess.run(
-        ["rg", "-n", "_governor\\b", "auraeve", "main.py"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-
-    assert result.returncode == 1

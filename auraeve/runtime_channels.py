@@ -130,7 +130,6 @@ class ChannelRuntimeManager:
         channel = self._napcat_factory(channel_config, self.agent.command_queue)
         self._napcat_channel = channel
         self.bus.subscribe_outbound("napcat", channel.send)
-        self.agent.register_channel_sender("napcat", channel.send)
         self.channels.append(channel)
         self.channel_tasks["napcat"] = asyncio.create_task(channel.start())
         self._register_napcat_tools(channel)

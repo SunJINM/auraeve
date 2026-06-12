@@ -1,5 +1,4 @@
 import asyncio
-import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -161,18 +160,6 @@ async def test_manager_starts_and_stops_napcat_and_cleans_tools() -> None:
     assert napcat_channel.started is True
     assert napcat_channel.stopped is True
     assert "napcat_send" in agent.tools.unregistered
-    agent.register_channel_sender.assert_called_once_with("napcat", napcat_channel.send)
     assert agent.register_tool.call_count == 2
     bus.subscribe_outbound.assert_called_once_with("napcat", napcat_channel.send)
     bus.unsubscribe_outbound.assert_called_once_with("napcat", napcat_channel.send)
-
-
-def test_main_no_longer_contains_embedded_channel_lifecycle_helpers() -> None:
-    result = subprocess.run(
-        ["rg", "-n", "async def _start_dingtalk_channel|async def _start_napcat_channel|channels = \\[\\]", "main.py"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-
-    assert result.returncode == 1

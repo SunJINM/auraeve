@@ -24,10 +24,7 @@ from auraeve.stt import build_runtime_from_config
 from auraeve.llm.model_registry import ModelRegistry
 from auraeve.runtime_bootstrap import bootstrap_workspace_from_template
 from auraeve.memory_lifecycle import MemoryLifecycleService
-from auraeve.runtime_hot_reload import (
-    RuntimeHotApplyService,
-    sync_message_tool_settings,
-)
+from auraeve.runtime_hot_reload import RuntimeHotApplyService
 from auraeve.runtime_channels import ChannelRuntimeManager
 from auraeve.runtime_runner import AppRuntimeRunner
 
@@ -217,7 +214,6 @@ async def main(terminal_mode: bool = False) -> None:
             engine=engine,
             workspace=workspace,
             channel_runtime=channel_runtime.build_hot_reload_controls(),
-            message_tool_sync=lambda **kwargs: sync_message_tool_settings(agent, **kwargs),
             export_config=lambda: cfg.export_config(mask_sensitive=False),
         )
         config_svc = ConfigService(on_runtime_apply=hot_apply.apply)
