@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from auraeve.agent_runtime.kernel import RuntimeKernel
+from auraeve.providers.base import LLMResponse
 
 
 def test_sanitize_drops_mixed_silent_token_line() -> None:
@@ -116,3 +117,50 @@ async def test_heartbeat_meta_event_can_stay_silent(tmp_path: Path) -> None:
     )
 
     assert result is None
+
+
+@pytest.mark.asyncio
+async def test_first_prompt_generates_ai_session_title() -> None:
+    kernel = object.__new__(RuntimeKernel)
+    kernel._set_tool_context = MagicMock()
+    kernel._extract_attachments_legacy = AsyncMock(return_value=None)
+    kernel._sanitize_assistant_output = RuntimeKernel._sanitize_assistant_output
+    kernel.provider = MagicMock()
+    kernel.provider.chat = AsyncMock(
+        side_effect=[
+            LLMResponse(content="如何写好公众号", tool_calls=[], usage={}),
+        ]
+    )
+    kernel.sessions = MagicMock()
+    session = MagicMock()
+    session.key = "webui:chat-1"
+    session.messages = []
+    session.metadata = {}
+    session.get_history.return_value = []
+    kernel.sessions.get_or_create.return_value = session
+    kernel._resolve_runtime_tools = MagicMock(return_value=MagicMock(tool_names=[]))
+    kernel.assembler = MagicMock()
+    kernel.assembler.assemble = AsyncMock(
+        return_value=MagicMock(messages=[], compacted_messages=None, estimated_tokens=0)
+    )
+    kernel._orchestrator = MagicMock()
+    kernel._orchestrator.run = AsyncMock(
+        return_value=MagicMock(final_content="可以这样写。", tools_used=[], recovery_actions=[], messages=[])
+    )
+    kernel.memory_lifecycle = None
+    kernel.model = "model"
+    kernel.temperature = 0.0
+    kernel.max_tokens = 1000
+
+    await RuntimeKernel._process_message(
+        kernel,
+        session_key="webui:chat-1",
+        channel="webui",
+        sender_id="user",
+        chat_id="webui:chat-1",
+        content="你认为如何写好一篇微信公众号内容？",
+        metadata={"command_mode": "prompt"},
+    )
+
+    assert session.metadata["title"] == "如何写好公众号"
+    kernel.provider.chat.assert_awaited_once()

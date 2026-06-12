@@ -52,7 +52,7 @@ export function SessionSwitcher() {
             <button
               type="button"
               onClick={() => {
-                createSession()
+                void createSession()
                 setOpen(false)
               }}
               className="row-btn flex w-full items-center gap-2 rounded-[10px] px-2.5 py-2 text-left text-[13px] font-medium"
@@ -92,7 +92,7 @@ export function SessionSwitcher() {
                       <button
                         type="button"
                         aria-label="删除会话"
-                        onClick={() => deleteSession(s.key)}
+                        onClick={() => void deleteSession(s.key)}
                         className="grid h-7 w-7 shrink-0 place-items-center rounded-lg opacity-0 transition-opacity hover:bg-[color-mix(in_srgb,var(--danger)_12%,transparent)] group-hover:opacity-100"
                         style={{ color: 'var(--text-tertiary)' }}
                       >

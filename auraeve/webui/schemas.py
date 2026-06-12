@@ -88,6 +88,26 @@ class ChatTranscriptHistoryResponse(BaseModel):
     blocks: list[TranscriptBlock] = Field(default_factory=list)
 
 
+class ChatSessionMeta(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    key: str = Field(min_length=1)
+    title: str = "新对话"
+    createdAt: int = Field(ge=0)
+    updatedAt: int = Field(ge=0)
+
+
+class ChatSessionsResponse(BaseModel):
+    sessions: list[ChatSessionMeta] = Field(default_factory=list)
+
+
+class ChatSessionCreateResponse(BaseModel):
+    session: ChatSessionMeta
+
+
+class ChatSessionDeleteResponse(BaseModel):
+    ok: bool
+
+
 class ChatTranscriptBlockEvent(BaseModel):
     model_config = ConfigDict(extra="forbid")
     type: Literal["transcript.block"] = "transcript.block"

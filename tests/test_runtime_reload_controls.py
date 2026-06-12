@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import sys
+import types
+from types import SimpleNamespace
 from unittest.mock import MagicMock, call
 
 import pytest
@@ -73,6 +76,63 @@ async def test_kernel_reload_delegates_to_component_runtime_interfaces() -> None
         ]
     )
     kernel._orchestrator.apply_runtime_controls.assert_called_once_with(token_budget=60_000)
+
+
+@pytest.mark.asyncio
+async def test_kernel_reload_llm_models_replaces_live_provider_and_model(monkeypatch: pytest.MonkeyPatch) -> None:
+    kernel = object.__new__(RuntimeKernel)
+    kernel._reload_lock = asyncio.Lock()
+    kernel.provider = SimpleNamespace(name="old-provider")
+    kernel.model = "gpt-4o-mini"
+    kernel.temperature = 0.7
+    kernel.max_tokens = 8192
+    kernel.thinking_budget_tokens = None
+    kernel._runner = MagicMock()
+    kernel._orchestrator = MagicMock()
+    kernel._subagent_executor = MagicMock()
+    kernel._register_default_tools = MagicMock()
+    new_provider = SimpleNamespace(name="new-provider")
+    llm_models = [
+        {
+            "id": "main",
+            "label": "主模型",
+            "enabled": True,
+            "isPrimary": True,
+            "model": "gpt-4.1-mini",
+            "apiBase": "https://api.example.com/v1",
+            "apiKey": "sk-test",
+            "extraHeaders": {},
+            "maxTokens": 4096,
+            "temperature": 0.2,
+            "thinkingBudgetTokens": 128,
+            "capabilities": {
+                "imageInput": True,
+                "audioInput": False,
+                "documentInput": True,
+                "toolCalling": True,
+                "streaming": True,
+            },
+        }
+    ]
+
+    fake_openai_provider = types.ModuleType("auraeve.providers.openai_provider")
+    fake_openai_provider.build_openai_provider_from_model_card = MagicMock(return_value=new_provider)
+    monkeypatch.setitem(sys.modules, "auraeve.providers.openai_provider", fake_openai_provider)
+
+    result = await RuntimeKernel.reload_runtime_config(kernel, {"LLM_MODELS": llm_models})
+
+    assert result == {"applied": ["LLM_MODELS"], "requiresRestart": [], "issues": []}
+    assert kernel.provider is new_provider
+    assert kernel.model == "gpt-4.1-mini"
+    assert kernel.temperature == 0.2
+    assert kernel.max_tokens == 4096
+    assert kernel.thinking_budget_tokens == 128
+    assert kernel._runner._provider is new_provider
+    assert kernel._runner._thinking_budget_tokens == 128
+    assert kernel._orchestrator._provider is new_provider
+    assert kernel._subagent_executor._provider is new_provider
+    assert kernel._subagent_executor._model == "gpt-4.1-mini"
+    kernel._register_default_tools.assert_called_once()
 
 
 @pytest.mark.asyncio

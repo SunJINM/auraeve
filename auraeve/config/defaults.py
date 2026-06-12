@@ -11,7 +11,7 @@ def build_defaults() -> dict[str, Any]:
         "DINGTALK_CLIENT_ID": "",
         "DINGTALK_CLIENT_SECRET": "",
         "DINGTALK_ALLOW_FROM": [],
-        "NAPCAT_ENABLED": True,
+        "NAPCAT_ENABLED": False,
         "NAPCAT_WS_URL": "ws://127.0.0.1:3001",
         "NAPCAT_ACCESS_TOKEN": "",
         "NAPCAT_ALLOW_FROM": [],

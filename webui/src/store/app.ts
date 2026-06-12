@@ -1,11 +1,8 @@
 import { create } from 'zustand'
+import { chatApi } from '../api/client'
+import type { ChatSessionMeta } from '../api/client'
 
-export interface SessionMeta {
-  key: string
-  title: string
-  createdAt: number
-  updatedAt: number
-}
+export type SessionMeta = ChatSessionMeta
 
 interface AppState {
   // 主题
@@ -21,26 +18,12 @@ interface AppState {
   // 会话
   sessionKey: string
   sessions: SessionMeta[]
+  loadSessions: () => Promise<void>
   setSessionKey: (k: string) => void
   switchSession: (k: string) => void
-  createSession: () => void
-  deleteSession: (k: string) => void
+  createSession: () => Promise<void>
+  deleteSession: (k: string) => Promise<void>
   touchSession: (k: string, patch: Partial<Pick<SessionMeta, 'title' | 'updatedAt'>>) => void
-}
-
-const DEFAULT_TITLE = '新对话'
-
-function persistSessions(sessions: SessionMeta[]) {
-  localStorage.setItem('webui_sessions', JSON.stringify(sessions))
-}
-
-function sessionBase(key: string): string {
-  const parts = key.split(':')
-  return parts.length >= 2 ? `${parts[0]}:${parts[1]}` : key || 'webui:sjj'
-}
-
-function newKey(base: string): string {
-  return `${base}:${Math.random().toString(36).slice(2, 10)}`
 }
 
 const initialSessionKey: string = (() => {
@@ -50,22 +33,9 @@ const initialSessionKey: string = (() => {
   return key
 })()
 
-const initialSessions: SessionMeta[] = (() => {
-  const raw = localStorage.getItem('webui_sessions')
-  if (raw) {
-    try {
-      const arr = JSON.parse(raw)
-      if (Array.isArray(arr) && arr.length > 0) return arr as SessionMeta[]
-    } catch {
-      /* ignore */
-    }
-  }
-  const seed: SessionMeta[] = [
-    { key: initialSessionKey, title: '默认对话', createdAt: Date.now(), updatedAt: Date.now() },
-  ]
-  persistSessions(seed)
-  return seed
-})()
+const initialSessions: SessionMeta[] = [
+  { key: initialSessionKey, title: '默认对话', createdAt: Date.now(), updatedAt: Date.now() },
+]
 
 export const useAppStore = create<AppState>((set) => ({
   dark: localStorage.getItem('theme') === 'dark',
@@ -81,6 +51,7 @@ export const useAppStore = create<AppState>((set) => ({
   authed: !!localStorage.getItem('webui_token'),
   setToken: (t) => {
     localStorage.setItem('webui_token', t)
+    localStorage.removeItem('webui_sessions')
     set({ token: t, authed: true })
   },
   logout: () => {
@@ -90,6 +61,15 @@ export const useAppStore = create<AppState>((set) => ({
 
   sessionKey: initialSessionKey,
   sessions: initialSessions,
+
+  loadSessions: async () => {
+    const res = await chatApi.sessions()
+    const sessions = res.sessions.length > 0 ? res.sessions : initialSessions
+    const current = localStorage.getItem('webui_session_key') || initialSessionKey
+    const sessionKey = sessions.some((item) => item.key === current) ? current : sessions[0].key
+    localStorage.setItem('webui_session_key', sessionKey)
+    set({ sessions, sessionKey })
+  },
 
   setSessionKey: (sessionKey) => {
     localStorage.setItem('webui_session_key', sessionKey)
@@ -103,36 +83,25 @@ export const useAppStore = create<AppState>((set) => ({
       return { sessionKey: key }
     }),
 
-  createSession: () =>
-    set((s) => {
-      const key = newKey(sessionBase(s.sessionKey))
-      const meta: SessionMeta = { key, title: DEFAULT_TITLE, createdAt: Date.now(), updatedAt: Date.now() }
-      const sessions = [meta, ...s.sessions]
-      persistSessions(sessions)
-      localStorage.setItem('webui_session_key', key)
-      return { sessions, sessionKey: key }
-    }),
+  createSession: async () => {
+    const res = await chatApi.createSession()
+    const meta = res.session
+    localStorage.setItem('webui_session_key', meta.key)
+    set((s) => ({ sessions: [meta, ...s.sessions.filter((item) => item.key !== meta.key)], sessionKey: meta.key }))
+  },
 
-  deleteSession: (key) =>
-    set((s) => {
-      let sessions = s.sessions.filter((x) => x.key !== key)
-      let sessionKey = s.sessionKey
-      if (sessions.length === 0) {
-        const fresh: SessionMeta = {
-          key: newKey(sessionBase(key)),
-          title: DEFAULT_TITLE,
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-        }
-        sessions = [fresh]
-        sessionKey = fresh.key
-      } else if (key === s.sessionKey) {
-        sessionKey = sessions[0].key
-      }
-      persistSessions(sessions)
-      localStorage.setItem('webui_session_key', sessionKey)
-      return { sessions, sessionKey }
-    }),
+  deleteSession: async (key) => {
+    await chatApi.deleteSession(key)
+    const current = useAppStore.getState()
+    let sessions = current.sessions.filter((item) => item.key !== key)
+    if (sessions.length === 0) {
+      const created = await chatApi.createSession()
+      sessions = [created.session]
+    }
+    const sessionKey = key === current.sessionKey ? sessions[0].key : current.sessionKey
+    localStorage.setItem('webui_session_key', sessionKey)
+    set({ sessions, sessionKey })
+  },
 
   touchSession: (key, patch) =>
     set((s) => {
@@ -144,7 +113,6 @@ export const useAppStore = create<AppState>((set) => ({
         return { ...x, ...patch }
       })
       if (!changed) return {}
-      persistSessions(sessions)
       return { sessions }
     }),
 }))

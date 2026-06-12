@@ -1,6 +1,7 @@
 """会话管理：将对话历史持久化为 JSONL 文件。"""
 
 import json
+import uuid
 from pathlib import Path
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -77,12 +78,16 @@ class SessionManager:
 
     def _load(self, key: str) -> Session | None:
         path = self._get_session_path(key)
+        return self._load_from_path(path, fallback_key=key)
+
+    def _load_from_path(self, path: Path, *, fallback_key: str | None = None) -> Session | None:
         if not path.exists():
             return None
         try:
             messages = []
             metadata = {}
             created_at = None
+            updated_at = None
             last_consolidated = 0
             with open(path) as f:
                 for line in f:
@@ -93,22 +98,26 @@ class SessionManager:
                     if data.get("_type") == "metadata":
                         metadata = data.get("metadata", {})
                         created_at = datetime.fromisoformat(data["created_at"]) if data.get("created_at") else None
+                        updated_at = datetime.fromisoformat(data["updated_at"]) if data.get("updated_at") else None
                         last_consolidated = data.get("last_consolidated", 0)
                     else:
                         messages.append(data)
+            key = str(metadata.get("key") or fallback_key or self._key_from_legacy_path(path))
             return Session(
                 key=key,
                 messages=messages,
                 created_at=created_at or datetime.now(),
+                updated_at=updated_at or created_at or datetime.now(),
                 metadata=metadata,
                 last_consolidated=last_consolidated
             )
         except Exception as e:
-            logger.warning(f"加载会话 {key} 失败：{e}")
+            logger.warning(f"加载会话 {path} 失败：{e}")
             return None
 
     def save(self, session: Session) -> None:
         path = self._get_session_path(session.key)
+        session.metadata.setdefault("key", session.key)
         with open(path, "w") as f:
             metadata_line = {
                 "_type": "metadata",
@@ -124,3 +133,42 @@ class SessionManager:
 
     def invalidate(self, key: str) -> None:
         self._cache.pop(key, None)
+
+    def create(self, prefix: str = "webui") -> Session:
+        key = f"{prefix}:{uuid.uuid4().hex[:12]}"
+        session = Session(key=key, metadata={"key": key, "title": "新对话"})
+        self.save(session)
+        return session
+
+    def delete(self, key: str) -> bool:
+        self.invalidate(key)
+        path = self._get_session_path(key)
+        if not path.exists():
+            return False
+        path.unlink()
+        return True
+
+    def list_sessions(self, prefix: str | None = None) -> list[Session]:
+        sessions: list[Session] = []
+        seen: set[str] = set()
+        for cached in self._cache.values():
+            if prefix is None or cached.key.startswith(f"{prefix}:"):
+                sessions.append(cached)
+                seen.add(cached.key)
+        for path in self.sessions_dir.glob("*.jsonl"):
+            session = self._load_from_path(path)
+            if session is None or session.key in seen:
+                continue
+            if prefix is not None and not session.key.startswith(f"{prefix}:"):
+                continue
+            sessions.append(session)
+            seen.add(session.key)
+        return sorted(sessions, key=lambda item: item.updated_at, reverse=True)
+
+    @staticmethod
+    def _key_from_legacy_path(path: Path) -> str:
+        stem = path.stem
+        if "_" not in stem:
+            return stem
+        head, tail = stem.split("_", 1)
+        return f"{head}:{tail}"

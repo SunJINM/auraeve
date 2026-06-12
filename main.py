@@ -193,6 +193,7 @@ async def main(terminal_mode: bool = False) -> None:
         chat_svc = ChatService(
             session_manager=agent.sessions,
             command_queue=agent.command_queue,
+            runtime_config_applier=agent.reload_runtime_config,
         )
 
         static_dir = Path(__file__).parent / "webui" / "dist"

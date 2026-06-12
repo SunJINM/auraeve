@@ -14,8 +14,8 @@ import { chatApi } from '../api/client'
 import { useAppStore } from '../store/app'
 
 export function ChatPage() {
-  const { sessionKey, logout, sessions, touchSession } = useAppStore()
-  const { blocks, run, loading, loadedKey, load, applyEvent } = useChatTranscript(sessionKey)
+  const { sessionKey, logout, loadSessions, touchSession } = useAppStore()
+  const { blocks, run, loading, load, applyEvent } = useChatTranscript(sessionKey)
   // 前端是否仍在平滑铺开文本；与 sending 合并为「活动中」，让指示器持续到展示结束
   const animating = useSmoothActivity()
   const [input, setInput] = useState('')
@@ -35,6 +35,7 @@ export function ChatPage() {
   const stickRef = useRef(true)
 
   useEffect(() => {
+    void loadSessions()
     void load()
 
     const unsubscribe = chatApi.transcriptEvents(
@@ -45,6 +46,7 @@ export function ChatPage() {
         if (event.type === 'transcript.done') {
           setSending(false)
           void load()
+          void loadSessions()
         }
       },
       // 断线重连后全量 resync，补回断连期间丢失的 delta/done，避免卡在「思考中」
@@ -52,7 +54,7 @@ export function ChatPage() {
     )
 
     return unsubscribe
-  }, [applyEvent, load, sessionKey])
+  }, [applyEvent, load, loadSessions, sessionKey])
 
   // 切换会话时重置首屏定位标记
   useEffect(() => {
@@ -127,18 +129,6 @@ export function ChatPage() {
       setFirstOutputAt((prev) => prev ?? Date.now())
     }
   }, [active, blocks])
-
-  // 用首条用户消息自动命名会话（仅当 blocks 确属当前会话，避免切换时把旧消息带过来）
-  useEffect(() => {
-    if (loadedKey !== sessionKey) return
-    const meta = sessions.find((s) => s.key === sessionKey)
-    if (!meta || (meta.title !== '新对话' && meta.title !== '默认对话')) return
-    const firstUser = blocks.find((b) => b.type === 'user')
-    if (firstUser && 'content' in firstUser && firstUser.content.trim()) {
-      const title = firstUser.content.trim().replace(/\s+/g, ' ').slice(0, 24)
-      touchSession(sessionKey, { title })
-    }
-  }, [blocks, sessionKey, sessions, touchSession, loadedKey])
 
   const send = async () => {
     const text = input.trim()

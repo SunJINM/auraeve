@@ -7,7 +7,7 @@
       "isPrimary": true,
       "model": "gpt-4o-mini",
       "apiBase": null,
-      "apiKey": "YOUR_LLM_API_KEY",
+      "apiKey": "",
       "extraHeaders": {},
       "maxTokens": 8192,
       "temperature": 0.7,
@@ -45,7 +45,6 @@
   "NAPCAT_ENABLED": false,
   "NAPCAT_WS_URL": "ws://127.0.0.1:3001",
   "NAPCAT_ACCESS_TOKEN": "",
-  "NAPCAT_OWNER_QQ": "",
   "NAPCAT_ALLOW_FROM": [],
   "NAPCAT_ALLOW_GROUPS": [],
   "ASR": {
@@ -104,12 +103,6 @@
   "BRAVE_API_KEY": "",
   "EXEC_TIMEOUT": 60,
   "RESTRICT_TO_WORKSPACE": false,
-  "EXEC_HOST": "host",
-  "EXECUTOR_URL": "http://127.0.0.1:18791",
-  "EXECUTOR_TOKEN": "",
-  "EXECUTOR_WORKSPACE_PATH": "",
-  "EXECUTOR_HOST": "0.0.0.0",
-  "EXECUTOR_PORT": 18791,
   "MCP": {
     "enabled": true,
     "reloadPolicy": "diff",
@@ -141,8 +134,6 @@
   "SKILLS_LIMIT_MAX_PROMPT_CHARS": 30000,
   "TOKEN_BUDGET": 120000,
   "USE_UNIFIED_TOOL_ASSEMBLER": true,
-  "WEBUI_OWNER_USER_ID": "",
   "MAX_GLOBAL_SUBAGENT_CONCURRENT": 10,
-  "MAX_SESSION_SUBAGENT_CONCURRENT": 8,
-  "OWNER_QQ": ""
+  "MAX_SESSION_SUBAGENT_CONCURRENT": 8
 }

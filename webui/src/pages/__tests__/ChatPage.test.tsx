@@ -7,6 +7,7 @@ vi.mock('../../store/app', () => ({
   useAppStore: () => ({
     sessionKey: 'webui:test',
     sessions: [{ key: 'webui:test', title: '默认对话', createdAt: 0, updatedAt: 0 }],
+    loadSessions: vi.fn().mockResolvedValue(undefined),
     setSessionKey: vi.fn(),
     switchSession: vi.fn(),
     createSession: vi.fn(),

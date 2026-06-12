@@ -160,6 +160,7 @@ class RunOrchestrator:
                         recovery_actions=recovery_actions,
                     )
                 recovery_actions.append(f"ProviderAPIError backoff=5s attempt={attempt}")
+                logger.warning(f"[orchestrator] provider api error, retry in 5s: {exc}")
                 await asyncio.sleep(5)
             except ContextOverflowError as exc:
                 if compaction_attempted:
@@ -209,6 +210,7 @@ class RunOrchestrator:
                         recovery_actions=recovery_actions,
                     )
                 recovery_actions.append(f"LLMCallError backoff=5s attempt={attempt}")
+                logger.warning(f"[orchestrator] llm call failed, retry in 5s: {type(exc).__name__}: {exc}")
                 await asyncio.sleep(5)
 
         return OrchestratorResult(

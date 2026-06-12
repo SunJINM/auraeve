@@ -7,7 +7,7 @@ import json
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, AsyncIterator
+from typing import Any, AsyncIterator, Awaitable, Callable
 
 from loguru import logger
 
@@ -50,9 +50,11 @@ class ChatService:
         self,
         session_manager: SessionManager,
         command_queue: RuntimeCommandQueue,
+        runtime_config_applier: Callable[[dict[str, Any]], Awaitable[dict[str, Any]]] | None = None,
     ) -> None:
         self._sm = session_manager
         self._command_queue = command_queue
+        self._runtime_config_applier = runtime_config_applier
         # run_id -> RunState
         self._runs: dict[str, RunState] = {}
         # idempotency_key -> run_id （防重入）
@@ -62,6 +64,11 @@ class ChatService:
         # obs 订阅 ID
         self._obs_sub_id: str | None = None
         self._obs_task: asyncio.Task | None = None
+
+    async def apply_runtime_config(self, config: dict[str, Any]) -> dict[str, Any]:
+        if self._runtime_config_applier is None:
+            return {"applied": [], "requiresRestart": list(config.keys()), "issues": []}
+        return await self._runtime_config_applier(config)
 
     # ─── 历史 ──────────────────────────────────────────────────────
 
@@ -82,6 +89,22 @@ class ChatService:
         session = self._sm.get_or_create(session_key)
         msgs = session.messages[-limit:] if limit else session.messages
         return [dict(msg) for msg in msgs]
+
+    def list_sessions(self) -> list[dict[str, Any]]:
+        sessions = self._sm.list_sessions(prefix="webui")
+        if not sessions:
+            session = self._sm.get_or_create("webui:sjj")
+            session.metadata.setdefault("title", "默认对话")
+            self._sm.save(session)
+            sessions = [session]
+        return [self._session_meta_payload(session) for session in sessions]
+
+    def create_session(self) -> dict[str, Any]:
+        session = self._sm.create(prefix="webui")
+        return self._session_meta_payload(session)
+
+    def delete_session(self, session_key: str) -> bool:
+        return self._sm.delete(session_key)
 
     # ─── 发送 ──────────────────────────────────────────────────────
 
@@ -544,3 +567,18 @@ class ChatService:
                 "aborted": state.aborted,
             }
         return {"runId": None, "status": "idle", "done": True, "aborted": False}
+
+    @staticmethod
+    def _session_meta_payload(session) -> dict[str, Any]:
+        title = str((session.metadata or {}).get("title") or "").strip()
+        if not title:
+            for msg in session.messages:
+                if msg.get("role") == "user" and str(msg.get("content") or "").strip():
+                    title = str(msg.get("content") or "").strip().replace("\n", " ")[:24]
+                    break
+        return {
+            "key": session.key,
+            "title": title or "新对话",
+            "createdAt": int(session.created_at.timestamp() * 1000),
+            "updatedAt": int(session.updated_at.timestamp() * 1000),
+        }

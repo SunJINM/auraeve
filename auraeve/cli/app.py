@@ -102,14 +102,8 @@ def _ensure_runtime_ready() -> cfg.ConfigSnapshot:
     snapshot = cfg.read_snapshot()
     if not snapshot.exists:
         created = cfg.ensure_config_file()
-        required_issues = _required_config_issues(created)
         print(f"Config initialized: {created.path}")
-        if required_issues:
-            print("Please fill required config values and restart:")
-            for issue in required_issues:
-                print(f"- {issue.get('path')}: {issue.get('message')}")
-            print("Tip: update the primary model apiKey in LLM_MODELS")
-        raise typer.Exit(code=1)
+        return created
     if not snapshot.valid:
         print(f"Config invalid: {snapshot.path}")
         for issue in [*snapshot.issues, *snapshot.warnings]:
@@ -120,15 +114,7 @@ def _ensure_runtime_ready() -> cfg.ConfigSnapshot:
 
 
 def _ensure_runtime_for_run() -> None:
-    snapshot = _ensure_runtime_ready()
-    required_issues = _required_config_issues(snapshot)
-    if required_issues:
-        print(f"Config incomplete: {snapshot.path}")
-        print("Please fill required config values and restart:")
-        for issue in required_issues:
-            print(f"- {issue.get('path')}: {issue.get('message')}")
-        print("Tip: update the primary model apiKey in LLM_MODELS")
-        raise typer.Exit(code=1)
+    _ensure_runtime_ready()
 
 
 def _parse_config_value(raw: str, strict_json: bool) -> object:

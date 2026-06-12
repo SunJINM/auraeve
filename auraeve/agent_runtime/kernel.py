@@ -19,6 +19,7 @@ from auraeve.agent_runtime.command_types import QueuedCommand
 from auraeve.agent_runtime.runtime_scheduler import RuntimeScheduler
 from auraeve.bus.events import OutboundMessage
 from auraeve.bus.queue import OutboundDispatcher
+from auraeve.llm.model_registry import ModelRegistry
 from auraeve.providers.base import LLMProvider
 from auraeve.agent.tools.registry import ToolRegistry
 from auraeve.agent.tools.agent_tool import AgentTool
@@ -374,6 +375,14 @@ class RuntimeKernel:
                 self.policy.apply_runtime_policy(session_policy=new_config.get("SESSION_TOOL_POLICY") or {})
                 applied.append("SESSION_TOOL_POLICY")
 
+            if "LLM_MODELS" in new_config:
+                try:
+                    self._reload_primary_model(list(new_config.get("LLM_MODELS") or []))
+                    applied.append("LLM_MODELS")
+                except Exception as e:
+                    issues.append({"code": "llm_models_reload_failed", "message": str(e)})
+                    requires_restart.append("LLM_MODELS")
+
             if "MCP" in new_config:
                 try:
                     result = await self._mcp_runtime.reload(new_config.get("MCP") or {})
@@ -396,6 +405,36 @@ class RuntimeKernel:
             "requiresRestart": sorted(set(requires_restart)),
             "issues": issues,
         }
+
+    def _reload_primary_model(self, raw_models: list[dict]) -> None:
+        from auraeve.providers.openai_provider import build_openai_provider_from_model_card
+
+        primary = ModelRegistry(raw_models).primary()
+        primary_raw = next(
+            item
+            for item in raw_models
+            if isinstance(item, dict) and str(item.get("id") or "") == primary.id
+        )
+        provider = build_openai_provider_from_model_card(primary_raw)
+
+        self.provider = provider
+        self.model = primary.model
+        self.temperature = primary.temperature
+        self.max_tokens = max(1, primary.max_tokens)
+        self.thinking_budget_tokens = primary.thinking_budget_tokens or None
+
+        self._runner._provider = provider
+        self._runner._thinking_budget_tokens = self.thinking_budget_tokens
+        self._orchestrator._provider = provider
+
+        if hasattr(self, "_subagent_executor"):
+            self._subagent_executor._provider = provider
+            self._subagent_executor._model = self.model
+            self._subagent_executor._temperature = self.temperature
+            self._subagent_executor._max_tokens = self.max_tokens
+            self._subagent_executor._thinking_budget_tokens = self.thinking_budget_tokens or 0
+
+        self._register_default_tools()
 
     def _set_tool_context(self, tools: ToolRegistry, channel: str, chat_id: str, thread_id: str) -> None:
         agent_tool = tools.get("agent")
@@ -571,6 +610,16 @@ class RuntimeKernel:
             sanitized_content = self.UNEXPECTED_SILENT_FALLBACK
         persist_content = sanitized_content if sanitized_content is not None else SILENT_REPLY_TOKEN
 
+        should_generate_title = (
+            not is_meta_event
+            and not str((session.metadata or {}).get("title") or "").strip()
+            and not any(msg.get("role") == "user" for msg in session.messages)
+        )
+        if should_generate_title:
+            generated_title = await self._generate_session_title(content)
+            if generated_title:
+                session.metadata["title"] = generated_title
+
         if not is_meta_event:
             session.add_message(
                 "user",
@@ -627,3 +676,35 @@ class RuntimeKernel:
         if len(text) <= limit:
             return text
         return f"{text[:limit]}…"
+
+    async def _generate_session_title(self, user_content: str) -> str:
+        prompt = str(user_content or "").strip()
+        if not prompt:
+            return ""
+        try:
+            response = await self.provider.chat(
+                [
+                    {
+                        "role": "system",
+                        "content": (
+                            "你是会话标题生成器。根据用户第一句话生成一个简短中文标题，"
+                            "不超过12个汉字，不要引号，不要句号，不要解释。"
+                        ),
+                    },
+                    {"role": "user", "content": prompt[:1000]},
+                ],
+                tools=None,
+                model=self.model,
+                max_tokens=32,
+                temperature=0.2,
+            )
+            title = str(response.content or "").strip()
+        except Exception as exc:
+            logger.debug(f"生成会话标题失败：{exc}")
+            return ""
+        title = title.strip().strip('"').strip("'").strip("“”‘’`").strip()
+        for sep in ("\n", "\r", "。", "：", ":", " - ", "—"):
+            if sep in title:
+                title = title.split(sep, 1)[0].strip()
+        title = " ".join(title.split())
+        return title[:24]

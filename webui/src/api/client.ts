@@ -9,9 +9,9 @@ function token() {
   return localStorage.getItem('webui_token') || ''
 }
 
-function headers(): Record<string, string> {
+function headers(authToken?: string): Record<string, string> {
   const h: Record<string, string> = { 'Content-Type': 'application/json' }
-  const t = token()
+  const t = authToken ?? token()
   if (t) h['X-WEBUI-TOKEN'] = t
   return h
 }
@@ -26,10 +26,10 @@ function webuiIdentity() {
   return { userId, displayName }
 }
 
-async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
+async function req<T>(method: string, path: string, body?: unknown, authToken?: string): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     method,
-    headers: headers(),
+    headers: headers(authToken),
     body: body !== undefined ? JSON.stringify(body) : undefined,
   })
   if (res.status === 401) throw new Error('UNAUTHORIZED')
@@ -51,7 +51,50 @@ export interface ChatAbortResp {
   status: 'aborted' | 'not_found'
 }
 
+export interface ChatSessionMeta {
+  key: string
+  title: string
+  createdAt: number
+  updatedAt: number
+}
+
+export interface SetupStatusResp {
+  configured: boolean
+  model: string
+  apiBase: string
+}
+
+export interface SetupModelsResp {
+  models: string[]
+}
+
+export interface SetupPayload {
+  apiBase: string
+  apiKey: string
+  model: string
+}
+
+export const setupApi = {
+  status: (authToken?: string) =>
+    req<SetupStatusResp>('GET', '/setup/status', undefined, authToken),
+
+  models: (payload: Pick<SetupPayload, 'apiBase' | 'apiKey'>, authToken?: string) =>
+    req<SetupModelsResp>('POST', '/setup/models', payload, authToken),
+
+  apply: (payload: SetupPayload, authToken?: string) =>
+    req<SetupStatusResp>('POST', '/setup/apply', payload, authToken),
+}
+
 export const chatApi = {
+  sessions: () =>
+    req<{ sessions: ChatSessionMeta[] }>('GET', '/chat/sessions'),
+
+  createSession: () =>
+    req<{ session: ChatSessionMeta }>('POST', '/chat/sessions'),
+
+  deleteSession: (sessionKey: string) =>
+    req<{ ok: boolean }>('DELETE', `/chat/sessions/${encodeURIComponent(sessionKey)}`),
+
   transcript: (sessionKey: string, limit = 200) =>
     req<ChatTranscriptHistoryResp>('GET', `/chat/transcript?sessionKey=${encodeURIComponent(sessionKey)}&limit=${limit}`),
 
