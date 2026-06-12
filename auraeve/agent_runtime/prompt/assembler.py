@@ -69,6 +69,17 @@ class PromptAssembler:
         if budget > 0:
             self._token_budget = budget
 
+    def apply_runtime_controls(
+        self,
+        *,
+        memory_window: int | None = None,
+        token_budget: int | None = None,
+    ) -> None:
+        if memory_window is not None:
+            self.set_memory_window(memory_window)
+        if token_budget is not None:
+            self.set_token_budget(token_budget)
+
     async def assemble(
         self,
         session_id: str,

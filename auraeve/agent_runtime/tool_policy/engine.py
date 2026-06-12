@@ -42,6 +42,17 @@ class ToolPolicyEngine:
         self._global_deny: frozenset[str] = frozenset(global_deny or set())
         self._session_policy: dict[str, dict] = session_policy or {}
 
+    def apply_runtime_policy(
+        self,
+        *,
+        global_deny: list[str] | set[str] | tuple[str, ...] | None = None,
+        session_policy: dict[str, dict] | None = None,
+    ) -> None:
+        if global_deny is not None:
+            self._global_deny = frozenset(global_deny)
+        if session_policy is not None:
+            self._session_policy = dict(session_policy)
+
     @staticmethod
     def infer_tool_group(tool_name: str) -> str:
         if tool_name.startswith("mcp_"):

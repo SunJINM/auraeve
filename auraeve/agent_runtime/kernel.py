@@ -365,13 +365,13 @@ class RuntimeKernel:
                 self._runner.apply_runtime_controls(runtime_loop_guard=new_config["RUNTIME_LOOP_GUARD"])
                 applied.append("RUNTIME_LOOP_GUARD")
             if "LLM_MEMORY_WINDOW" in new_config:
-                self.assembler.set_memory_window(int(new_config["LLM_MEMORY_WINDOW"]))
+                self.assembler.apply_runtime_controls(memory_window=int(new_config["LLM_MEMORY_WINDOW"]))
                 applied.append("LLM_MEMORY_WINDOW")
             if "GLOBAL_DENY_TOOLS" in new_config:
-                self.policy._global_deny = frozenset(new_config.get("GLOBAL_DENY_TOOLS") or [])
+                self.policy.apply_runtime_policy(global_deny=new_config.get("GLOBAL_DENY_TOOLS") or [])
                 applied.append("GLOBAL_DENY_TOOLS")
             if "SESSION_TOOL_POLICY" in new_config:
-                self.policy._session_policy = dict(new_config.get("SESSION_TOOL_POLICY") or {})
+                self.policy.apply_runtime_policy(session_policy=new_config.get("SESSION_TOOL_POLICY") or {})
                 applied.append("SESSION_TOOL_POLICY")
 
             if "MCP" in new_config:
@@ -386,9 +386,9 @@ class RuntimeKernel:
 
             if "TOKEN_BUDGET" in new_config:
                 budget = int(new_config["TOKEN_BUDGET"])
-                self.assembler.set_token_budget(budget)
+                self.assembler.apply_runtime_controls(token_budget=budget)
                 self._runner.apply_runtime_controls(token_budget=budget)
-                self._orchestrator.set_token_budget(budget)
+                self._orchestrator.apply_runtime_controls(token_budget=budget)
                 applied.append("TOKEN_BUDGET")
 
         return {

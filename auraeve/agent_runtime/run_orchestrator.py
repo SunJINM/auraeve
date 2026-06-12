@@ -62,6 +62,10 @@ class RunOrchestrator:
         if token_budget > 0:
             self._token_budget = token_budget
 
+    def apply_runtime_controls(self, *, token_budget: int | None = None) -> None:
+        if token_budget is not None:
+            self.set_token_budget(token_budget)
+
     async def run(
         self,
         messages: list[dict[str, Any]],
