@@ -20,7 +20,6 @@ from auraeve.agent_runtime.runtime_scheduler import RuntimeScheduler
 from auraeve.bus.events import OutboundMessage
 from auraeve.bus.queue import OutboundDispatcher
 from auraeve.providers.base import LLMProvider
-from auraeve.agent.engines.base import ContextEngine
 from auraeve.agent.legacy_todo_state import extract_latest_todos
 from auraeve.agent.tools.registry import ToolRegistry
 from auraeve.agent.tools.agent_tool import AgentTool
@@ -74,7 +73,7 @@ class RuntimeKernel:
         provider: LLMProvider,
         workspace: Path,
         sessions_dir: Path,
-        engine: ContextEngine,
+        memory_window: int = 50,
         model: str | None = None,
         max_iterations: int = 100,
         temperature: float = 0.7,
@@ -101,7 +100,6 @@ class RuntimeKernel:
         self.bus = bus
         self.provider = provider
         self.workspace = workspace
-        self.engine = engine
         self.model = model or provider.get_default_model()
         self.max_iterations = max_iterations
         self.temperature = temperature
@@ -133,9 +131,11 @@ class RuntimeKernel:
             session_policy=session_tool_policy,
         )
 
-        # Prompt 组装器（含 token 预算控制）
+        # Prompt 组装器（含 token 预算报告）
         self.assembler = PromptAssembler(
-            engine=self.engine,
+            workspace=workspace,
+            memory_window=memory_window,
+            execution_workspace=execution_workspace,
             token_budget=token_budget,
         )
         self._initialize_command_runtime()
@@ -169,7 +169,6 @@ class RuntimeKernel:
                 origin_channel=task.origin_channel or None,
                 origin_chat_id=task.origin_chat_id or None,
                 thread_id=f"sub:{task.task_id}",
-                engine=self.engine,
                 execution_workspace=task.worktree_path or self._execution_workspace,
                 task_mode="legacy_todo",
                 task_session_key=f"sub:{task.task_id}",
@@ -350,7 +349,6 @@ class RuntimeKernel:
             notify_channel=self._notify_channel,
             subagent_executor=self._subagent_executor,
             cron_service=self.cron_service,
-            engine=self.engine,
             execution_workspace=self._execution_workspace,
             task_mode="none",
             task_base_dir=self._task_base_dir,
@@ -377,12 +375,8 @@ class RuntimeKernel:
                 self._runner.apply_runtime_controls(runtime_loop_guard=new_config["RUNTIME_LOOP_GUARD"])
                 applied.append("RUNTIME_LOOP_GUARD")
             if "LLM_MEMORY_WINDOW" in new_config:
-                window = int(new_config["LLM_MEMORY_WINDOW"])
-                if hasattr(self.engine, "_memory_window"):
-                    setattr(self.engine, "_memory_window", window)
-                    applied.append("LLM_MEMORY_WINDOW")
-                else:
-                    requires_restart.append("LLM_MEMORY_WINDOW")
+                self.assembler.set_memory_window(int(new_config["LLM_MEMORY_WINDOW"]))
+                applied.append("LLM_MEMORY_WINDOW")
             if "GLOBAL_DENY_TOOLS" in new_config:
                 self.policy._global_deny = frozenset(new_config.get("GLOBAL_DENY_TOOLS") or [])
                 applied.append("GLOBAL_DENY_TOOLS")
@@ -401,11 +395,10 @@ class RuntimeKernel:
                     requires_restart.append("MCP")
 
             if "TOKEN_BUDGET" in new_config:
-                self.assembler._token_budget = int(new_config["TOKEN_BUDGET"])
-                if hasattr(self.engine, "token_budget"):
-                    setattr(self.engine, "token_budget", int(new_config["TOKEN_BUDGET"]))
-                self._runner.apply_runtime_controls(token_budget=int(new_config["TOKEN_BUDGET"]))
-                self._orchestrator.set_token_budget(int(new_config["TOKEN_BUDGET"]))
+                budget = int(new_config["TOKEN_BUDGET"])
+                self.assembler.set_token_budget(budget)
+                self._runner.apply_runtime_controls(token_budget=budget)
+                self._orchestrator.set_token_budget(budget)
                 applied.append("TOKEN_BUDGET")
 
         return {
@@ -588,10 +581,6 @@ class RuntimeKernel:
             available_tools=set(runtime_tools.tool_names),
             runtime_instruction=runtime_instruction or "",
         )
-        if assemble_result.compacted_messages is not None:
-            session.replace_history(assemble_result.compacted_messages)
-            logger.info(f"上下文已压缩，估算 token：{assemble_result.estimated_tokens}")
-
         # 通过统一编排器执行（含恢复策略）
         recovery_result = await self._orchestrator.run(
             messages=assemble_result.messages,
@@ -636,7 +625,6 @@ class RuntimeKernel:
                             tools_used=tools_used if tools_used else None)
         self.sessions.save(session)
 
-        asyncio.create_task(self.engine.after_turn(session.key, session.get_history()))
         if self.memory_lifecycle is not None and not is_meta_event:
             asyncio.create_task(
                 self.memory_lifecycle.record_turn(

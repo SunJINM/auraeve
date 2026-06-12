@@ -72,7 +72,6 @@ def build_tool_registry(
     origin_channel: str | None = None,
     origin_chat_id: str | None = None,
     thread_id: str | None = None,
-    engine=None,
     execution_workspace: str | None = None,
     execution_dispatcher: ExecutionDispatcher | None = None,
     task_mode: str = "legacy_todo",

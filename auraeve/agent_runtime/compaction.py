@@ -1,17 +1,22 @@
 """
-上下文压缩算法。
+上下文压缩算法与统一压缩入口。
 
 实现：
 - Token 估算（tiktoken 精确 / char/4 降级）
 - 分块（按 token 预算）
 - LLM 顺序摘要 + 多块合并
 - 标识符保全（UUID、哈希、API密钥等不得缩写）
+
+统一入口（system 消息切分在此处理，调用方不再各自切分）：
+- proactive_compact()：先做工具结果清理，仍超阈值再 LLM 摘要兜底
+- compact_history_for_overflow()：上下文溢出异常恢复时的强制摘要
 """
 
 from __future__ import annotations
 
 import json
 import os
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -20,8 +25,28 @@ from loguru import logger
 if TYPE_CHECKING:
     from auraeve.providers.base import LLMProvider
 
-from auraeve.agent.engines.base import CompactResult
 from auraeve.providers.base import backfill_tool_context_start
+
+
+@dataclass
+class CompactResult:
+    """compact_messages() 返回值。"""
+    ok: bool
+    compacted: bool
+    compacted_messages: list[dict] | None = None
+    tokens_before: int = 0
+    tokens_after: int = 0
+    summary: str = ""
+    reason: str = ""
+
+
+@dataclass
+class ProactiveCompactOutcome:
+    """proactive_compact() 返回值。stage 标识实际执行到哪一层。"""
+    messages: list[dict]
+    stage: str  # "none" | "tools_cleared" | "summarized"
+    tokens_before: int = 0
+    tokens_after: int = 0
 
 # ── 常量 ─────────────────────────────────────────────────────
 
@@ -87,8 +112,8 @@ _CL100K_SPECIAL_TOKENS = {
 
 
 def _resolve_project_root() -> Path:
-    # compaction.py -> engines -> agent -> auraeve -> project root
-    return Path(__file__).resolve().parents[4]
+    # compaction.py -> agent_runtime -> auraeve(package) -> project root
+    return Path(__file__).resolve().parents[2]
 
 
 def _resolve_local_tiktoken_file() -> Path:
@@ -384,3 +409,75 @@ async def compact_messages(
         tokens_after=tokens_after,
         summary=final_summary,
     )
+
+
+# ── 统一压缩入口 ──────────────────────────────────────────────
+
+
+def _split_system(messages: list[dict]) -> tuple[list[dict], list[dict]]:
+    system_msgs = [m for m in messages if m.get("role") == "system"]
+    history = [m for m in messages if m.get("role") != "system"]
+    return system_msgs, history
+
+
+async def proactive_compact(
+    messages: list[dict],
+    budget: int,
+    provider: "LLMProvider",
+) -> ProactiveCompactOutcome:
+    """主动上下文压缩（Anthropic 上下文工程）：接近预算阈值时先做工具结果清理，
+    仍超阈值再做 LLM 摘要兜底。只压缩送入模型的上下文，不影响 transcript。"""
+    if budget <= 0 or not should_compact(messages, budget):
+        return ProactiveCompactOutcome(messages=messages, stage="none")
+
+    tokens_before = estimate_tokens(messages)
+    system_msgs, history = _split_system(messages)
+
+    # 第一层：工具结果清理（可恢复、无需 LLM）
+    cleared = clear_tool_results(history)
+    if not should_compact(system_msgs + cleared, budget):
+        return ProactiveCompactOutcome(
+            messages=system_msgs + cleared,
+            stage="tools_cleared",
+            tokens_before=tokens_before,
+            tokens_after=estimate_tokens(system_msgs + cleared),
+        )
+
+    # 第二层：LLM 摘要兜底
+    try:
+        result = await compact_messages(cleared, budget, provider)
+        if result.compacted and result.compacted_messages:
+            return ProactiveCompactOutcome(
+                messages=system_msgs + result.compacted_messages,
+                stage="summarized",
+                tokens_before=result.tokens_before,
+                tokens_after=result.tokens_after,
+            )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"[compaction] 主动压缩 LLM 摘要失败: {exc}")
+    return ProactiveCompactOutcome(
+        messages=system_msgs + cleared,
+        stage="tools_cleared",
+        tokens_before=tokens_before,
+        tokens_after=estimate_tokens(system_msgs + cleared),
+    )
+
+
+async def compact_history_for_overflow(
+    messages: list[dict],
+    budget: int,
+    provider: "LLMProvider",
+) -> list[dict] | None:
+    """上下文溢出（provider 抛 ContextOverflowError）后的强制摘要恢复。
+
+    返回压缩后的完整消息列表（含 system）；无法压缩时返回 None。"""
+    try:
+        system_msgs, history = _split_system(messages)
+        if not history:
+            return None
+        result = await compact_messages(history, budget, provider)
+        if result.compacted and result.compacted_messages:
+            return system_msgs + result.compacted_messages
+    except Exception as exc:  # noqa: BLE001
+        logger.error(f"[compaction] 溢出恢复压缩失败: {exc}")
+    return None

@@ -278,8 +278,6 @@ class SubagentExecutor:
         self._loops[task.task_id] = loop
 
         result = await loop.run(task, history_messages=history_messages, steer_queue=steer_queue)
-        if loop.compacted_messages is not None:
-            session.replace_history(loop.compacted_messages)
         session.add_message("user", task.goal)
         for message in loop.messages:
             role = str(message.get("role") or "")

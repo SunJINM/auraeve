@@ -214,16 +214,6 @@ class RunOrchestrator:
         )
 
     async def _compact_messages(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]] | None:
-        try:
-            from auraeve.agent.engines.compaction import compact_messages
+        from auraeve.agent_runtime.compaction import compact_history_for_overflow
 
-            system_msgs = [m for m in messages if m.get("role") == "system"]
-            history_msgs = [m for m in messages if m.get("role") != "system"]
-            if not history_msgs:
-                return None
-            result = await compact_messages(history_msgs, self._token_budget, self._provider)
-            if result.compacted and result.compacted_messages:
-                return system_msgs + result.compacted_messages
-        except Exception as exc:  # noqa: BLE001
-            logger.error(f"[orchestrator] compaction failed: {exc}")
-        return None
+        return await compact_history_for_overflow(messages, self._token_budget, self._provider)

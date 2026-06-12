@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from auraeve.agent.engines.compaction import clear_tool_results
+from auraeve.agent_runtime.compaction import clear_tool_results
 from auraeve.agent_runtime.session_attempt import _compact_tool_result
 
 

@@ -49,7 +49,6 @@ class ReActLoop:
         self._task: asyncio.Task | None = None
         self.progress = ProgressTracker()
         self.messages: list[dict] = []
-        self.compacted_messages: list[dict] | None = None
 
     async def run(
         self,
@@ -201,5 +200,4 @@ class ReActLoop:
             prepend_context=self._build_agent_context(task),
             runtime_instruction=self._build_runtime_instruction(task),
         )
-        self.compacted_messages = getattr(result, "compacted_messages", None)
         return list(result.messages)

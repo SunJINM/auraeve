@@ -99,13 +99,6 @@ async def main(terminal_mode: bool = False) -> None:
     stt_runtime = build_runtime_from_config(cfg.export_config(mask_sensitive=False))
     execution_workspace = str(workspace.expanduser().resolve())
 
-    from auraeve.agent.engines.legacy import LegacyContextEngine
-    engine = LegacyContextEngine(
-        workspace=workspace,
-        memory_window=getattr(cfg, "LLM_MEMORY_WINDOW", 50),
-        execution_workspace=execution_workspace,
-    )
-
     # Cron
     cron_store_path = cfg.resolve_cron_store_path()
     ensure_dir(cron_store_path.parent)
@@ -117,7 +110,7 @@ async def main(terminal_mode: bool = False) -> None:
         provider=provider,
         workspace=workspace,
         sessions_dir=sessions_dir,
-        engine=engine,
+        memory_window=getattr(cfg, "LLM_MEMORY_WINDOW", 50),
         model=primary_model.model,
         temperature=primary_model.temperature,
         max_tokens=primary_model.max_tokens,
@@ -211,7 +204,6 @@ async def main(terminal_mode: bool = False) -> None:
             agent=agent,
             heartbeat=heartbeat,
             stt_runtime=stt_runtime,
-            engine=engine,
             workspace=workspace,
             channel_runtime=channel_runtime.build_hot_reload_controls(),
             export_config=lambda: cfg.export_config(mask_sensitive=False),

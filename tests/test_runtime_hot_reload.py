@@ -13,7 +13,6 @@ async def test_hot_apply_returns_restart_only_when_disabled() -> None:
         agent=MagicMock(),
         heartbeat=MagicMock(),
         stt_runtime=MagicMock(),
-        engine=MagicMock(),
         workspace=MagicMock(),
         channel_runtime=MagicMock(),
     )
@@ -38,7 +37,6 @@ async def test_hot_apply_delegates_core_runtime_patch() -> None:
         agent=agent,
         heartbeat=MagicMock(),
         stt_runtime=MagicMock(),
-        engine=MagicMock(),
         workspace=MagicMock(),
         channel_runtime=MagicMock(),
     )

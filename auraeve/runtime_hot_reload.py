@@ -66,7 +66,6 @@ class RuntimeHotApplyService:
         agent,
         heartbeat,
         stt_runtime,
-        engine,
         workspace,
         channel_runtime: ChannelRuntimeControls,
         export_config: Callable[[], dict] | None = None,
@@ -75,7 +74,6 @@ class RuntimeHotApplyService:
         self.agent = agent
         self.heartbeat = heartbeat
         self.stt_runtime = stt_runtime
-        self.engine = engine
         self.workspace = workspace
         self.channel_runtime = channel_runtime
         self.export_config = export_config or (lambda: self.config.export_config(mask_sensitive=False))
@@ -240,11 +238,8 @@ class RuntimeHotApplyService:
                 applied.add(key)
 
     def _reload_skills(self) -> None:
-        context_builder = None
-        if hasattr(self.engine, "_builder"):
-            context_builder = getattr(self.engine, "_builder")
-        elif hasattr(self.engine, "_context_builder"):
-            context_builder = getattr(self.engine, "_context_builder")
+        assembler = getattr(self.agent, "assembler", None)
+        context_builder = getattr(assembler, "builder", None)
         if context_builder is None or not hasattr(context_builder, "skills"):
             return
         skills_loader = getattr(context_builder, "skills")

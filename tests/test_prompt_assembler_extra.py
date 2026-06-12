@@ -1,27 +1,23 @@
 import pytest
-from unittest.mock import MagicMock, AsyncMock
+from unittest.mock import MagicMock
+
 from auraeve.agent_runtime.prompt.assembler import PromptAssembler
 
 
-def _make_assembler():
-    engine = MagicMock()
-    assembler = PromptAssembler(engine=engine, token_budget=10000)
-    return assembler, engine
+def _make_assembler(built_messages):
+    builder = MagicMock()
+    builder.build_messages = MagicMock(return_value=built_messages)
+    assembler = PromptAssembler(context_builder=builder, token_budget=10000)
+    return assembler, builder
 
 
 @pytest.mark.asyncio
 async def test_extra_suffix_messages_appended():
-    assembler, engine = _make_assembler()
-
-    engine_result = MagicMock()
-    engine_result.messages = [
+    assembler, _builder = _make_assembler([
         {"role": "system", "content": "你是助手"},
         {"role": "user", "content": "hello"},
         {"role": "assistant", "content": "hi"},
-    ]
-    engine_result.compacted_messages = None
-    engine_result.estimated_tokens = 100
-    engine.assemble = AsyncMock(return_value=engine_result)
+    ])
 
     extra = [
         {"role": "assistant", "content": None, "tool_calls": [{"id": "c1"}]},
@@ -44,16 +40,10 @@ async def test_extra_suffix_messages_appended():
 
 @pytest.mark.asyncio
 async def test_runtime_instruction_injected_into_system():
-    assembler, engine = _make_assembler()
-
-    engine_result = MagicMock()
-    engine_result.messages = [
+    assembler, _builder = _make_assembler([
         {"role": "system", "content": "你是助手"},
         {"role": "user", "content": "hello"},
-    ]
-    engine_result.compacted_messages = None
-    engine_result.estimated_tokens = 100
-    engine.assemble = AsyncMock(return_value=engine_result)
+    ])
 
     result = await assembler.assemble(
         session_id="s1",
@@ -72,17 +62,11 @@ async def test_runtime_instruction_injected_into_system():
 
 @pytest.mark.asyncio
 async def test_no_extra_no_runtime_unchanged():
-    assembler, engine = _make_assembler()
-
     original_messages = [
         {"role": "system", "content": "你是助手"},
         {"role": "user", "content": "hello"},
     ]
-    engine_result = MagicMock()
-    engine_result.messages = original_messages
-    engine_result.compacted_messages = None
-    engine_result.estimated_tokens = 50
-    engine.assemble = AsyncMock(return_value=engine_result)
+    assembler, _builder = _make_assembler(original_messages)
 
     result = await assembler.assemble(
         session_id="s1",
@@ -94,3 +78,22 @@ async def test_no_extra_no_runtime_unchanged():
     )
 
     assert result.messages == original_messages
+
+
+@pytest.mark.asyncio
+async def test_memory_window_limits_history_passed_to_builder():
+    assembler, builder = _make_assembler([
+        {"role": "system", "content": "你是助手"},
+    ])
+    assembler.set_memory_window(2)
+    history = [{"role": "user", "content": f"m{i}"} for i in range(5)]
+
+    await assembler.assemble(
+        session_id="s1",
+        messages=history,
+        current_query="now",
+        available_tools=set(),
+    )
+
+    passed_history = builder.build_messages.call_args.kwargs["history"]
+    assert passed_history == history[-2:]
