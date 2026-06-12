@@ -54,11 +54,6 @@ class AgentTool(Tool):
                     "description": "执行模式: sync(默认,前台等待), async(后台运行), fork(继承当前上下文并后台运行)",
                     "enum": ["sync", "async", "fork"],
                 },
-                "run_in_background": {
-                    "type": "boolean",
-                    "description": "兼容旧参数。true 映射为 execution_mode=async，false 映射为 execution_mode=sync。",
-                    "default": False,
-                },
                 "name": {
                     "type": "string",
                     "description": "子智能体名称（可选）",
@@ -219,8 +214,6 @@ class AgentTool(Tool):
         raw = str(kwargs.get("execution_mode") or "").strip().lower()
         if raw in {"sync", "async", "fork"}:
             return raw
-        if "run_in_background" in kwargs:
-            return "async" if bool(kwargs.get("run_in_background")) else "sync"
         return default
 
     def _load_parent_history(self) -> list[dict]:

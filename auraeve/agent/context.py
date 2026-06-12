@@ -614,32 +614,3 @@ class ContextBuilder:
         blocks.append({"type": "text", "text": full_text})
         return blocks
 
-    def add_tool_result(
-        self,
-        messages: list[dict[str, Any]],
-        tool_call_id: str,
-        tool_name: str,
-        result: str,
-    ) -> list[dict[str, Any]]:
-        messages.append({
-            "role": "tool",
-            "tool_call_id": tool_call_id,
-            "name": tool_name,
-            "content": result,
-        })
-        return messages
-
-    def add_assistant_message(
-        self,
-        messages: list[dict[str, Any]],
-        content: str | None,
-        tool_calls: list[dict[str, Any]] | None = None,
-        reasoning_content: str | None = None,
-    ) -> list[dict[str, Any]]:
-        msg: dict[str, Any] = {"role": "assistant", "content": content or ""}
-        if tool_calls:
-            msg["tool_calls"] = tool_calls
-        if reasoning_content:
-            msg["reasoning_content"] = reasoning_content
-        messages.append(msg)
-        return messages

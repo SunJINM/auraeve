@@ -83,13 +83,13 @@ async def test_worktree_isolation_creates_worktree_metadata(agent_tool, monkeypa
 
 
 @pytest.mark.asyncio
-async def test_run_in_background_compat_maps_to_async(agent_tool):
+async def test_unknown_execution_mode_falls_back_to_sync(agent_tool):
     await agent_tool.execute(
-        prompt="后台收集信息",
-        run_in_background=True,
+        prompt="收集信息",
+        execution_mode="bogus-mode",
     )
     call = agent_tool._executor.create_task.call_args.kwargs
-    assert call["execution_mode"] == "async"
+    assert call["execution_mode"] == "sync"
 
 
 @pytest.mark.asyncio

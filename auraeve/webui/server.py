@@ -202,27 +202,10 @@ class WebUIServer:
             ok, run_id, status = await self._chat.abort(req.sessionKey, req.runId)
             return ChatAbortResponse(ok=ok, runId=run_id, status=status)  # type: ignore[arg-type]
 
+        # 两个路径共享同一处理逻辑：/chat/events 为兼容路径，/chat/transcript/events 为当前前端使用路径
         @app.get("/api/webui/chat/events", dependencies=[auth])
-        async def chat_events(
-            sessionKey: str = Query(min_length=1, max_length=200),
-        ) -> StreamingResponse:
-            async def _stream():
-                async for event in self._chat.subscribe(sessionKey):
-                    data = json.dumps(event, ensure_ascii=False)
-                    yield f"data: {data}\n\n"
-
-            return StreamingResponse(
-                _stream(),
-                media_type="text/event-stream",
-                headers={
-                    "Cache-Control": "no-cache",
-                    "X-Accel-Buffering": "no",
-                    "Connection": "keep-alive",
-                },
-            )
-
         @app.get("/api/webui/chat/transcript/events", dependencies=[auth])
-        async def chat_transcript_events(
+        async def chat_events(
             sessionKey: str = Query(min_length=1, max_length=200),
         ) -> StreamingResponse:
             async def _stream():
