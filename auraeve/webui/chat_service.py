@@ -31,6 +31,7 @@ class RunState:
     streaming_block_id: str | None = None
     streaming_content: str = ""
     streaming_seq: int = 0
+    assistant_text_emitted: bool = False
 
 
 class ChatService:
@@ -176,20 +177,22 @@ class ChatService:
             state = self._latest_run_for_session(session_key)
             run_id = state.run_id if state else None
 
-        await self._broadcast(
-            session_key,
-            self._build_block_event(
-                session_key=session_key,
-                run_id=run_id,
-                seq=self._next_seq(run_id),
-                block={
-                    "id": f"assistant_text:{run_id or uuid.uuid4()}",
-                    "type": "assistant_text",
-                    "content": msg.content,
-                    "timestamp": datetime.now().isoformat(),
-                },
-            ),
-        )
+        if state is None or not state.assistant_text_emitted:
+            await self._broadcast(
+                session_key,
+                self._build_block_event(
+                    session_key=session_key,
+                    run_id=run_id,
+                    seq=self._next_seq(run_id),
+                    block={
+                        "id": f"assistant_text:{run_id or uuid.uuid4()}",
+                        "type": "assistant_text",
+                        "content": msg.content,
+                        "timestamp": datetime.now().isoformat(),
+                        "streaming": False,
+                    },
+                ),
+            )
         await self._broadcast(
             session_key,
             self._build_done_event(
@@ -359,6 +362,7 @@ class ChatService:
                 # 后续 delta：追加内容，替换同一个 block
                 state.streaming_content += delta
                 op = "replace"
+            state.assistant_text_emitted = True
 
             await self._broadcast(
                 session_key,
@@ -372,6 +376,7 @@ class ChatService:
                         "type": "assistant_text",
                         "content": state.streaming_content,
                         "timestamp": datetime.now().isoformat(),
+                        "streaming": True,
                     },
                 ),
             )
@@ -393,6 +398,7 @@ class ChatService:
                 seq = self._next_seq(run_id)
                 block_id = f"assistant_text:{run_id}:{seq}"
                 op = "append"
+            state.assistant_text_emitted = True
 
             await self._broadcast(
                 session_key,
@@ -406,6 +412,7 @@ class ChatService:
                         "type": "assistant_text",
                         "content": content,
                         "timestamp": datetime.now().isoformat(),
+                        "streaming": False,
                     },
                 ),
             )

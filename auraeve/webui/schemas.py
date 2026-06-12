@@ -53,6 +53,7 @@ class TranscriptAssistantTextBlock(BaseModel):
     type: Literal["assistant_text"] = "assistant_text"
     content: str = ""
     timestamp: str = ""
+    streaming: bool = False
 
 
 TranscriptCollapsedActivityItem = Annotated[

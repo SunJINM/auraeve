@@ -28,6 +28,7 @@ export interface TranscriptAssistantTextBlock {
   type: 'assistant_text'
   content: string
   timestamp: string
+  streaming?: boolean
 }
 
 export interface TranscriptAgentTaskBlock {

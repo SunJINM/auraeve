@@ -375,3 +375,89 @@ async def test_chat_service_runtime_assistant_event_broadcasts_assistant_text(tm
     assert block_event["runId"] == run_id
     assert block_event["block"]["type"] == "assistant_text"
     assert block_event["block"]["content"] == "正在检查 Edit 工具的行为。"
+
+
+@pytest.mark.asyncio
+async def test_chat_service_marks_delta_assistant_text_as_streaming(tmp_path: Path) -> None:
+    queue = RuntimeCommandQueue()
+    session_manager = SessionManager(tmp_path / "sessions")
+    service = ChatService(session_manager=session_manager, command_queue=queue)
+    run_id, _ = await service.send(
+        session_key="webui:s1",
+        message="hello",
+        idempotency_key="idem-1",
+        user_id="u1",
+    )
+
+    events_task = asyncio.create_task(_collect_events(service, "webui:s1", expected_count=2))
+    await asyncio.sleep(0)
+
+    await service._handle_assistant_event(  # noqa: SLF001
+        {
+            "message": "assistant_text_delta",
+            "sessionKey": "webui:s1",
+            "attrs": {"delta": "**粗体"},
+        }
+    )
+    await service._handle_assistant_event(  # noqa: SLF001
+        {
+            "message": "assistant_text",
+            "sessionKey": "webui:s1",
+            "attrs": {"content": "**粗体**"},
+        }
+    )
+    events = await asyncio.wait_for(events_task, timeout=2)
+
+    delta_event = ChatTranscriptBlockEvent.model_validate(events[0]).model_dump()
+    final_event = ChatTranscriptBlockEvent.model_validate(events[1]).model_dump()
+
+    assert delta_event["runId"] == run_id
+    assert delta_event["block"]["streaming"] is True
+    assert final_event["op"] == "replace"
+    assert final_event["block"]["streaming"] is False
+
+
+@pytest.mark.asyncio
+async def test_chat_service_outbound_only_sends_done_after_streamed_assistant_text(tmp_path: Path) -> None:
+    queue = RuntimeCommandQueue()
+    session_manager = SessionManager(tmp_path / "sessions")
+    service = ChatService(session_manager=session_manager, command_queue=queue)
+    run_id, _ = await service.send(
+        session_key="webui:s1",
+        message="hello",
+        idempotency_key="idem-1",
+        user_id="u1",
+    )
+
+    events_task = asyncio.create_task(_collect_events(service, "webui:s1", expected_count=3))
+    await asyncio.sleep(0)
+
+    await service._handle_assistant_event(  # noqa: SLF001
+        {
+            "message": "assistant_text_delta",
+            "sessionKey": "webui:s1",
+            "attrs": {"delta": "你好"},
+        }
+    )
+    await service._handle_assistant_event(  # noqa: SLF001
+        {
+            "message": "assistant_text",
+            "sessionKey": "webui:s1",
+            "attrs": {"content": "你好，世界"},
+        }
+    )
+    await service.on_outbound(
+        OutboundMessage(
+            channel="webui",
+            chat_id="webui:s1",
+            content="你好，世界",
+            metadata={"run_id": run_id},
+        )
+    )
+
+    events = await asyncio.wait_for(events_task, timeout=2)
+    assert [event["type"] for event in events] == [
+        "transcript.block",
+        "transcript.block",
+        "transcript.done",
+    ]

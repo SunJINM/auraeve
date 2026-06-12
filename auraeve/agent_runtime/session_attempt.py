@@ -270,6 +270,7 @@ class SessionAttemptRunner:
                     attrs={"delta": delta},
                     session_key=thread_id,
                     channel=channel,
+                    persist=False,
                 )
 
             # 主动压缩：每轮调用模型前按 token 预算阈值压缩上下文

@@ -168,6 +168,7 @@ class ObservabilityManager:
         session_key: str | None = None,
         run_id: str | None = None,
         channel: str | None = None,
+        persist: bool = True,
     ) -> dict[str, Any] | None:
         if not self._settings.enabled:
             return None
@@ -189,38 +190,39 @@ class ObservabilityManager:
             "channel": channel,
             "attrs": attrs or {},
         }
-        line = json.dumps(event, ensure_ascii=False)
+        if persist:
+            line = json.dumps(event, ensure_ascii=False)
 
-        with self._lock:
-            file_path, file_offset = self._append_line(line, dt)
-            with self._conn:
-                self._conn.execute(
-                    """
-                    INSERT INTO log_events (
-                        event_id, ts, ts_ms, level, kind, subsystem, message,
-                        session_key, run_id, channel, attrs_json, file_path, file_offset
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        event["eventId"],
-                        event["ts"],
-                        event["tsMs"],
-                        event["level"],
-                        event["kind"],
-                        event["subsystem"],
-                        event["message"],
-                        event["sessionKey"],
-                        event["runId"],
-                        event["channel"],
-                        json.dumps(event["attrs"], ensure_ascii=False),
-                        file_path,
-                        file_offset,
-                    ),
-                )
-            self._emit_counter += 1
-            if self._emit_counter >= max(1, self._settings.retention_check_every):
-                self._emit_counter = 0
-                self._apply_retention_locked()
+            with self._lock:
+                file_path, file_offset = self._append_line(line, dt)
+                with self._conn:
+                    self._conn.execute(
+                        """
+                        INSERT INTO log_events (
+                            event_id, ts, ts_ms, level, kind, subsystem, message,
+                            session_key, run_id, channel, attrs_json, file_path, file_offset
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            event["eventId"],
+                            event["ts"],
+                            event["tsMs"],
+                            event["level"],
+                            event["kind"],
+                            event["subsystem"],
+                            event["message"],
+                            event["sessionKey"],
+                            event["runId"],
+                            event["channel"],
+                            json.dumps(event["attrs"], ensure_ascii=False),
+                            file_path,
+                            file_offset,
+                        ),
+                    )
+                self._emit_counter += 1
+                if self._emit_counter >= max(1, self._settings.retention_check_every):
+                    self._emit_counter = 0
+                    self._apply_retention_locked()
 
         self._publish(event)
         return event
