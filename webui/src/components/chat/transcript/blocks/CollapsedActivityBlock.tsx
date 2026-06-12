@@ -12,7 +12,7 @@ export function CollapsedActivityBlock({ block }: { block: TranscriptCollapsedAc
       : `读取了 ${block.count} 个文件`
 
   return (
-    <div className="ml-10 max-w-[760px]">
+    <div className="ml-8 max-w-[760px]">
       <button
         type="button"
         onClick={() => setOpen(!open)}

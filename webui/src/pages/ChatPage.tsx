@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { v4 as uuid } from 'uuid'
-import { HiArrowLeftOnRectangle, HiBolt, HiCircleStack, HiSparkles } from 'react-icons/hi2'
+import { HiArrowDown, HiArrowLeftOnRectangle, HiBolt, HiCircleStack, HiSparkles } from 'react-icons/hi2'
 
 import { ChatComposer } from '../components/chat/ChatComposer'
 import { SessionSwitcher } from '../components/chat/SessionSwitcher'
@@ -8,6 +8,7 @@ import { ThinkingIndicator } from '../components/chat/ThinkingIndicator'
 import { ChatTranscript } from '../components/chat/transcript/ChatTranscript'
 import { ThemeSwitch } from '../components/ThemeSwitch'
 import { useChatTranscript } from '../components/chat/transcript/useChatTranscript'
+import { useSmoothActivity } from '../components/chat/transcript/smoothActivity'
 import type { ChatTranscriptEvent } from '../components/chat/transcript/types'
 import { chatApi } from '../api/client'
 import { useAppStore } from '../store/app'
@@ -15,26 +16,40 @@ import { useAppStore } from '../store/app'
 export function ChatPage() {
   const { sessionKey, logout, sessions, touchSession } = useAppStore()
   const { blocks, run, loading, loadedKey, load, applyEvent } = useChatTranscript(sessionKey)
+  // 前端是否仍在平滑铺开文本；与 sending 合并为「活动中」，让指示器持续到展示结束
+  const animating = useSmoothActivity()
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
   const [runId, setRunId] = useState<string | null>(null)
   const [thinkingStartedAt, setThinkingStartedAt] = useState<number | null>(null)
-  const bottomRef = useRef<HTMLDivElement>(null)
+  // 本轮模型首次产出（文本/工具）的时刻，用于冻结「思考用时」并切到「思考完成」态
+  const [firstOutputAt, setFirstOutputAt] = useState<number | null>(null)
+  const [atBottom, setAtBottom] = useState(true)
+  // 活动中：后端仍在跑，或前端还在铺开文本。两者皆停才算一轮真正结束。
+  const active = sending || animating
   const scrollRef = useRef<HTMLDivElement>(null)
+  const innerRef = useRef<HTMLDivElement>(null)
   const didInitialScrollRef = useRef(false)
+  // 用户是否「贴底跟随」：上滑即停，回底恢复，避免流式时被顶回底部
+  const stickRef = useRef(true)
 
   useEffect(() => {
     void load()
 
-    const unsubscribe = chatApi.transcriptEvents(sessionKey, (event: ChatTranscriptEvent) => {
-      applyEvent(event)
+    const unsubscribe = chatApi.transcriptEvents(
+      sessionKey,
+      (event: ChatTranscriptEvent) => {
+        applyEvent(event)
 
-      if (event.type === 'transcript.done') {
-        setSending(false)
-        void load()
-      }
-    })
+        if (event.type === 'transcript.done') {
+          setSending(false)
+          void load()
+        }
+      },
+      // 断线重连后全量 resync，补回断连期间丢失的 delta/done，避免卡在「思考中」
+      () => void load(),
+    )
 
     return unsubscribe
   }, [applyEvent, load, sessionKey])
@@ -44,22 +59,44 @@ export function ChatPage() {
     didInitialScrollRef.current = false
   }, [sessionKey])
 
+  // 进入或切换会话：瞬间定位到底部，无滚动动画
   useLayoutEffect(() => {
     const el = scrollRef.current
+    if (!el || didInitialScrollRef.current || loading) return
+    el.scrollTop = el.scrollHeight
+    didInitialScrollRef.current = true
+    stickRef.current = true
+    // atBottom 由随后触发的 onScroll 自动校正，无需在此同步置位
+  }, [loading, blocks])
+
+  // 内容高度变化（流式逐字铺开、新块、展开详情）时，仅在贴底状态下瞬时跟随，杜绝平滑动画抖动
+  useEffect(() => {
+    const el = scrollRef.current
+    const inner = innerRef.current
+    if (!el || !inner) return
+    const ro = new ResizeObserver(() => {
+      if (!didInitialScrollRef.current) return
+      if (stickRef.current) el.scrollTop = el.scrollHeight
+    })
+    ro.observe(inner)
+    return () => ro.disconnect()
+  }, [])
+
+  const onScroll = () => {
+    const el = scrollRef.current
     if (!el) return
-    if (!didInitialScrollRef.current) {
-      if (loading) return
-      // 进入或切换会话：瞬间定位到底部，无滚动动画
-      el.scrollTop = el.scrollHeight
-      didInitialScrollRef.current = true
-      return
-    }
-    // 后续新内容：仅当用户已贴近底部时才平滑跟随，向上翻看时不打扰
-    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 160
-    if (nearBottom) {
-      bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-    }
-  }, [blocks, sending, loading, sessionKey])
+    const near = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+    stickRef.current = near
+    setAtBottom(near)
+  }
+
+  const scrollToBottom = () => {
+    const el = scrollRef.current
+    if (!el) return
+    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+    stickRef.current = true
+    setAtBottom(true)
+  }
 
   useEffect(() => {
     if (run?.runId) {
@@ -70,14 +107,26 @@ export function ChatPage() {
     }
   }, [run])
 
-  // 发送后开始计时，结束后清零（保留首次开始时间，跨工具执行不重置）
+  // 活动开始即计时，后端与前端都停下才清零（保留首次开始时间，跨工具执行不重置）
   useEffect(() => {
-    if (sending) {
+    if (active) {
       setThinkingStartedAt((prev) => prev ?? Date.now())
     } else {
       setThinkingStartedAt(null)
     }
-  }, [sending])
+  }, [active])
+
+  // 本轮模型一旦产出（最后一块不再是用户消息），冻结思考用时；活动结束清零
+  useEffect(() => {
+    if (!active) {
+      setFirstOutputAt(null)
+      return
+    }
+    const last = blocks[blocks.length - 1]
+    if (last != null && last.type !== 'user') {
+      setFirstOutputAt((prev) => prev ?? Date.now())
+    }
+  }, [active, blocks])
 
   // 用首条用户消息自动命名会话（仅当 blocks 确属当前会话，避免切换时把旧消息带过来）
   useEffect(() => {
@@ -114,6 +163,14 @@ export function ChatPage() {
     })
     touchSession(sessionKey, { updatedAt: Date.now() })
 
+    // 发送即回到最新处并恢复贴底跟随；随后流式内容到来自动向下走，期间用户上滑仍可自由回看
+    stickRef.current = true
+    setAtBottom(true)
+    requestAnimationFrame(() => {
+      const el = scrollRef.current
+      if (el) el.scrollTop = el.scrollHeight
+    })
+
     try {
       const resp = await chatApi.send(sessionKey, text, idempotencyKey)
       setRunId(resp.runId)
@@ -131,10 +188,11 @@ export function ChatPage() {
 
   const statusText = sending ? '正在想' : run?.status === 'completed' ? '已收好' : '等你'
 
-  // 等待回复时显示「正在思考」指示：刚发出、或工具执行中（即末块不是正在流式的助手文本）
+  // 阶段指示贯穿整轮：无头像单行「自转弧 时间 · 提示」，提示随阶段动态变化，铺开结束随之消失。
+  // 前端仍在铺开文本（animating）也算「生成中」，此时只留弧与时间，不回退成「思考中」。
   const lastBlock = blocks[blocks.length - 1]
-  const waitingForResponse =
-    sending && thinkingStartedAt != null && lastBlock?.type !== 'assistant_text'
+  const generating = lastBlock?.type === 'assistant_text' && (!!lastBlock.streaming || animating)
+  const showIndicator = active && thinkingStartedAt != null
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -166,9 +224,9 @@ export function ChatPage() {
         </div>
       </header>
 
-      <main className="flex min-h-0 flex-1 flex-col">
-        <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-4 pb-8 pt-6 sm:px-6 sm:pt-8">
-          <div className="mx-auto w-full max-w-[860px] pb-28">
+      <main className="relative flex min-h-0 flex-1 flex-col">
+        <div ref={scrollRef} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto px-4 pb-8 pt-6 sm:px-6 sm:pt-8">
+          <div ref={innerRef} className="mx-auto w-full max-w-[860px] pb-28">
             {!loading && blocks.length === 0 ? (
               <div
                 className="mx-auto mt-[14vh] max-w-2xl text-center"
@@ -205,14 +263,28 @@ export function ChatPage() {
             ) : (
               <ChatTranscript blocks={blocks} />
             )}
-            {waitingForResponse && thinkingStartedAt != null && (
-              <div className="mt-5">
-                <ThinkingIndicator startedAt={thinkingStartedAt} />
+            {showIndicator && thinkingStartedAt != null && (
+              <div className="mt-5 ml-10">
+                <ThinkingIndicator
+                  startedAt={thinkingStartedAt}
+                  generating={generating}
+                  firstOutputAt={firstOutputAt}
+                />
               </div>
             )}
-            <div ref={bottomRef} />
           </div>
         </div>
+
+        {!atBottom && (
+          <button
+            type="button"
+            onClick={scrollToBottom}
+            aria-label="回到底部"
+            className="jump-bottom absolute bottom-3 left-1/2 -translate-x-1/2"
+          >
+            <HiArrowDown size={18} />
+          </button>
+        )}
 
         <footer className="shrink-0 px-4 pb-4 sm:px-6 sm:pb-5">
           {errorMsg && (

@@ -1,11 +1,11 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
 import { AssistantTextBlock } from '../blocks/AssistantTextBlock'
 import type { TranscriptAssistantTextBlock } from '../types'
 
 describe('AssistantTextBlock', () => {
-  it('renders streaming text without Markdown parsing', () => {
+  it('renders streaming text with Markdown parsing once revealed', async () => {
     render(
       <AssistantTextBlock
         block={{
@@ -18,8 +18,10 @@ describe('AssistantTextBlock', () => {
       />,
     )
 
-    expect(screen.getByText('**粗体**')).toBeInTheDocument()
-    expect(screen.queryByText('粗体')).not.toBeInTheDocument()
+    // 平滑流式逐帧铺开，完整显现后直接按 Markdown 渲染（加粗为 STRONG）
+    await waitFor(() => {
+      expect(screen.getByText('粗体').tagName).toBe('STRONG')
+    })
   })
 
   it('renders completed text with Markdown parsing', () => {

@@ -421,7 +421,7 @@ class ChatService:
 
     async def subscribe(self, session_key: str) -> AsyncIterator[dict]:
         """返回异步生成器，持续产出该 session 的事件。"""
-        q: asyncio.Queue = asyncio.Queue(maxsize=128)
+        q: asyncio.Queue = asyncio.Queue(maxsize=1024)
         self._sse_queues.setdefault(session_key, []).append(q)
         try:
             while True:
@@ -458,7 +458,16 @@ class ChatService:
             try:
                 q.put_nowait(event)
             except asyncio.QueueFull:
-                logger.warning(f"WebUI SSE 队列满，丢弃事件：{event.get('type')}")
+                # 队列满时丢弃最旧事件腾出空间，保证最新事件（尤其 transcript.done
+                # 与最新累计文本）不丢；流式 delta 为累计全文，丢中间帧无损。
+                try:
+                    q.get_nowait()
+                except asyncio.QueueEmpty:
+                    pass
+                try:
+                    q.put_nowait(event)
+                except asyncio.QueueFull:
+                    logger.warning(f"WebUI SSE 队列仍满，丢弃事件：{event.get('type')}")
 
     def _latest_run_for_session(self, session_key: str) -> RunState | None:
         for state in reversed(list(self._runs.values())):

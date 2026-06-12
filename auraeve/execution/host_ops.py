@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import locale
 import os
 import re
 import shlex
@@ -117,6 +118,32 @@ def posix_path_to_windows_path(posix_path: str) -> str:
 
 def _shell_quote(value: str) -> str:
     return shlex.quote(value)
+
+
+def _subprocess_env() -> dict[str, str]:
+    """为子进程注入 UTF-8 locale，促使原生程序以 UTF-8 输出，减少乱码。"""
+    env = dict(os.environ)
+    env.setdefault("LANG", "C.UTF-8")
+    env.setdefault("LC_ALL", "C.UTF-8")
+    env["PYTHONIOENCODING"] = "utf-8"
+    return env
+
+
+def _decode_output(raw: bytes | None) -> str:
+    """解码命令输出：优先 UTF-8，失败时回退系统码页/GBK（Windows 中文环境常见）。"""
+    if not raw:
+        return ""
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError:
+        for enc in (locale.getpreferredencoding(False), "gbk", "cp936"):
+            if not enc:
+                continue
+            try:
+                return raw.decode(enc)
+            except (UnicodeDecodeError, LookupError):
+                continue
+        return raw.decode("utf-8", errors="replace")
 
 
 def guard_shell_command(
@@ -236,6 +263,7 @@ async def execute_shell_command(
                     stdout=output_handle,
                     stderr=output_handle,
                     cwd=cwd,
+                    env=_subprocess_env(),
                 )
             finally:
                 output_handle.close()
@@ -266,6 +294,7 @@ async def execute_shell_command(
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=cwd,
+            env=_subprocess_env(),
         )
     except Exception as exc:
         prefix = f"{cwd_warning}\n" if cwd_warning else ""
@@ -301,8 +330,8 @@ async def execute_shell_command(
     finally:
         Path(cwd_file_path).unlink(missing_ok=True)
 
-    stdout_text = stdout.decode("utf-8", errors="replace") if stdout else ""
-    stderr_text = stderr.decode("utf-8", errors="replace") if stderr else ""
+    stdout_text = _decode_output(stdout)
+    stderr_text = _decode_output(stderr)
     if cwd_warning:
         stderr_text = f"{cwd_warning}\n{stderr_text}".strip()
     return ShellCommandResult(

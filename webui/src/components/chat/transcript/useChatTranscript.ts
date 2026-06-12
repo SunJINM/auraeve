@@ -17,6 +17,28 @@ function mergeToolUseBlock(existing: TranscriptToolUseBlock, next: TranscriptToo
   }
 }
 
+// 重载（load）会用历史投影整批替换 blocks，但历史里的 assistant_text id 形如
+// `assistant_text:{index}`，与流式/完成时的 `assistant_text_stream:{run}:{seq}` 不同。
+// 若直接替换，刚结束的本文块因换 id 被 React remount，平滑动画从头丢失、整段瞬间全显并闪刷。
+// 这里按「去空白后的内容」匹配，沿用内存中已有块的旧 id，保住组件实例、避免闪刷。
+function preserveStreamingIds(prev: TranscriptBlock[], next: TranscriptBlock[]): TranscriptBlock[] {
+  if (prev.length === 0) return next
+  const prevTextByContent = new Map<string, string>()
+  for (const b of prev) {
+    if (b.type === 'assistant_text' && b.content.trim()) {
+      prevTextByContent.set(b.content.trim(), b.id)
+    }
+  }
+  if (prevTextByContent.size === 0) return next
+  return next.map((b) => {
+    if (b.type === 'assistant_text') {
+      const oldId = prevTextByContent.get(b.content.trim())
+      if (oldId && oldId !== b.id) return { ...b, id: oldId }
+    }
+    return b
+  })
+}
+
 function upsertBlock(blocks: TranscriptBlock[], nextBlock: TranscriptBlock, op: 'append' | 'replace'): TranscriptBlock[] {
   const existingIndex = blocks.findIndex((block) => block.id === nextBlock.id)
 
@@ -55,7 +77,7 @@ export function useChatTranscript(sessionKey: string) {
     setLoading(true)
     try {
       const resp = await chatApi.transcript(sessionKey)
-      setBlocks(resp.blocks)
+      setBlocks((prev) => preserveStreamingIds(prev, resp.blocks))
       setRun(resp.run)
       setLoadedKey(sessionKey)
     } finally {

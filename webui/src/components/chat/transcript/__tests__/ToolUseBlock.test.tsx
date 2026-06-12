@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
 import { ToolUseBlock } from '../blocks/ToolUseBlock'
@@ -23,7 +23,7 @@ describe('ToolUseBlock', () => {
     expect(screen.getByText(/Edit/)).toBeInTheDocument()
   })
 
-  it('keeps long command targets truncated and result summary constrained', () => {
+  it('truncates long command targets and hides raw result until expanded', () => {
     render(
       <ToolUseBlock
         block={{
@@ -44,7 +44,13 @@ describe('ToolUseBlock', () => {
     const button = screen.getByRole('button')
     // 整行使用 truncate 容器，长命令不会撑破布局
     expect(button.querySelector('.truncate')).toBeTruthy()
-    // 结果摘要靠右、有宽度约束
-    expect(screen.getByText(/STDERR/).className).toMatch(/max-w-/)
+    // 折叠态不再展示结果摘要/退出码
+    expect(screen.queryByText(/access denied/)).toBeNull()
+
+    // 展开后命令与错误输出以结构化面板呈现
+    fireEvent.click(button)
+    expect(screen.getByText('命令')).toBeInTheDocument()
+    expect(screen.getByText('错误输出')).toBeInTheDocument()
+    expect(screen.getByText(/access denied/)).toBeInTheDocument()
   })
 })

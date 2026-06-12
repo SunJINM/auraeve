@@ -63,40 +63,6 @@ function getToolTarget(toolName: string, args: unknown): string {
   }
 }
 
-/** 从结果中提取摘要 */
-function getResultSummary(toolName: string, result: string, status: string): string {
-  if (!result) return ''
-
-  if (status === 'error') {
-    return truncate(firstLine(result), 50)
-  }
-
-  const lines = result.split('\n').filter(Boolean)
-  switch (toolName) {
-    case 'Read':
-    case 'read':
-    case 'read_file':
-      return `${lines.length} 行`
-    case 'Edit':
-    case 'Grep':
-    case 'Glob':
-    case 'Bash':
-    case 'bash': {
-      const exitMatch = result.match(/ExitCode:\s*(\d+)/)
-      if (exitMatch && exitMatch[1] !== '0') {
-        return `退出码 ${exitMatch[1]}`
-      }
-      return lines.length > 3 ? `${lines.length} 行输出` : truncate(lines[0] ?? '', 50)
-    }
-    case 'web_fetch':
-      return `${result.length} 字符`
-    case 'web_search':
-      return `${lines.length} 条结果`
-    default:
-      return lines.length > 3 ? `${lines.length} 行` : truncate(lines[0] ?? '', 50)
-  }
-}
-
 function truncate(s: string, max: number): string {
   return s.length > max ? s.slice(0, max) + '…' : s
 }
@@ -129,49 +95,62 @@ function oneLineSummary(obj: unknown): string {
   }
 }
 
-const CODE_PRE_STYLE: React.CSSProperties = {
-  background: 'rgba(127,127,127,0.08)',
-  color: 'var(--text-secondary)',
+/** Bash 命令文本；非 Bash 返回 null */
+function getCommand(toolName: string, args: unknown): string | null {
+  if (toolName !== 'Bash' && toolName !== 'bash') return null
+  if (args && typeof args === 'object') {
+    const cmd = (args as Record<string, unknown>).command
+    if (typeof cmd === 'string' && cmd.trim()) return cmd
+  }
+  return null
+}
+
+const PANEL_STYLE: React.CSSProperties = {
   fontFamily: 'ui-monospace, SFMono-Regular, Consolas, Monaco, monospace',
   fontSize: '0.72rem',
-  lineHeight: 1.55,
-  maxHeight: '300px',
-  overflowY: 'auto',
+  lineHeight: 1.6,
+  maxHeight: '320px',
+  overflow: 'auto',
+}
+
+function DetailLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="text-[10.5px] font-medium" style={{ color: 'var(--text-tertiary)' }}>
+      {children}
+    </div>
+  )
 }
 
 export function ToolUseBlock({ block, nested = false }: { block: TranscriptToolUseBlock; nested?: boolean }) {
   const [open, setOpen] = useState(false)
   const verb = getVerb(block.toolName)
   const target = getToolTarget(block.toolName, block.arguments)
-  const resultSummary = block.result ? getResultSummary(block.toolName, block.result, block.status) : ''
+  const command = getCommand(block.toolName, block.arguments)
 
   const isError = block.status === 'error'
   const isRunning = block.status === 'running'
-  const lineColor = isError ? 'var(--danger)' : 'var(--text-secondary)'
+  const hasResult = block.result != null && block.result !== ''
 
   return (
-    <div className={`${nested ? '' : 'ml-10'} max-w-[760px]`}>
+    <div className={`${nested ? '' : 'ml-8'} max-w-[760px]`}>
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="row-btn group flex w-full items-center gap-1.5 rounded-[10px] px-2 py-1.5 text-left"
+        className="row-btn group flex w-full items-center gap-2 rounded-[10px] px-2 py-1.5 text-left"
       >
+        {/* 去掉前置状态图标：运行中用文本高光滑动表达，结束后静态着色 */}
         <span
-          className={`min-w-0 flex-1 truncate text-[13px] ${isRunning ? 'activity-pulse' : ''}`}
-          style={{ color: lineColor }}
+          className={`min-w-0 flex-1 truncate text-[13px] ${isRunning ? 'tool-shimmer' : ''}`}
+          style={isRunning ? undefined : { color: isError ? 'var(--danger)' : 'var(--text-secondary)' }}
         >
           <span className="font-medium">{verb}</span>
-          {target ? <span style={{ color: isError ? 'var(--danger)' : 'var(--text-tertiary)' }}> {target}</span> : null}
+          {target ? (
+            <span style={isRunning ? undefined : { color: isError ? 'var(--danger)' : 'var(--text-tertiary)' }}>
+              {' '}
+              {target}
+            </span>
+          ) : null}
         </span>
-
-        {resultSummary && !isRunning && (
-          <span
-            className="max-w-[10rem] shrink-0 truncate text-right text-[12px]"
-            style={{ color: isError ? 'var(--danger)' : 'var(--text-tertiary)' }}
-          >
-            {resultSummary}
-          </span>
-        )}
 
         <HiChevronRight
           size={14}
@@ -182,21 +161,42 @@ export function ToolUseBlock({ block, nested = false }: { block: TranscriptToolU
 
       {open && (
         <div className="reveal mt-1.5 space-y-2 pl-2">
-          <div className="text-[10.5px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-tertiary)' }}>
-            {block.toolName}
-          </div>
-          {block.arguments != null && (
-            <pre className="overflow-x-auto whitespace-pre-wrap break-all rounded-[10px] px-2.5 py-2" style={CODE_PRE_STYLE}>
-              {typeof block.arguments === 'string' ? block.arguments : JSON.stringify(block.arguments, null, 2)}
-            </pre>
+          {command != null ? (
+            <div className="space-y-1">
+              <DetailLabel>命令</DetailLabel>
+              <pre className="tool-cmd whitespace-pre-wrap break-all rounded-[10px] px-3 py-2" style={PANEL_STYLE}>
+                {command}
+              </pre>
+            </div>
+          ) : (
+            block.arguments != null && (
+              <div className="space-y-1">
+                <DetailLabel>参数</DetailLabel>
+                <pre className="tool-args whitespace-pre-wrap break-all rounded-[10px] px-3 py-2" style={PANEL_STYLE}>
+                  {typeof block.arguments === 'string'
+                    ? block.arguments
+                    : JSON.stringify(block.arguments, null, 2)}
+                </pre>
+              </div>
+            )
           )}
-          {block.result != null && (
-            <pre
-              className="overflow-x-auto whitespace-pre-wrap break-all rounded-[10px] px-2.5 py-2"
-              style={{ ...CODE_PRE_STYLE, color: isError ? 'var(--danger)' : 'var(--text-secondary)', background: isError ? 'color-mix(in srgb, var(--danger) 7%, transparent)' : CODE_PRE_STYLE.background }}
-            >
-              {block.result}
-            </pre>
+
+          {hasResult && (
+            <div className="space-y-1">
+              <DetailLabel>{isError ? '错误输出' : '输出'}</DetailLabel>
+              <pre
+                className="tool-output whitespace-pre-wrap break-all rounded-[10px] px-3 py-2"
+                style={{
+                  ...PANEL_STYLE,
+                  color: isError ? 'var(--danger)' : 'var(--text-secondary)',
+                  background: isError
+                    ? 'color-mix(in srgb, var(--danger) 8%, transparent)'
+                    : 'rgba(127,127,127,0.08)',
+                }}
+              >
+                {block.result}
+              </pre>
+            </div>
           )}
         </div>
       )}

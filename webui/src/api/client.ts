@@ -66,14 +66,25 @@ export const chatApi = {
   abort: (sessionKey: string, runId?: string) =>
     req<ChatAbortResp>('POST', '/chat/abort', { sessionKey, runId }),
 
-  transcriptEvents(sessionKey: string, onEvent: (e: ChatTranscriptEvent) => void): () => void {
+  transcriptEvents(
+    sessionKey: string,
+    onEvent: (e: ChatTranscriptEvent) => void,
+    onReopen?: () => void,
+  ): () => void {
     const t = token()
     const url = `${BASE}/chat/transcript/events?sessionKey=${encodeURIComponent(sessionKey)}${t ? `&token=${t}` : ''}`
     const es = new EventSource(url)
+    let opened = false
+    es.onopen = () => {
+      // 首次连接由调用方自行 load；后续为「断线重连」，回调方做一次全量 resync 补回丢失事件
+      if (opened) onReopen?.()
+      opened = true
+    }
     es.onmessage = (ev) => {
       try { onEvent(JSON.parse(ev.data) as ChatTranscriptEvent) } catch { /* skip malformed event */ }
     }
-    es.onerror = () => es.close()
+    // 不在出错时关闭：交由 EventSource 自动重连，避免一次瞬断后永久丢失后续 delta/done
+    es.onerror = () => { /* keep alive, browser will auto-reconnect */ }
     return () => es.close()
   },
 }
