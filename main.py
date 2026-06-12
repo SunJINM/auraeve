@@ -18,13 +18,10 @@ from auraeve.heartbeat.service import HEARTBEAT_OK_TOKEN, HeartbeatService
 from auraeve.utils.helpers import ensure_dir
 from auraeve.channels.webui import WebUIChannel, WebUIChannelConfig
 from auraeve.webui.chat_service import ChatService
-from auraeve.webui.config_service import ConfigService
 from auraeve.webui.server import WebUIServer
-from auraeve.stt import build_runtime_from_config
 from auraeve.llm.model_registry import ModelRegistry
 from auraeve.runtime_bootstrap import bootstrap_workspace_from_template
 from auraeve.memory_lifecycle import MemoryLifecycleService
-from auraeve.runtime_hot_reload import RuntimeHotApplyService
 from auraeve.runtime_channels import ChannelRuntimeManager
 from auraeve.runtime_runner import AppRuntimeRunner
 
@@ -96,7 +93,6 @@ async def main(terminal_mode: bool = False) -> None:
     bus = OutboundDispatcher()
     provider = _build_provider()
     primary_model = ModelRegistry(list(cfg.export_config(mask_sensitive=False).get("LLM_MODELS") or [])).primary()
-    stt_runtime = build_runtime_from_config(cfg.export_config(mask_sensitive=False))
     execution_workspace = str(workspace.expanduser().resolve())
 
     # Cron
@@ -199,29 +195,13 @@ async def main(terminal_mode: bool = False) -> None:
             command_queue=agent.command_queue,
         )
 
-        hot_apply = RuntimeHotApplyService(
-            config=cfg,
-            agent=agent,
-            heartbeat=heartbeat,
-            stt_runtime=stt_runtime,
-            workspace=workspace,
-            channel_runtime=channel_runtime.build_hot_reload_controls(),
-            export_config=lambda: cfg.export_config(mask_sensitive=False),
-        )
-        config_svc = ConfigService(on_runtime_apply=hot_apply.apply)
         static_dir = Path(__file__).parent / "webui" / "dist"
         webui_server = WebUIServer(
             chat_service=chat_svc,
-            config_service=config_svc,
             host=getattr(cfg, "WEBUI_HOST", "0.0.0.0"),
             port=webui_bind_port,
             token=getattr(cfg, "WEBUI_TOKEN", ""),
             static_dir=static_dir if static_dir.exists() else None,
-            workspace=workspace,
-            mcp_status_provider=agent.get_mcp_status,
-            mcp_events_provider=agent.get_mcp_events,
-            mcp_reconnect_provider=agent.reconnect_mcp_server,
-            restart_callback=None,
             subagent_executor=agent._subagent_executor,
         )
         webui_channel = WebUIChannel(WebUIChannelConfig(), agent.command_queue, chat_svc)
@@ -242,9 +222,6 @@ async def main(terminal_mode: bool = False) -> None:
         pid_file=pid_file,
         on_engine_cleanup=None,
     )
-    if webui_server is not None:
-        webui_server._restart_callback = lambda: runtime_runner.shutdown(restart=True)
-
     # Shutdown and restart signal handling.
     event_loop = asyncio.get_running_loop()
 

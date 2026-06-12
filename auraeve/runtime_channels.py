@@ -10,7 +10,6 @@ from auraeve.bus.queue import OutboundDispatcher
 from auraeve.channels.dingtalk import DingTalkChannel, DingTalkConfig
 from auraeve.channels.napcat import NapCatChannel, NapCatConfig
 from auraeve.channels.terminal import TerminalChannel, TerminalConfig
-from auraeve.runtime_hot_reload import ChannelRuntimeControls
 
 
 class ChannelRuntimeManager:
@@ -169,18 +168,6 @@ class ChannelRuntimeManager:
         self.channels.clear()
         self._dingtalk_channel = None
         self._napcat_channel = None
-
-    def build_hot_reload_controls(self) -> ChannelRuntimeControls:
-        return ChannelRuntimeControls(
-            is_dingtalk_configured=self.is_dingtalk_configured,
-            restart_dingtalk_channel=self.restart_dingtalk,
-            stop_dingtalk_channel=self.stop_dingtalk,
-            get_dingtalk_channel=self.get_dingtalk_channel,
-            is_napcat_enabled=self.is_napcat_enabled,
-            restart_napcat_channel=self.restart_napcat,
-            stop_napcat_channel=self.stop_napcat,
-            get_napcat_channel=self.get_napcat_channel,
-        )
 
     def _remove_channel_task(self, name: str) -> None:
         task = self.channel_tasks.pop(name, None)

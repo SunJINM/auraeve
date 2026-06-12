@@ -6,7 +6,6 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 import auraeve.config as cfg
-import auraeve.runtime_hot_reload as hot_reload
 from auraeve.cli.app import app
 
 
@@ -18,7 +17,7 @@ def test_plugin_package_removed() -> None:
 def test_plugin_config_keys_removed() -> None:
     defaults = cfg.export_config(mask_sensitive=False)
     assert not any(key.startswith("PLUGINS_") for key in defaults)
-    assert not hasattr(hot_reload, "PLUGIN_KEYS")
+    assert not (PROJECT_ROOT / "auraeve" / "runtime_hot_reload.py").exists()
 
 
 def test_cli_no_plugins_command() -> None:

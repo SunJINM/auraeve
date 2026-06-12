@@ -536,7 +536,6 @@ _SCHEMA_GROUPS: list[tuple[str, str, list[str]]] = [
         [
             "TOKEN_BUDGET",
             "COMPACTION_THRESHOLD_RATIO",
-            "RUNTIME_HOT_APPLY_ENABLED",
             "USE_UNIFIED_TOOL_ASSEMBLER",
             "GLOBAL_DENY_TOOLS",
             "SESSION_TOOL_POLICY",
@@ -687,7 +686,6 @@ _LABEL_OVERRIDES = {
     # 运行时配置
     "TOKEN_BUDGET": "Token 预算",
     "COMPACTION_THRESHOLD_RATIO": "上下文压缩阈值",
-    "RUNTIME_HOT_APPLY_ENABLED": "热更新",
     "USE_UNIFIED_TOOL_ASSEMBLER": "统一工具装配器",
     "GLOBAL_DENY_TOOLS": "全局禁用工具",
     "SESSION_TOOL_POLICY": "会话工具策略",
@@ -754,7 +752,6 @@ _DESCRIPTION_OVERRIDES = {
     # 运行时配置
     "TOKEN_BUDGET": "单次会话的总 Token 预算，超出后触发上下文压缩。",
     "COMPACTION_THRESHOLD_RATIO": "Token 用量达到预算的此比例时触发压缩，范围 0-1。",
-    "RUNTIME_HOT_APPLY_ENABLED": "允许配置修改后无需重启即刻生效。",
     "USE_UNIFIED_TOOL_ASSEMBLER": "使用统一工具装配器合并所有工具来源。",
     "GLOBAL_DENY_TOOLS": "全局禁用的工具名称列表（JSON 数组）。",
     "SESSION_TOOL_POLICY": "按会话/场景的工具权限策略（JSON 对象）。",

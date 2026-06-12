@@ -131,7 +131,6 @@ def build_defaults() -> dict[str, Any]:
         "GLOBAL_DENY_TOOLS": [],
         "SESSION_TOOL_POLICY": {},
         "USE_UNIFIED_TOOL_ASSEMBLER": True,
-        "RUNTIME_HOT_APPLY_ENABLED": True,
         "CHANNEL_USERS": {},
         "NOTIFY_CHANNEL": "",
         "TOKEN_BUDGET": 120000,
