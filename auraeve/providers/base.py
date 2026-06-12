@@ -59,6 +59,15 @@ class ToolCallRequest:
     arguments: dict[str, Any]
 
 
+@dataclass
+class ToolCallDeclaration:
+    """流式响应中已声明的工具调用。"""
+    id: str
+    name: str
+    arguments: dict[str, Any] | None = None
+    index: int | None = None
+
+
 def ensure_tool_call_id(
     raw_id: str | None,
     *,
@@ -240,6 +249,7 @@ class LLMProvider(ABC):
         temperature: float = 0.7,
         thinking_budget_tokens: int | None = None,
         text_delta_callback: Callable[[str], Awaitable[None]] | None = None,
+        tool_call_declared_callback: Callable[[ToolCallDeclaration], Awaitable[None]] | None = None,
     ) -> LLMResponse:
         """
         调用 LLM。

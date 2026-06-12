@@ -39,7 +39,7 @@ function preserveStreamingIds(prev: TranscriptBlock[], next: TranscriptBlock[]):
   })
 }
 
-function upsertBlock(blocks: TranscriptBlock[], nextBlock: TranscriptBlock, op: 'append' | 'replace'): TranscriptBlock[] {
+function upsertBlock(blocks: TranscriptBlock[], nextBlock: TranscriptBlock): TranscriptBlock[] {
   const existingIndex = blocks.findIndex((block) => block.id === nextBlock.id)
 
   if (existingIndex >= 0) {
@@ -50,10 +50,6 @@ function upsertBlock(blocks: TranscriptBlock[], nextBlock: TranscriptBlock, op: 
         ? mergeToolUseBlock(existing, nextBlock)
         : nextBlock
     return updated
-  }
-
-  if (op === 'replace' && blocks.length > 0) {
-    return [...blocks.slice(0, -1), nextBlock]
   }
 
   return [...blocks, nextBlock]
@@ -87,7 +83,7 @@ export function useChatTranscript(sessionKey: string) {
 
   const applyEvent = useCallback((event: ChatTranscriptEvent) => {
     if (event.type === 'transcript.block') {
-      setBlocks((prev) => upsertBlock(prev, event.block, event.op))
+      setBlocks((prev) => upsertBlock(prev, event.block))
       return
     }
 

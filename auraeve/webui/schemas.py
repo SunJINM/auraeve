@@ -44,7 +44,7 @@ class TranscriptToolUseBlock(BaseModel):
     toolName: str = ""
     arguments: Any = None
     result: str | None = None
-    status: Literal["running", "success", "error"] = "running"
+    status: Literal["preparing", "running", "success", "error"] = "running"
 
 
 class TranscriptAssistantTextBlock(BaseModel):

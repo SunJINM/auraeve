@@ -21,7 +21,7 @@ from auraeve.agent_runtime.tool_runtime_context import (
     ToolRuntimeContext,
     use_tool_runtime_context,
 )
-from auraeve.providers.base import normalize_tool_call_requests
+from auraeve.providers.base import ToolCallDeclaration, normalize_tool_call_requests
 
 from .budget import ExecutionBudget, normalize_runtime_execution_config
 from .trace import RunTrace
@@ -273,6 +273,24 @@ class SessionAttemptRunner:
                     persist=False,
                 )
 
+            async def _tool_call_declared_cb(declaration: ToolCallDeclaration) -> None:
+                self._obs.emit(
+                    level="info",
+                    kind="event",
+                    subsystem="runtime/tools",
+                    message="tool_call_declared",
+                    attrs={
+                        "toolName": declaration.name,
+                        "toolCallId": declaration.id,
+                        "argsPreview": _safe_json(declaration.arguments) if declaration.arguments is not None else "",
+                        "streamIndex": declaration.index,
+                        "isSubagent": bool(is_subagent),
+                    },
+                    session_key=thread_id,
+                    channel=channel,
+                    persist=False,
+                )
+
             # 主动压缩：每轮调用模型前按 token 预算阈值压缩上下文
             msgs = await self._maybe_compact_context(msgs, thread_id, channel)
 
@@ -284,6 +302,7 @@ class SessionAttemptRunner:
                 max_tokens=max_tokens,
                 thinking_budget_tokens=self._thinking_budget_tokens,
                 text_delta_callback=_text_delta_cb,
+                tool_call_declared_callback=_tool_call_declared_cb,
             )
 
             if not response.has_tool_calls:

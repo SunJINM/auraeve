@@ -12,6 +12,7 @@ from auraeve.webui.schemas import (
     ChatTranscriptDoneEvent,
     ChatTranscriptHistoryResponse,
     TranscriptCollapsedActivityBlock,
+    TranscriptToolUseBlock,
 )
 
 
@@ -243,6 +244,22 @@ def test_chat_transcript_event_schema_requires_valid_block_states() -> None:
                 },
             }
         )
+
+
+def test_tool_use_block_accepts_preparing_status() -> None:
+    block = TranscriptToolUseBlock.model_validate(
+        {
+            "id": "tool_use:call_1",
+            "type": "tool_use",
+            "toolCallId": "call_1",
+            "toolName": "Bash",
+            "arguments": {"command": "pwd"},
+            "result": None,
+            "status": "preparing",
+        }
+    )
+
+    assert block.status == "preparing"
 
 
 def test_collapsed_activity_nested_blocks_require_structured_items() -> None:

@@ -23,6 +23,40 @@ describe('ToolUseBlock', () => {
     expect(screen.getByText(/Edit/)).toBeInTheDocument()
   })
 
+  it('shows preparing and running status labels', () => {
+    const { rerender } = render(
+      <ToolUseBlock
+        block={{
+          id: 'tool_use:bash-1',
+          type: 'tool_use',
+          toolCallId: 'bash-1',
+          toolName: 'Bash',
+          arguments: { command: 'pwd' },
+          result: null,
+          status: 'preparing',
+        }}
+      />,
+    )
+
+    expect(screen.getByText('准备中')).toBeInTheDocument()
+
+    rerender(
+      <ToolUseBlock
+        block={{
+          id: 'tool_use:bash-1',
+          type: 'tool_use',
+          toolCallId: 'bash-1',
+          toolName: 'Bash',
+          arguments: { command: 'pwd' },
+          result: null,
+          status: 'running',
+        }}
+      />,
+    )
+
+    expect(screen.getByText('运行中')).toBeInTheDocument()
+  })
+
   it('truncates long command targets and hides raw result until expanded', () => {
     render(
       <ToolUseBlock

@@ -346,6 +346,91 @@ async def test_chat_service_tool_completion_keeps_arguments_in_replace_event(tmp
 
 
 @pytest.mark.asyncio
+async def test_chat_service_tool_declared_then_started_then_completed_updates_same_block(tmp_path: Path) -> None:
+    queue = RuntimeCommandQueue()
+    session_manager = SessionManager(tmp_path / "sessions")
+    service = ChatService(session_manager=session_manager, command_queue=queue)
+    run_id, _ = await service.send(
+        session_key="webui:s1",
+        message="hello",
+        idempotency_key="idem-1",
+        user_id="u1",
+    )
+
+    events_task = asyncio.create_task(_collect_events(service, "webui:s1", expected_count=3))
+    await asyncio.sleep(0)
+
+    await service._handle_tool_event(  # noqa: SLF001
+        {
+            "message": "tool_call_declared",
+            "sessionKey": "webui:s1",
+            "attrs": {
+                "toolName": "Bash",
+                "toolCallId": "call-1",
+                "streamIndex": 0,
+            },
+        }
+    )
+    await service._handle_tool_event(  # noqa: SLF001
+        {
+            "message": "tool_call_started",
+            "sessionKey": "webui:s1",
+            "attrs": {
+                "toolName": "Bash",
+                "toolCallId": "call-1",
+                "argsPreview": '{"command":"pwd"}',
+            },
+        }
+    )
+    await service._handle_tool_event(  # noqa: SLF001
+        {
+            "message": "tool_call_completed",
+            "sessionKey": "webui:s1",
+            "attrs": {
+                "toolName": "Bash",
+                "toolCallId": "call-1",
+                "status": "success",
+                "argsPreview": '{"command":"pwd"}',
+                "resultPreview": "/repo",
+            },
+        }
+    )
+    events = await asyncio.wait_for(events_task, timeout=2)
+
+    blocks = [ChatTranscriptBlockEvent.model_validate(event).model_dump()["block"] for event in events]
+    assert [block["id"] for block in blocks] == ["tool_use:call-1"] * 3
+    assert [block["status"] for block in blocks] == ["preparing", "running", "success"]
+    assert events[0]["runId"] == run_id
+    assert events[0]["op"] == "append"
+
+
+@pytest.mark.asyncio
+async def test_chat_service_send_starts_obs_listener_before_enqueue(tmp_path: Path) -> None:
+    calls: list[str] = []
+
+    class RecordingQueue:
+        def enqueue_command(self, command):
+            calls.append("enqueue")
+
+    session_manager = SessionManager(tmp_path / "sessions")
+    service = ChatService(session_manager=session_manager, command_queue=RecordingQueue())  # type: ignore[arg-type]
+
+    def ensure_listener():
+        calls.append("ensure")
+
+    service._ensure_obs_listener = ensure_listener  # type: ignore[method-assign]
+
+    await service.send(
+        session_key="webui:s1",
+        message="hello",
+        idempotency_key="idem-1",
+        user_id="u1",
+    )
+
+    assert calls == ["ensure", "enqueue"]
+
+
+@pytest.mark.asyncio
 async def test_chat_service_runtime_assistant_event_broadcasts_assistant_text(tmp_path: Path) -> None:
     queue = RuntimeCommandQueue()
     session_manager = SessionManager(tmp_path / "sessions")

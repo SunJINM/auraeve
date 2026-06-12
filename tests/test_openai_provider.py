@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import sys
 import types
 from types import SimpleNamespace
@@ -100,3 +101,103 @@ def test_consume_stream_assembles_reasoning_content() -> None:
     result = _run(provider._consume_stream(fake_stream()))
     assert result.content == "answer"
     assert result.reasoning_content == "thinking..."
+
+
+def test_consume_stream_declares_tool_call_with_stable_generated_id() -> None:
+    """工具名流式出现时立即声明，并沿用生成的稳定 ID。"""
+    provider = object.__new__(OpenAICompatibleProvider)
+    declarations = []
+
+    async def on_declared(declaration):
+        declarations.append(declaration)
+
+    async def fake_stream():
+        yield SimpleNamespace(
+            choices=[SimpleNamespace(
+                finish_reason=None,
+                delta=SimpleNamespace(
+                    content=None,
+                    reasoning_content=None,
+                    tool_calls=[SimpleNamespace(
+                        index=0,
+                        id=None,
+                        function=SimpleNamespace(name="Bash", arguments=None),
+                    )],
+                ),
+            )],
+            usage=None,
+        )
+        yield SimpleNamespace(
+            choices=[SimpleNamespace(
+                finish_reason=None,
+                delta=SimpleNamespace(
+                    content=None,
+                    reasoning_content=None,
+                    tool_calls=[SimpleNamespace(
+                        index=0,
+                        id="provider-call-late",
+                        function=SimpleNamespace(name=None, arguments='{"command"'),
+                    )],
+                ),
+            )],
+            usage=None,
+        )
+        yield SimpleNamespace(
+            choices=[SimpleNamespace(
+                finish_reason="tool_calls",
+                delta=SimpleNamespace(
+                    content=None,
+                    reasoning_content=None,
+                    tool_calls=[SimpleNamespace(
+                        index=0,
+                        id=None,
+                        function=SimpleNamespace(name=None, arguments=':"pwd"}'),
+                    )],
+                ),
+            )],
+            usage=None,
+        )
+
+    with patch("auraeve.providers.openai_provider.json_repair.loads", side_effect=json.loads):
+        result = _run(provider._consume_stream(fake_stream(), tool_call_declared_callback=on_declared))
+
+    assert len(declarations) == 1
+    assert declarations[0].name == "Bash"
+    assert declarations[0].id
+    assert declarations[0].id != "provider-call-late"
+    assert result.tool_calls[0].id == declarations[0].id
+    assert result.tool_calls[0].arguments == {"command": "pwd"}
+
+
+def test_consume_stream_declares_tool_call_with_provider_id() -> None:
+    """首帧带 provider id 时直接沿用该 id。"""
+    provider = object.__new__(OpenAICompatibleProvider)
+    declarations = []
+
+    async def on_declared(declaration):
+        declarations.append(declaration)
+
+    async def fake_stream():
+        yield SimpleNamespace(
+            choices=[SimpleNamespace(
+                finish_reason="tool_calls",
+                delta=SimpleNamespace(
+                    content=None,
+                    reasoning_content=None,
+                    tool_calls=[SimpleNamespace(
+                        index=0,
+                        id="call-provider-1",
+                        function=SimpleNamespace(name="Read", arguments='{"file_path":"README.md"}'),
+                    )],
+                ),
+            )],
+            usage=None,
+        )
+
+    with patch("auraeve.providers.openai_provider.json_repair.loads", side_effect=json.loads):
+        result = _run(provider._consume_stream(fake_stream(), tool_call_declared_callback=on_declared))
+
+    assert len(declarations) == 1
+    assert declarations[0].id == "call-provider-1"
+    assert result.tool_calls[0].id == "call-provider-1"
+    assert result.tool_calls[0].arguments == {"file_path": "README.md"}

@@ -20,7 +20,7 @@ export interface TranscriptToolUseBlock {
   toolName: string
   arguments: unknown
   result: string | null
-  status: 'running' | 'success' | 'error'
+  status: 'preparing' | 'running' | 'success' | 'error'
 }
 
 export interface TranscriptAssistantTextBlock {

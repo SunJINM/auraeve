@@ -136,6 +136,9 @@ class ChatService:
         metadata: dict = {"run_id": run_id, "idempotency_key": idempotency_key}
         metadata["webui_user_id"] = user_id
 
+        # 先启动 obs 监听，再入队执行，避免早期流式工具声明事件被竞态错过。
+        self._ensure_obs_listener()
+
         self._command_queue.enqueue_command(
             QueuedCommand(
                 session_key=session_key,
@@ -152,9 +155,6 @@ class ChatService:
                 origin={"kind": "user"},
             )
         )
-
-        # 启动 obs 监听（如果尚未启动）
-        self._ensure_obs_listener()
 
         return run_id, "started"
 
@@ -285,7 +285,26 @@ class ChatService:
         block_id = f"tool_use:{tool_call_id or uuid.uuid4()}"
         parsed_args = self._parse_args_preview(attrs.get("argsPreview"))
 
-        if message == "tool_call_started":
+        if message == "tool_call_declared":
+            await self._broadcast(
+                session_key,
+                self._build_block_event(
+                    session_key=session_key,
+                    run_id=run_id,
+                    seq=self._next_seq(run_id),
+                    block={
+                        "id": block_id,
+                        "type": "tool_use",
+                        "toolCallId": tool_call_id,
+                        "toolName": tool_name,
+                        "arguments": parsed_args,
+                        "result": None,
+                        "status": "preparing",
+                    },
+                ),
+            )
+
+        elif message == "tool_call_started":
             await self._broadcast(
                 session_key,
                 self._build_block_event(

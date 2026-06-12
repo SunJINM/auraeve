@@ -128,7 +128,10 @@ export function ToolUseBlock({ block, nested = false }: { block: TranscriptToolU
   const command = getCommand(block.toolName, block.arguments)
 
   const isError = block.status === 'error'
+  const isPreparing = block.status === 'preparing'
   const isRunning = block.status === 'running'
+  const isActive = isPreparing || isRunning
+  const statusLabel = isPreparing ? '准备中' : isRunning ? '运行中' : isError ? '失败' : ''
   const hasResult = block.result != null && block.result !== ''
 
   return (
@@ -140,17 +143,23 @@ export function ToolUseBlock({ block, nested = false }: { block: TranscriptToolU
       >
         {/* 去掉前置状态图标：运行中用文本高光滑动表达，结束后静态着色 */}
         <span
-          className={`min-w-0 flex-1 truncate text-[13px] ${isRunning ? 'tool-shimmer' : ''}`}
-          style={isRunning ? undefined : { color: isError ? 'var(--danger)' : 'var(--text-secondary)' }}
+          className={`min-w-0 flex-1 truncate text-[13px] ${isActive ? 'tool-shimmer' : ''}`}
+          style={isActive ? undefined : { color: isError ? 'var(--danger)' : 'var(--text-secondary)' }}
         >
           <span className="font-medium">{verb}</span>
           {target ? (
-            <span style={isRunning ? undefined : { color: isError ? 'var(--danger)' : 'var(--text-tertiary)' }}>
+            <span style={isActive ? undefined : { color: isError ? 'var(--danger)' : 'var(--text-tertiary)' }}>
               {' '}
               {target}
             </span>
           ) : null}
         </span>
+
+        {statusLabel ? (
+          <span className="shrink-0 text-[11px] font-medium" style={{ color: isError ? 'var(--danger)' : 'var(--text-tertiary)' }}>
+            {statusLabel}
+          </span>
+        ) : null}
 
         <HiChevronRight
           size={14}

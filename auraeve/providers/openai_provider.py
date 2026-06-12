@@ -10,10 +10,10 @@ import openai as _openai
 from loguru import logger
 
 from auraeve.providers.base import (
-    LLMProvider, LLMResponse, ToolCallRequest,
+    LLMProvider, LLMResponse, ToolCallDeclaration, ToolCallRequest,
     LLMCallError, RateLimitError, OverloadError,
     ContextOverflowError, AuthError, BillingError,
-    normalize_tool_call_ids_in_messages, normalize_tool_call_requests,
+    ensure_tool_call_id, normalize_tool_call_ids_in_messages, normalize_tool_call_requests,
 )
 
 # 上下文溢出的错误消息特征（各厂商不尽相同）
@@ -108,6 +108,7 @@ class OpenAICompatibleProvider(LLMProvider):
         temperature: float = 0.7,
         thinking_budget_tokens: int | None = None,
         text_delta_callback: Callable[[str], Awaitable[None]] | None = None,
+        tool_call_declared_callback: Callable[[ToolCallDeclaration], Awaitable[None]] | None = None,
     ) -> LLMResponse:
         model = model or self.default_model
         max_tokens = max(1, max_tokens)
@@ -153,7 +154,11 @@ class OpenAICompatibleProvider(LLMProvider):
                 f"is_reasoning={is_reasoning}"
             )
             stream = await self._client.chat.completions.create(**kwargs)
-            return await self._consume_stream(stream, text_delta_callback=text_delta_callback)
+            return await self._consume_stream(
+                stream,
+                text_delta_callback=text_delta_callback,
+                tool_call_declared_callback=tool_call_declared_callback,
+            )
         except (_openai.RateLimitError, _openai.APIStatusError, _openai.APIConnectionError) as e:
             raise _classify_openai_error(e) from e
         except Exception as e:
@@ -164,6 +169,7 @@ class OpenAICompatibleProvider(LLMProvider):
         self,
         stream: Any,
         text_delta_callback: Callable[[str], Awaitable[None]] | None = None,
+        tool_call_declared_callback: Callable[[ToolCallDeclaration], Awaitable[None]] | None = None,
     ) -> LLMResponse:
         """消费流式响应，拼接为完整的 LLMResponse。"""
         content_parts: list[str] = []
@@ -203,18 +209,38 @@ class OpenAICompatibleProvider(LLMProvider):
                     idx = tc_delta.index
                     if idx not in tool_calls_map:
                         tool_calls_map[idx] = {
-                            "id": tc_delta.id or "",
+                            "id": ensure_tool_call_id(
+                                getattr(tc_delta, "id", None),
+                                fallback_key=f"stream_tool_call:{idx}",
+                            ),
                             "name": "",
                             "arguments": "",
+                            "declared_emitted": False,
                         }
                     entry = tool_calls_map[idx]
-                    if tc_delta.id:
-                        entry["id"] = tc_delta.id
-                    if tc_delta.function:
-                        if tc_delta.function.name:
-                            entry["name"] = tc_delta.function.name
-                        if tc_delta.function.arguments:
-                            entry["arguments"] += tc_delta.function.arguments
+                    fn = getattr(tc_delta, "function", None)
+                    if fn:
+                        fn_name = getattr(fn, "name", None)
+                        fn_arguments = getattr(fn, "arguments", None)
+                        if fn_name:
+                            entry["name"] = fn_name
+                        if fn_arguments:
+                            entry["arguments"] += fn_arguments
+
+                    if (
+                        tool_call_declared_callback
+                        and not entry["declared_emitted"]
+                        and entry["name"]
+                    ):
+                        entry["declared_emitted"] = True
+                        await tool_call_declared_callback(
+                            ToolCallDeclaration(
+                                id=str(entry["id"]),
+                                name=str(entry["name"]),
+                                arguments=_parse_partial_arguments(str(entry["arguments"])),
+                                index=idx,
+                            )
+                        )
 
             # usage 也可能在带 choices 的 chunk 里
             if chunk.usage:
@@ -279,6 +305,16 @@ class OpenAICompatibleProvider(LLMProvider):
         except Exception as e:
             logger.error(f"音频转录失败：{e}")
             return None
+
+
+def _parse_partial_arguments(args_str: str) -> dict[str, Any] | None:
+    if not args_str.strip():
+        return None
+    try:
+        parsed = json_repair.loads(args_str)
+    except Exception:
+        return None
+    return parsed if isinstance(parsed, dict) else None
 
 
 def build_openai_provider_from_model_card(card: dict[str, Any]) -> OpenAICompatibleProvider:
