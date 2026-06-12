@@ -124,12 +124,8 @@ def test_kernel_has_no_process_direct() -> None:
 @pytest.mark.asyncio
 async def test_process_message_no_longer_builds_identity_context() -> None:
     kernel = object.__new__(RuntimeKernel)
-    kernel._plan = MagicMock()
-    kernel._plan.clear_plan = MagicMock()
-    kernel._plan.format_for_prompt = MagicMock(return_value="")
     kernel._set_tool_context = MagicMock()
     kernel._extract_attachments_legacy = AsyncMock(return_value=None)
-    kernel._inject_plan_into_messages = MagicMock(side_effect=lambda messages, _: messages)
     kernel._sanitize_assistant_output = RuntimeKernel._sanitize_assistant_output
     kernel.sessions = MagicMock()
     session = MagicMock()
@@ -173,12 +169,8 @@ async def test_process_message_no_longer_builds_identity_context() -> None:
 @pytest.mark.asyncio
 async def test_process_message_task_notification_does_not_persist_fake_user_turn() -> None:
     kernel = object.__new__(RuntimeKernel)
-    kernel._plan = MagicMock()
-    kernel._plan.clear_plan = MagicMock()
-    kernel._plan.format_for_prompt = MagicMock(return_value="")
     kernel._set_tool_context = MagicMock()
     kernel._extract_attachments_legacy = AsyncMock(return_value=None)
-    kernel._inject_plan_into_messages = MagicMock(side_effect=lambda messages, _: messages)
     kernel._sanitize_assistant_output = RuntimeKernel._sanitize_assistant_output
     kernel.sessions = MagicMock()
     session = MagicMock()

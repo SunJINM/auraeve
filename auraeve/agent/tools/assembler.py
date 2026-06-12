@@ -5,7 +5,6 @@ from pathlib import Path
 from auraeve.agent.tasks import TaskStore
 from auraeve.agent.tools.cron import CronTool
 from auraeve.agent.tools.filesystem import EditTool, ReadTool, WriteTool
-from auraeve.agent.tools.plan import TodoTool
 from auraeve.agent.tools.search import GlobTool, GrepTool
 from auraeve.agent.tools.task_create import TaskCreateTool
 from auraeve.agent.tools.task_get import TaskGetTool
@@ -28,29 +27,19 @@ def _resolve_task_base_dir(task_base_dir: Path | None) -> Path:
 def register_task_tools(
     registry: ToolRegistry,
     *,
-    task_mode: str,
-    plan_manager,
     task_session_key: str | None,
     task_base_dir: Path | None = None,
 ) -> None:
-    if task_mode == "task_v2":
-        if not task_session_key:
-            raise ValueError("task_session_key is required when task_mode='task_v2'")
-        store = TaskStore(
-            base_dir=_resolve_task_base_dir(task_base_dir),
-            task_list_id=task_session_key,
-        )
-        registry.register(TaskCreateTool(store))
-        registry.register(TaskGetTool(store))
-        registry.register(TaskUpdateTool(store))
-        registry.register(TaskListTool(store))
-        return
-
-    if task_mode == "legacy_todo":
-        todo_tool = TodoTool(plan_manager=plan_manager)
-        if task_session_key:
-            todo_tool.set_thread_id(task_session_key)
-        registry.register(todo_tool)
+    if not task_session_key:
+        raise ValueError("task_session_key is required when registering task tools")
+    store = TaskStore(
+        base_dir=_resolve_task_base_dir(task_base_dir),
+        task_list_id=task_session_key,
+    )
+    registry.register(TaskCreateTool(store))
+    registry.register(TaskGetTool(store))
+    registry.register(TaskUpdateTool(store))
+    registry.register(TaskListTool(store))
 
 
 def build_tool_registry(
@@ -64,7 +53,6 @@ def build_tool_registry(
     bus_publish_outbound,
     provider,
     model: str,
-    plan_manager,
     channel_users: dict[str, str] | None = None,
     notify_channel: str = "",
     subagent_executor=None,
@@ -74,7 +62,6 @@ def build_tool_registry(
     thread_id: str | None = None,
     execution_workspace: str | None = None,
     execution_dispatcher: ExecutionDispatcher | None = None,
-    task_mode: str = "legacy_todo",
     task_session_key: str | None = None,
     task_base_dir: Path | None = None,
 ) -> ToolRegistry:
@@ -111,12 +98,11 @@ def build_tool_registry(
             cron_tool.set_context(origin_channel, origin_chat_id)
         registry.register(cron_tool)
 
-    register_task_tools(
-        registry,
-        task_mode=task_mode,
-        plan_manager=plan_manager,
-        task_session_key=task_session_key or thread_id,
-        task_base_dir=task_base_dir,
-    )
+    if task_session_key:
+        register_task_tools(
+            registry,
+            task_session_key=task_session_key,
+            task_base_dir=task_base_dir,
+        )
 
     return registry

@@ -61,8 +61,6 @@ def test_registry_and_prompt_include_grep_and_glob(tmp_path: Path) -> None:
         bus_publish_outbound=AsyncMock(),
         provider=MagicMock(),
         model="test-model",
-        plan_manager=MagicMock(),
-        task_mode="legacy_todo",
         task_session_key="webui:chat-1",
     )
 

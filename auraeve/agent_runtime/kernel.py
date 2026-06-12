@@ -20,13 +20,10 @@ from auraeve.agent_runtime.runtime_scheduler import RuntimeScheduler
 from auraeve.bus.events import OutboundMessage
 from auraeve.bus.queue import OutboundDispatcher
 from auraeve.providers.base import LLMProvider
-from auraeve.agent.legacy_todo_state import extract_latest_todos
 from auraeve.agent.tools.registry import ToolRegistry
 from auraeve.agent.tools.agent_tool import AgentTool
 from auraeve.agent.tools.cron import CronTool
-from auraeve.agent.tools.plan import TodoTool
 from auraeve.agent.tools.assembler import build_tool_registry, register_task_tools
-from auraeve.agent.plan import PlanManager
 from auraeve.agent.context import ContextBuilder, SILENT_REPLY_TOKEN, HEARTBEAT_OK
 from auraeve.session.manager import SessionManager
 from auraeve.mcp import MCPRuntimeManager
@@ -34,7 +31,6 @@ from auraeve.mcp import MCPRuntimeManager
 from .prompt.assembler import PromptAssembler
 from .session_attempt import SessionAttemptRunner
 from .run_orchestrator import RunOrchestrator
-from .task_mode import is_task_v2_enabled
 from .task_reminders import build_task_runtime_instruction
 from .tool_policy.engine import ToolPolicyEngine
 
@@ -116,9 +112,8 @@ class RuntimeKernel:
         self.memory_lifecycle = memory_lifecycle
         self._reload_lock = asyncio.Lock()
 
-        # 会话管理与任务计划管理
+        # 会话管理与任务存储
         self.sessions = SessionManager(sessions_dir)
-        self._plan = PlanManager()
         self._task_base_dir = sessions_dir.parent / "tasks"
 
         # Tool registry (main agent).
@@ -161,7 +156,6 @@ class RuntimeKernel:
                 bus_publish_outbound=self.bus.publish_outbound,
                 provider=self.provider,
                 model=self.model,
-                plan_manager=self._plan,
                 channel_users=self._channel_users,
                 notify_channel=self._notify_channel,
                 subagent_executor=self._subagent_executor,
@@ -170,8 +164,6 @@ class RuntimeKernel:
                 origin_chat_id=task.origin_chat_id or None,
                 thread_id=f"sub:{task.task_id}",
                 execution_workspace=task.worktree_path or self._execution_workspace,
-                task_mode="legacy_todo",
-                task_session_key=f"sub:{task.task_id}",
                 task_base_dir=self._task_base_dir,
             ),
             policy=self.policy,
@@ -344,13 +336,11 @@ class RuntimeKernel:
             bus_publish_outbound=self.bus.publish_outbound,
             provider=self.provider,
             model=self.model,
-            plan_manager=self._plan,
             channel_users=self._channel_users,
             notify_channel=self._notify_channel,
             subagent_executor=self._subagent_executor,
             cron_service=self.cron_service,
             execution_workspace=self._execution_workspace,
-            task_mode="none",
             task_base_dir=self._task_base_dir,
         )
         self._runner._tools = self.tools
@@ -419,25 +409,11 @@ class RuntimeKernel:
         cron_tool = tools.get("cron")
         if cron_tool is not None and isinstance(cron_tool, CronTool):
             cron_tool.set_context(channel, chat_id)
-        todo_tool = tools.get("todo")
-        if todo_tool is not None and isinstance(todo_tool, TodoTool):
-            todo_tool.set_thread_id(thread_id)
-
     def _resolve_runtime_tools(self, channel: str, chat_id: str, thread_id: str) -> ToolRegistry:
         base_tools = getattr(self, "tools", None)
         registry = base_tools.clone() if isinstance(base_tools, ToolRegistry) else ToolRegistry()
-        task_mode = "task_v2" if is_task_v2_enabled(channel=channel) else "legacy_todo"
-        if task_mode == "legacy_todo":
-            session_manager = getattr(self, "sessions", None)
-            session_messages = []
-            if session_manager is not None:
-                session = session_manager.get_or_create(thread_id)
-                session_messages = list(getattr(session, "messages", []) or [])
-            self._plan.set_plan(thread_id, extract_latest_todos(session_messages))
         register_task_tools(
             registry,
-            task_mode=task_mode,
-            plan_manager=self._plan,
             task_session_key=thread_id,
             task_base_dir=getattr(self, "_task_base_dir", None),
         )
@@ -468,22 +444,6 @@ class RuntimeKernel:
             )
             extracted.append(result)
         return extracted or None
-
-    def _inject_plan_into_messages(self, messages: list[dict], thread_id: str) -> list[dict]:
-        """Inject the current plan fragment into the first system message."""
-        plan_fragment = self._plan.format_for_prompt(thread_id)
-        if not plan_fragment:
-            return messages
-        result = []
-        injected = False
-        for msg in messages:
-            if not injected and msg.get("role") == "system":
-                content = msg.get("content", "")
-                if "## Current Task Plan" not in content:
-                    msg = {**msg, "content": content + f"\n\n---\n\n{plan_fragment}"}
-                injected = True
-            result.append(msg)
-        return result
 
     @staticmethod
     def _sanitize_assistant_output(content: str | None) -> str | None:
@@ -544,7 +504,6 @@ class RuntimeKernel:
             session.clear()
             self.sessions.save(session)
             self.sessions.invalidate(session.key)
-            self._plan.clear_plan(thread_id)
             return OutboundMessage(
                 channel=channel,
                 chat_id=chat_id,

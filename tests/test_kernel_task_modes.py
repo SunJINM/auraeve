@@ -10,27 +10,9 @@ from auraeve.agent_runtime.kernel import RuntimeKernel
 from auraeve.session.manager import SessionManager
 
 
-def test_resolve_runtime_tools_uses_task_v2_for_interactive_channel(tmp_path: Path) -> None:
+def test_resolve_runtime_tools_registers_task_v2_for_any_main_channel(tmp_path: Path) -> None:
     kernel = object.__new__(RuntimeKernel)
     kernel.tools = ToolRegistry()
-    kernel._plan = MagicMock()
-    kernel._task_base_dir = tmp_path / "tasks"
-
-    registry = RuntimeKernel._resolve_runtime_tools(
-        kernel,
-        channel="webui",
-        chat_id="chat-1",
-        thread_id="webui:chat-1",
-    )
-
-    assert registry.has("TaskCreate")
-    assert registry.has("todo") is False
-
-
-def test_resolve_runtime_tools_uses_legacy_todo_for_non_interactive_channel(tmp_path: Path) -> None:
-    kernel = object.__new__(RuntimeKernel)
-    kernel.tools = ToolRegistry()
-    kernel._plan = MagicMock()
     kernel._task_base_dir = tmp_path / "tasks"
 
     registry = RuntimeKernel._resolve_runtime_tools(
@@ -40,16 +22,17 @@ def test_resolve_runtime_tools_uses_legacy_todo_for_non_interactive_channel(tmp_
         thread_id="napcat:user-1",
     )
 
-    assert registry.has("todo")
-    assert registry.has("TaskCreate") is False
+    assert registry.has("TaskCreate")
+    assert registry.has("TaskGet")
+    assert registry.has("TaskUpdate")
+    assert registry.has("TaskList")
+    assert registry.has("todo") is False
 
 
 @pytest.mark.asyncio
-async def test_process_message_uses_runtime_tool_registry_without_plan_injection(tmp_path: Path) -> None:
+async def test_process_message_uses_runtime_tool_registry(tmp_path: Path) -> None:
     kernel = object.__new__(RuntimeKernel)
-    kernel._plan = MagicMock()
     kernel._extract_attachments_legacy = AsyncMock(return_value=None)
-    kernel._inject_plan_into_messages = MagicMock(side_effect=AssertionError("should not inject plan"))
     kernel._sanitize_assistant_output = RuntimeKernel._sanitize_assistant_output
     kernel.sessions = MagicMock()
     session = MagicMock()
@@ -88,7 +71,6 @@ async def test_process_message_uses_runtime_tool_registry_without_plan_injection
         metadata={},
     )
 
-    assert kernel._inject_plan_into_messages.call_count == 0
     assemble_kwargs = kernel.assembler.assemble.await_args.kwargs
     assert assemble_kwargs["available_tools"] == set(runtime_tools.tool_names)
     kernel._orchestrator.run.assert_awaited_once()
@@ -98,7 +80,6 @@ async def test_process_message_uses_runtime_tool_registry_without_plan_injection
 @pytest.mark.asyncio
 async def test_process_message_persists_tool_transcript_messages(tmp_path: Path) -> None:
     kernel = object.__new__(RuntimeKernel)
-    kernel._plan = MagicMock()
     kernel._extract_attachments_legacy = AsyncMock(return_value=None)
     kernel._sanitize_assistant_output = RuntimeKernel._sanitize_assistant_output
     kernel.sessions = SessionManager(tmp_path / "sessions")
@@ -112,7 +93,7 @@ async def test_process_message_persists_tool_transcript_messages(tmp_path: Path)
     kernel._orchestrator.run = AsyncMock(
         return_value=MagicMock(
             final_content="完成",
-            tools_used=["todo"],
+            tools_used=["TaskUpdate"],
             recovery_actions=[],
             messages=[
                 {
@@ -122,11 +103,11 @@ async def test_process_message_persists_tool_transcript_messages(tmp_path: Path)
                         {
                             "id": "call-1",
                             "type": "function",
-                            "function": {"name": "todo", "arguments": "{\"todos\":[]}"},
+                            "function": {"name": "TaskUpdate", "arguments": "{\"taskId\":\"1\",\"status\":\"completed\"}"},
                         }
                     ],
                 },
-                {"role": "tool", "tool_call_id": "call-1", "name": "todo", "content": "已清空"},
+                {"role": "tool", "tool_call_id": "call-1", "name": "TaskUpdate", "content": "已更新"},
             ],
         )
     )
@@ -153,4 +134,4 @@ async def test_process_message_persists_tool_transcript_messages(tmp_path: Path)
 
     session = kernel.sessions.get_or_create("napcat:user-1")
     assert any(item.get("role") == "assistant" and item.get("tool_calls") for item in session.messages)
-    assert any(item.get("role") == "tool" and item.get("name") == "todo" for item in session.messages)
+    assert any(item.get("role") == "tool" and item.get("name") == "TaskUpdate" for item in session.messages)

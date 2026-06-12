@@ -50,7 +50,7 @@ class ToolPolicyEngine:
             return "filesystem"
         if tool_name in {"web_search", "web_fetch"}:
             return "web"
-        if tool_name in {"agent", "todo", "cron", "TaskCreate", "TaskGet", "TaskUpdate", "TaskList"}:
+        if tool_name in {"agent", "cron", "TaskCreate", "TaskGet", "TaskUpdate", "TaskList"}:
             return "agent"
         if tool_name in {"Bash"}:
             return "shell"

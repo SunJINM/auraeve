@@ -22,8 +22,6 @@ def test_build_tool_registry_no_longer_registers_media_understand(tmp_path) -> N
         bus_publish_outbound=AsyncMock(),
         provider=MagicMock(),
         model="test-model",
-        plan_manager=MagicMock(),
-        task_mode="none",
     )
 
     assert registry.has("media_understand") is False

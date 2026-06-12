@@ -155,7 +155,6 @@ class ContextBuilder:
             "web_fetch":      "抓取 URL 可读内容（三层提取管道）",
             "agent":          "启动子智能体执行复杂多步骤任务，支持查询和管理已创建的子智能体",
             "cron":           "管理定时任务和唤醒事件（用于提醒；设置提醒时，写入自然语言描述以便触发时读起来像提醒）",
-            "todo":           "管理当前任务规划列表",
             "TaskCreate":     "创建任务项",
             "TaskGet":        "读取单个任务详情",
             "TaskUpdate":     "增量更新任务状态与字段",
@@ -165,11 +164,11 @@ class ContextBuilder:
             "Read", "Write", "Edit", "Grep", "Glob", "Bash",
             "web_search", "web_fetch",
             "agent", "cron",
-            "TaskCreate", "TaskGet", "TaskUpdate", "TaskList", "todo",
+            "TaskCreate", "TaskGet", "TaskUpdate", "TaskList",
         ]
 
         enabled = [t for t in TOOL_ORDER if t in tools]
-        extra = sorted(t for t in tools if t not in TOOL_ORDER)
+        extra = sorted(t for t in tools if t not in TOOL_ORDER and t != "todo")
         all_tools = enabled + extra
 
         if not all_tools:
@@ -187,14 +186,6 @@ class ContextBuilder:
                 "复杂任务（3 步以上）或非平凡工作，使用 TaskCreate / TaskGet / TaskUpdate / TaskList 管理进度；纯对话或简单单步任务通常不需要。",
                 "推荐流程：先用 TaskList 看概览，再用 TaskGet 获取某个将要处理的任务详情；开始时用 TaskUpdate 标记 in_progress，完成后立刻标记 completed。",
                 "完成一个任务后，优先再次调用 TaskList 查看下一项可执行工作，而不是反复读取同一个任务。",
-                "",
-            ]
-        elif "todo" in tools:
-            task_guidance = [
-                "## 计划与自检",
-                "复杂任务（3 步以上）先调用 todo 建立计划，并保持同一时刻仅一个 in_progress。",
-                "如果当前工作确实适合计划跟踪，再使用 todo；如果不相关就不要为了形式而更新。",
-                "每完成一步立即更新状态，结束前自检：交付物是否齐全、是否已完成必要消息发送、是否还需用户确认。",
                 "",
             ]
 

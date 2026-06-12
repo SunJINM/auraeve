@@ -186,8 +186,6 @@ def test_build_tool_registry_registers_read_write_without_legacy_names(
         bus_publish_outbound=AsyncMock(),
         provider=MagicMock(),
         model="test-model",
-        plan_manager=MagicMock(),
-        task_mode="none",
     )
 
     assert registry.has("Read")

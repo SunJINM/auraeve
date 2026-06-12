@@ -3,7 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Callable
 
-from auraeve.agent.legacy_todo_state import extract_latest_todos
 from auraeve.agent.tasks import TaskStore
 
 
@@ -42,10 +41,6 @@ def _has_task_management_tool_call(message: dict[str, Any]) -> bool:
     return bool({"TaskCreate", "TaskUpdate"} & names)
 
 
-def _has_legacy_todo_tool_call(message: dict[str, Any]) -> bool:
-    return "todo" in _iter_assistant_tool_names(message)
-
-
 def _should_emit_turn_based_reminder(turns_since_management: int | None) -> bool:
     if turns_since_management is None:
         return False
@@ -68,17 +63,6 @@ def _format_task_summary(task_base_dir: Path | None, session_key: str) -> str:
     return "\n\n现有任务：\n" + "\n".join(lines)
 
 
-def _format_legacy_todo_summary(messages: list[dict[str, Any]]) -> str:
-    todos = extract_latest_todos(messages)
-    if not todos:
-        return ""
-    lines = [
-        f"{idx}. [{item.get('status')}] {item.get('content')}"
-        for idx, item in enumerate(todos, start=1)
-    ]
-    return "\n\n现有 todo：\n" + "\n".join(lines)
-
-
 def build_task_runtime_instruction(
     *,
     session_key: str,
@@ -86,33 +70,18 @@ def build_task_runtime_instruction(
     available_tools: set[str],
     task_base_dir: Path | None,
 ) -> str | None:
-    if _TASK_V2_NAMES & available_tools:
-        turns_since_management = _assistant_turns_since(
-            session_messages,
-            _has_task_management_tool_call,
-        )
-        if not _should_emit_turn_based_reminder(turns_since_management):
-            return None
-        return (
-            "最近没有使用任务工具。如果当前工作确实适合任务跟踪，可考虑使用 TaskCreate 新增任务，"
-            "并使用 TaskUpdate 在开始时标记为 in_progress、完成时标记为 completed。"
-            "如果任务列表已经陈旧，也可以清理它。仅在与当前工作相关时使用；如果不适用就忽略。"
-            "不要向用户提及这条提醒。"
-            + _format_task_summary(task_base_dir, session_key)
-        )
-
-    if "todo" in available_tools:
-        turns_since_management = _assistant_turns_since(
-            session_messages,
-            _has_legacy_todo_tool_call,
-        )
-        if not _should_emit_turn_based_reminder(turns_since_management):
-            return None
-        return (
-            "最近没有使用 todo 工具。如果当前工作确实适合任务跟踪，可考虑使用 todo 更新当前计划，"
-            "并保持计划与实际进展一致。如果 todo 列表已经陈旧，也可以清理它。"
-            "仅在与当前工作相关时使用；如果不适用就忽略。不要向用户提及这条提醒。"
-            + _format_legacy_todo_summary(session_messages)
-        )
-
-    return None
+    if not (_TASK_V2_NAMES & available_tools):
+        return None
+    turns_since_management = _assistant_turns_since(
+        session_messages,
+        _has_task_management_tool_call,
+    )
+    if not _should_emit_turn_based_reminder(turns_since_management):
+        return None
+    return (
+        "最近没有使用任务工具。如果当前工作确实适合任务跟踪，可考虑使用 TaskCreate 新增任务，"
+        "并使用 TaskUpdate 在开始时标记为 in_progress、完成时标记为 completed。"
+        "如果任务列表已经陈旧，也可以清理它。仅在与当前工作相关时使用；如果不适用就忽略。"
+        "不要向用户提及这条提醒。"
+        + _format_task_summary(task_base_dir, session_key)
+    )
