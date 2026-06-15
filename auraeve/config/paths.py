@@ -171,3 +171,9 @@ def resolve_media_dir(env: dict[str, str] | None = None) -> Path:
     """图片等媒体产物的统一存储目录（state_dir/media）。"""
     effective_env = env if env is not None else os.environ
     return resolve_state_dir(effective_env) / "media"
+
+
+def resolve_resources_dir(env: dict[str, str] | None = None) -> Path:
+    """统一资源产物目录（state_dir/resources）。"""
+    effective_env = env if env is not None else os.environ
+    return resolve_state_dir(effective_env) / "resources"

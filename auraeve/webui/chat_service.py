@@ -329,6 +329,7 @@ class ChatService:
             status_str = str(attrs.get("status") or "success")
             tool_status = "error" if status_str in ("failed", "timeout", "policy_denied", "hook_blocked") else "success"
             result_preview = str(attrs.get("resultPreview") or "")
+            resources = attrs.get("resources") or []
 
             await self._broadcast(
                 session_key,
@@ -345,6 +346,7 @@ class ChatService:
                         "arguments": parsed_args,
                         "result": result_preview,
                         "status": tool_status,
+                        "resources": resources if isinstance(resources, list) else [],
                     },
                 ),
             )

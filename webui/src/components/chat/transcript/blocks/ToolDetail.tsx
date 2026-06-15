@@ -2,7 +2,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { HiArrowTopRightOnSquare } from 'react-icons/hi2'
 
-import type { TranscriptToolUseBlock } from '../types'
+import type { TranscriptResourceItem, TranscriptToolUseBlock } from '../types'
 import { useFileDrawer } from '../../../../store/fileDrawer'
 import { DiffView } from '../DiffView'
 import { buildDrawerPayload } from '../toolPresentation'
@@ -113,6 +113,56 @@ function KeyValueTable({ args }: { args: Record<string, unknown> }) {
   )
 }
 
+function ResourceCards({ resources }: { resources: TranscriptResourceItem[] }) {
+  const items = resources.filter((item) => item.kind === 'image' || (item.mime ?? '').startsWith('image/'))
+  if (items.length === 0) return null
+
+  return (
+    <div className="space-y-1">
+      <DetailLabel>Resources</DetailLabel>
+      <div className="flex flex-wrap gap-3">
+        {items.map((item, index) => {
+          const src = item.displayUrl || item.url || ''
+          const ref = item.ref || item.id
+          return (
+            <div
+              key={item.id || ref || index}
+              className="overflow-hidden rounded-[10px]"
+              style={{ border: '1px solid var(--glass-border)', background: 'rgba(127,127,127,0.06)' }}
+            >
+              {src ? (
+                <img
+                  src={src}
+                  alt={item.alt || '生成的图片'}
+                  className="block max-h-[180px] max-w-[240px] object-contain"
+                />
+              ) : null}
+              <div className="flex items-center justify-between gap-3 px-2.5 py-2">
+                <span
+                  className="min-w-0 truncate text-[11px]"
+                  style={{ color: 'var(--text-secondary)', fontFamily: 'ui-monospace, SFMono-Regular, Consolas, monospace' }}
+                >
+                  {ref}
+                </span>
+                {item.downloadUrl ? (
+                  <a
+                    href={item.downloadUrl}
+                    download={item.filename || item.id}
+                    className="shrink-0 text-[11px]"
+                    style={{ color: 'var(--accent)' }}
+                  >
+                    下载
+                  </a>
+                ) : null}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 function asRecord(args: unknown): Record<string, unknown> {
   return args && typeof args === 'object' ? (args as Record<string, unknown>) : {}
 }
@@ -123,6 +173,7 @@ export function ToolDetail({ block }: { block: TranscriptToolUseBlock }) {
   const isError = block.status === 'error'
   const a = asRecord(args)
   const hasResult = result != null && result !== ''
+  const resources = block.resources ?? []
 
   // Edit：可点路径 + 行级 diff
   if (toolName === 'Edit' || toolName === 'edit') {
@@ -196,6 +247,16 @@ export function ToolDetail({ block }: { block: TranscriptToolUseBlock }) {
             {isError ? <OutputBlock text={result!} isError /> : <MarkdownBlock text={result!} />}
           </div>
         )}
+      </div>
+    )
+  }
+
+  if (toolName === 'generate_image') {
+    return (
+      <div className="space-y-2">
+        <KeyValueTable args={a} />
+        <ResourceCards resources={resources} />
+        {isError && hasResult && <OutputBlock text={result!} isError />}
       </div>
     )
   }

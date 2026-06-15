@@ -9,30 +9,36 @@ function filenameFromUrl(url: string): string {
 }
 
 export function ImageBlock({ block }: { block: TranscriptImageBlock }) {
+  return (
+    <div className="ml-8 max-w-[760px]">
+      <ImageGallery block={block} />
+    </div>
+  )
+}
+
+export function ImageGallery({ block }: { block: TranscriptImageBlock }) {
   const { status, images, prompt } = block
   const [lightbox, setLightbox] = useState<string | null>(null)
 
   if (status === 'generating') {
     return (
-      <div className="ml-8 max-w-[760px]">
-        <div
-          className="flex h-[160px] w-[200px] animate-pulse items-center justify-center rounded-[14px]"
-          style={{
-            background: 'var(--surface-3)',
-            border: '1px solid color-mix(in srgb, var(--text-primary) 10%, transparent)',
-          }}
-        >
-          <span className="text-[12px]" style={{ color: 'var(--text-tertiary)' }}>
-            正在生成图片…
-          </span>
-        </div>
+      <div
+        className="flex h-[160px] w-[200px] animate-pulse items-center justify-center rounded-[14px]"
+        style={{
+          background: 'var(--surface-3)',
+          border: '1px solid color-mix(in srgb, var(--text-primary) 10%, transparent)',
+        }}
+      >
+        <span className="text-[12px]" style={{ color: 'var(--text-tertiary)' }}>
+          正在生成图片…
+        </span>
       </div>
     )
   }
 
   if (status === 'error') {
     return (
-      <div className="ml-8 max-w-[760px] text-[13px]" style={{ color: 'var(--danger)' }}>
+      <div className="text-[13px]" style={{ color: 'var(--danger)' }}>
         图片生成失败{prompt ? `：${prompt}` : '，请稍后重试'}
       </div>
     )
@@ -40,14 +46,14 @@ export function ImageBlock({ block }: { block: TranscriptImageBlock }) {
 
   return (
     <>
-      <div className="ml-8 flex max-w-[760px] flex-wrap gap-3">
+      <div className="flex max-w-[760px] flex-wrap gap-3">
         {images.map((img, index) => (
           <div key={img.id || img.url || index} className="group relative inline-block">
             <img
               src={img.url}
               alt={img.alt || img.prompt || prompt || '生成的图片'}
               onClick={() => setLightbox(img.url)}
-              className="max-h-[300px] max-w-[340px] rounded-[14px] object-contain"
+              className="max-h-[300px] max-w-[min(420px,100%)] rounded-[14px] object-contain"
               style={{
                 border: '1px solid color-mix(in srgb, var(--text-primary) 8%, transparent)',
                 cursor: 'zoom-in',

@@ -12,6 +12,7 @@ from auraeve.agent_runtime.command_queue import RuntimeCommandQueue
 from auraeve.agent.tasks import TaskStore
 from auraeve.session.manager import SessionManager
 from auraeve.webui.chat_service import ChatService
+from auraeve.webui.chat_transcript_service import project_history_into_transcript_blocks
 from auraeve.webui.server import WebUIServer, test_setup_model as run_setup_model_probe
 
 
@@ -107,6 +108,23 @@ def test_chat_transcript_route_returns_blocks_and_run_state(tmp_path: Path) -> N
     assert payload["sessionKey"] == "webui:test"
     assert payload["run"]["status"] == "idle"
     assert [item["type"] for item in payload["blocks"]] == ["user", "assistant_text"]
+
+
+def test_chat_transcript_projection_inserts_image_placeholder_before_followup_text() -> None:
+    blocks = project_history_into_transcript_blocks(
+        [
+            {
+                "role": "assistant",
+                "content": "这是生成的版本：\n\n如果还想继续，我可以再调整。",
+                "timestamp": "2026-06-15T00:00:00",
+                "images": [{"id": "img-1", "url": "/api/webui/resources/img-1/content"}],
+            }
+        ]
+    )
+
+    assert blocks[0]["type"] == "assistant_text"
+    assert blocks[0]["content"] == "这是生成的版本：\n\n[[image:1]]\n\n如果还想继续，我可以再调整。"
+    assert blocks[1]["type"] == "image"
 
 
 def test_chat_transcript_events_route_streams_transcript_events(tmp_path: Path) -> None:

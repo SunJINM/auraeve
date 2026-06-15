@@ -632,9 +632,10 @@ class RuntimeKernel:
                 sender_id=sender_id,
             )
         self._persist_tool_transcript(session, recovery_result.messages)
-        session.add_message("assistant", persist_content,
-                            tools_used=tools_used if tools_used else None,
-                            images=final_images if final_images else None)
+        assistant_kwargs = {"tools_used": tools_used if tools_used else None}
+        if final_images:
+            assistant_kwargs["images"] = final_images
+        session.add_message("assistant", persist_content, **assistant_kwargs)
         self.sessions.save(session)
 
         if self.memory_lifecycle is not None and not is_meta_event:

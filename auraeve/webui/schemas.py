@@ -45,6 +45,7 @@ class TranscriptToolUseBlock(BaseModel):
     arguments: Any = None
     result: str | None = None
     status: Literal["preparing", "running", "success", "error"] = "running"
+    resources: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class TranscriptAssistantTextBlock(BaseModel):

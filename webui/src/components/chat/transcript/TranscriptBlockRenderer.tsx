@@ -6,14 +6,20 @@ import { LiveActivityBlock } from './blocks/LiveActivityBlock'
 import { SystemNoticeBlock } from './blocks/SystemNoticeBlock'
 import { ToolUseBlock } from './blocks/ToolUseBlock'
 import { UserBlock } from './blocks/UserBlock'
-import type { TranscriptBlock } from './types'
+import type { TranscriptBlock, TranscriptImageBlock } from './types'
 
-export function TranscriptBlockRenderer({ block }: { block: TranscriptBlock }) {
+export function TranscriptBlockRenderer({
+  block,
+  inlineImages,
+}: {
+  block: TranscriptBlock
+  inlineImages?: TranscriptImageBlock[]
+}) {
   switch (block.type) {
     case 'user':
       return <UserBlock block={block} />
     case 'assistant_text':
-      return <AssistantTextBlock block={block} />
+      return <AssistantTextBlock block={block} inlineImages={inlineImages} />
     case 'image':
       return <ImageBlock block={block} />
     case 'tool_use':

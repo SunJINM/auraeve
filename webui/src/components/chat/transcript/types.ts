@@ -16,6 +16,19 @@ export interface TranscriptImageItem {
   prompt?: string
 }
 
+export interface TranscriptResourceItem {
+  id: string
+  ref?: string
+  kind?: string
+  mime?: string
+  filename?: string
+  url?: string
+  displayUrl?: string
+  downloadUrl?: string
+  alt?: string
+  prompt?: string
+}
+
 export interface TranscriptImageBlock {
   id: string
   type: 'image'
@@ -40,6 +53,7 @@ export interface TranscriptToolUseBlock {
   arguments: unknown
   result: string | null
   status: 'preparing' | 'running' | 'success' | 'error'
+  resources?: TranscriptResourceItem[]
 }
 
 export interface TranscriptAssistantTextBlock {

@@ -383,15 +383,24 @@ class WebUIServer:
                 },
             )
 
-        # 图片产物：<img> 标签无法携带鉴权头，依赖随机不可枚举的 id 提供访问。
-        @app.get("/api/webui/media/{image_id}")
-        async def media_file(image_id: str) -> FileResponse:
-            from auraeve import media_store
+        # 资源产物：<img> 标签无法携带鉴权头，依赖随机不可枚举的 id 提供访问。
+        @app.get("/api/webui/resources/{resource_id}/content")
+        async def resource_content(resource_id: str) -> FileResponse:
+            from auraeve import resource_store
 
-            path = media_store.resolve_media_path(image_id)
+            path = resource_store.resolve_resource_path(resource_id)
             if path is None:
-                raise HTTPException(status_code=404, detail="媒体文件不存在")
+                raise HTTPException(status_code=404, detail="资源不存在")
             return FileResponse(str(path))
+
+        @app.get("/api/webui/resources/{resource_id}/download")
+        async def resource_download(resource_id: str) -> FileResponse:
+            from auraeve import resource_store
+
+            path = resource_store.resolve_resource_path(resource_id)
+            if path is None:
+                raise HTTPException(status_code=404, detail="资源不存在")
+            return FileResponse(str(path), filename=path.name)
 
         if self._static_dir and self._static_dir.exists():
             app.mount("/", StaticFiles(directory=str(self._static_dir), html=True), name="static")

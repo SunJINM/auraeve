@@ -2,7 +2,7 @@
 
 - 复用主模型的 api_key / api_base，图片模型默认 gpt-image-2。
 - 生成走 /images/generations，编辑走 /images/edits。
-- 产出图片只落盘（media_store），返回值仅含短引用，不把 base64 带进上下文。
+- 产出图片只落盘（resource_store），返回值仅含资源引用，不把 base64 带进上下文。
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ from typing import Any
 import httpx
 from loguru import logger
 
-from auraeve import media_store
+from auraeve import resource_store
 from auraeve.agent.tools.base import Tool, ToolExecutionResult
 
 _VALID_SIZES = {"1024x1024", "1024x1536", "1536x1024", "auto"}
@@ -44,8 +44,8 @@ class ImageGenerationTool(Tool):
     def description(self) -> str:
         return (
             "生成或编辑图片。mode=generate 按文字描述生成新图；mode=edit 在已有图片基础上修改"
-            "（image 传之前生成图片的引用路径，如 /api/webui/media/img_xxx.png 或 img_xxx.png）。"
-            "图片会自动保存并展示给用户，返回值包含图片引用路径，可用于后续编辑。"
+            "（image 传之前生成图片的资源引用，如 media://img_xxx.png）。"
+            "图片会自动保存并展示给用户，返回值包含资源引用，可用于后续编辑。"
         )
 
     @property
@@ -64,7 +64,7 @@ class ImageGenerationTool(Tool):
                 },
                 "image": {
                     "type": "string",
-                    "description": "edit 模式下的源图引用（媒体 id 或 /api/webui/media/ 路径）。",
+                    "description": "edit 模式下的源图引用（media:// 资源引用或资源 id）。",
                 },
                 "size": {
                     "type": "string",
@@ -98,17 +98,17 @@ class ImageGenerationTool(Tool):
         else:
             data = await self._generate(prompt, size)
 
-        refs = media_store.refs_from_images_field(
+        refs = resource_store.refs_from_images_field(
             [{"b64_json": item} for item in data],
             prompt=prompt,
         )
         if not refs:
             raise RuntimeError("图片生成失败：未返回图片数据")
 
-        urls = "、".join(ref["url"] for ref in refs)
+        refs_text = "、".join(ref["ref"] for ref in refs)
         content = (
-            f"已生成 {len(refs)} 张图片并展示给用户。引用路径：{urls}。"
-            "如需在此基础上继续编辑，把该路径作为 image 参数、mode=edit 调用本工具。"
+            f"已生成 {len(refs)} 张图片并展示给用户。资源：{refs_text}。"
+            "如需在此基础上继续编辑，把资源引用作为 image 参数、mode=edit 调用本工具。"
         )
         return ToolExecutionResult(content=content, data={"image_refs": refs})
 
@@ -125,11 +125,11 @@ class ImageGenerationTool(Tool):
     async def _edit(self, prompt: str, image_ref: str, size: str) -> list[str]:
         if not image_ref:
             raise ValueError("edit 模式必须提供 image 参数（源图引用）")
-        path = media_store.resolve_media_path(image_ref.rsplit("/", 1)[-1])
+        path = resource_store.resolve_resource_path(image_ref)
         if path is None:
             raise FileNotFoundError(f"找不到源图：{image_ref}")
         # 压缩后再上传，避免原图过大触发网关 413。
-        data, filename, mime = media_store.compress_for_upload(path)
+        data, filename, mime = resource_store.compress_for_upload(path)
         files = {"image": (filename, data, mime)}
         form = {"model": self._model, "prompt": prompt, "size": size, "n": "1"}
         async with httpx.AsyncClient(timeout=self._timeout_s) as client:

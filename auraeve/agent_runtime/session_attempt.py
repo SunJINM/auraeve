@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 
-from auraeve import media_store
+from auraeve import resource_store
 from auraeve.agent.tools.base import ToolExecutionResult
 from auraeve.observability import get_observability
 from auraeve.agent_runtime.tool_policy.contracts import PolicyContext
@@ -314,7 +314,7 @@ class SessionAttemptRunner:
             # 模型原生出图：落盘为短引用并累积，统一到最终回复后展示；图片二进制不入上下文。
             if getattr(response, "images", None):
                 try:
-                    refs = media_store.refs_from_images_field(response.images)
+                    refs = resource_store.refs_from_images_field(response.images)
                 except Exception as exc:  # noqa: BLE001
                     logger.warning(f"[session_attempt] 原生图片落盘失败: {exc}")
                     refs = []
@@ -551,6 +551,7 @@ class SessionAttemptRunner:
                             "durationMs": duration_ms,
                             "resultLength": len(result_text),
                             "resultPreview": _truncate_text(result_text, 800),
+                            "resources": _tool_result_resources(raw_result),
                         },
                         session_key=thread_id,
                         channel=channel,
@@ -593,7 +594,7 @@ class SessionAttemptRunner:
                 if isinstance(result, ToolExecutionResult) and isinstance(result.data, dict):
                     image_refs = result.data.get("image_refs") or None
                 before_len = len(msgs)
-                msgs = _add_tool_result(msgs, tc.id, tc.name, compact_result)
+                msgs = _add_tool_result(msgs, tc.id, tc.name, compact_result, resources=image_refs)
                 transcript_messages.extend(msgs[before_len:])
                 if meta.get("status") != "success":
                     msgs[-1] = {
@@ -668,19 +669,21 @@ def _add_tool_result(
     tool_call_id: str,
     tool_name: str,
     result: Any,
+    resources: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
-    messages.append(
-        {
-            "role": "tool",
-            "tool_call_id": tool_call_id,
-            "name": tool_name,
-            "content": result,
-        }
-    )
+    message = {
+        "role": "tool",
+        "tool_call_id": tool_call_id,
+        "name": tool_name,
+        "content": result,
+    }
+    if resources:
+        message["resources"] = resources
+    messages.append(message)
     return messages
 
 
-_MEDIA_IMG_MD_RE = re.compile(r"!\[[^\]]*\]\(\s*[^)\s]*?/api/webui/media/[^)\s]*\s*\)")
+_MEDIA_IMG_MD_RE = re.compile(r"!\[[^\]]*\]\(\s*[^)\s]*?/api/webui/resources/[^)\s]*\s*\)")
 
 
 def _strip_media_image_markdown(content: str) -> str:
@@ -729,6 +732,13 @@ def _tool_result_content(result: Any) -> Any:
 
 def _tool_result_text(result: Any) -> str:
     return str(_tool_result_content(result) or "")
+
+
+def _tool_result_resources(result: Any) -> list[dict[str, Any]]:
+    if not isinstance(result, ToolExecutionResult) or not isinstance(result.data, dict):
+        return []
+    resources = result.data.get("resources") or result.data.get("image_refs") or []
+    return resources if isinstance(resources, list) else []
 
 
 def _compact_tool_result(tool_name: str, result_text: Any) -> Any:

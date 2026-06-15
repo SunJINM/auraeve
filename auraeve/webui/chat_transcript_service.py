@@ -3,12 +3,16 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from typing import Any
 
 
 _READONLY_TOOL_NAMES = {"Read", "read", "read_file", "Grep", "Glob"}
 _SEARCH_TOOL_NAMES = {"web_search", "web_fetch"}
 _COLLAPSIBLE_TOOL_NAMES = _READONLY_TOOL_NAMES | _SEARCH_TOOL_NAMES
+_IMAGE_PLACEHOLDER_RE = re.compile(r"\[\[image(?::[^\]]+)?\]\]")
+_IMAGE_ANCHOR_WORDS = ("图", "图片", "版本", "效果", "结果", "生成", "完成")
+_FOLLOWUP_PREFIXES = ("如果", "还想", "你可以", "可以", "需要", "想要")
 
 
 def project_history_into_transcript_blocks(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -35,18 +39,18 @@ def project_history_into_transcript_blocks(messages: list[dict[str, Any]]) -> li
         if role == "assistant":
             # 与流式输出顺序保持一致：同一轮次内叙述文本先于工具调用，
             # 故先投影 assistant_text，再投影 tool_use，避免 reload 后工具块错位到文本上方。
+            assistant_images = message.get("images") or []
             content = str(message.get("content") or "")
             if content.strip():
                 blocks.append(
                     {
                         "id": f"assistant_text:{message_index}",
                         "type": "assistant_text",
-                        "content": content,
+                        "content": _insert_image_placeholders(content, len(assistant_images)),
                         "timestamp": str(message.get("timestamp") or ""),
                     }
                 )
 
-            assistant_images = message.get("images") or []
             if assistant_images:
                 blocks.append(_image_block(f"image:{message_index}", assistant_images))
 
@@ -81,9 +85,13 @@ def project_history_into_transcript_blocks(messages: list[dict[str, Any]]) -> li
                 idx = pending_tool_uses.pop(tool_call_id)
                 blocks[idx]["result"] = result_content
                 blocks[idx]["status"] = "error" if is_error else "success"
+                resources = message.get("resources") or []
+                if isinstance(resources, list):
+                    blocks[idx]["resources"] = resources
             else:
                 # 孤立的 tool_result，创建独立 tool_use
                 stable_result_key = tool_call_id or str(message_index)
+                resources = message.get("resources") or []
                 blocks.append(
                     {
                         "id": f"tool_use:{stable_result_key}",
@@ -93,6 +101,7 @@ def project_history_into_transcript_blocks(messages: list[dict[str, Any]]) -> li
                         "arguments": None,
                         "result": result_content,
                         "status": "error" if is_error else "success",
+                        "resources": resources if isinstance(resources, list) else [],
                     }
                 )
 
@@ -117,6 +126,32 @@ def _image_block(block_id: str, refs: list[dict[str, Any]]) -> dict[str, Any]:
         "prompt": prompt,
         "toolCallId": "",
     }
+
+
+def _insert_image_placeholders(content: str, image_count: int) -> str:
+    if image_count <= 0 or not content.strip() or _IMAGE_PLACEHOLDER_RE.search(content):
+        return content
+
+    placeholders = "\n".join(f"[[image:{index}]]" for index in range(1, image_count + 1))
+    paragraphs = re.split(r"\n\s*\n", content.strip())
+    if not paragraphs:
+        return content
+
+    insert_after = 0
+    for index, paragraph in enumerate(paragraphs):
+        stripped = paragraph.strip()
+        if stripped.endswith((":", "：")) and any(word in stripped for word in _IMAGE_ANCHOR_WORDS):
+            insert_after = index
+            break
+    else:
+        for index, paragraph in enumerate(paragraphs[1:], start=1):
+            stripped = paragraph.strip()
+            if stripped.startswith(_FOLLOWUP_PREFIXES):
+                insert_after = index - 1
+                break
+
+    paragraphs.insert(insert_after + 1, placeholders)
+    return "\n\n".join(paragraphs)
 
 
 def _parse_arguments(raw: Any) -> Any:
