@@ -4,6 +4,7 @@ export type TranscriptBlock =
   | TranscriptAssistantTextBlock
   | TranscriptAgentTaskBlock
   | TranscriptCollapsedActivityBlock
+  | TranscriptLiveActivityBlock
   | TranscriptSystemNoticeBlock
 
 export interface TranscriptUserBlock {
@@ -46,6 +47,13 @@ export interface TranscriptCollapsedActivityBlock {
   type: 'collapsed_activity'
   activityType: 'read' | 'search'
   count: number
+  blocks: TranscriptToolUseBlock[]
+}
+
+/** 渲染期生成的临时聚合块：多个工具并发执行中，合并为一行实时活动。不持久化、不来自后端。 */
+export interface TranscriptLiveActivityBlock {
+  id: string
+  type: 'live_activity'
   blocks: TranscriptToolUseBlock[]
 }
 

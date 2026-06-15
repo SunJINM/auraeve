@@ -6,15 +6,22 @@ import { ChatComposer } from '../components/chat/ChatComposer'
 import { SessionSwitcher } from '../components/chat/SessionSwitcher'
 import { ThinkingIndicator } from '../components/chat/ThinkingIndicator'
 import { ChatTranscript } from '../components/chat/transcript/ChatTranscript'
+import { FileDrawer } from '../components/chat/transcript/FileDrawer'
 import { ThemeSwitch } from '../components/ThemeSwitch'
 import { useChatTranscript } from '../components/chat/transcript/useChatTranscript'
 import { useSmoothActivity } from '../components/chat/transcript/smoothActivity'
 import type { ChatTranscriptEvent } from '../components/chat/transcript/types'
 import { chatApi } from '../api/client'
 import { useAppStore } from '../store/app'
+import { useFileDrawer } from '../store/fileDrawer'
 
 export function ChatPage() {
   const { sessionKey, logout, loadSessions, touchSession } = useAppStore()
+  const drawerOpen = useFileDrawer((s) => s.open)
+  const drawerWidthRatio = useFileDrawer((s) => s.widthRatio)
+  const drawerResizing = useFileDrawer((s) => s.resizing)
+  // 以 vw 表达宽度：窗口缩放时弹框与让位区同步缩放；clamp 保证下限与聊天区至少 360px
+  const drawerWidthCss = `clamp(320px, ${(drawerWidthRatio * 100).toFixed(2)}vw, calc(100vw - 360px))`
   const { blocks, run, loading, load, applyEvent } = useChatTranscript(sessionKey)
   // 前端是否仍在平滑铺开文本；与 sending 合并为「活动中」，让指示器持续到展示结束
   const animating = useSmoothActivity()
@@ -186,13 +193,10 @@ export function ChatPage() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header
-        className="shrink-0 border-b px-4 py-3 sm:px-6"
-        style={{ borderColor: 'var(--glass-border)' }}
-      >
-        <div className="mx-auto flex w-full max-w-[860px] items-center justify-between gap-4">
-          <div className="flex min-w-0 items-center gap-3">
-            <img src="/auraeve.png" alt="AuraEve" className="h-9 w-9 shrink-0 rounded-[12px]" />
+      <header className="chat-header shrink-0 px-4 py-1.5 sm:px-6">
+        <div className="flex w-full items-center justify-between gap-4">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <img src="/auraeve.png" alt="AuraEve" className="h-8 w-8 shrink-0 rounded-[11px]" />
             <div className="min-w-0">
               <SessionSwitcher />
               <div className="ml-1.5 mt-0.5 flex items-center gap-1.5 text-[11px] font-medium" style={{ color: 'var(--text-tertiary)' }}>
@@ -205,16 +209,19 @@ export function ChatPage() {
             </div>
           </div>
 
-          <div className="flex shrink-0 items-center gap-1.5">
-            <ThemeSwitch className="icon-btn" />
-            <button onClick={logout} aria-label="退出登录" className="icon-btn">
-              <HiArrowLeftOnRectangle size={19} />
+          <div className="flex shrink-0 items-center gap-0.5">
+            <ThemeSwitch className="icon-btn-plain" />
+            <button onClick={logout} aria-label="退出登录" className="icon-btn-plain">
+              <HiArrowLeftOnRectangle size={18} />
             </button>
           </div>
         </div>
       </header>
 
-      <main className="relative flex min-h-0 flex-1 flex-col">
+      <main
+        className={`chat-main relative flex min-h-0 flex-1 flex-col ${drawerOpen ? 'drawer-open' : ''}`}
+        style={{ '--drawer-w': drawerWidthCss, transition: drawerResizing ? 'none' : undefined } as React.CSSProperties}
+      >
         <div ref={scrollRef} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto px-4 pb-8 pt-6 sm:px-6 sm:pt-8">
           <div ref={innerRef} className="mx-auto w-full max-w-[860px] pb-28">
             {!loading && blocks.length === 0 ? (
@@ -290,6 +297,8 @@ export function ChatPage() {
             <ChatComposer value={input} sending={sending} onChange={setInput} onSubmit={() => void send()} onAbort={() => void abort()} />
           </div>
         </footer>
+
+        <FileDrawer />
       </main>
     </div>
   )

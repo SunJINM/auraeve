@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { ToolUseBlock } from '../blocks/ToolUseBlock'
 
 describe('ToolUseBlock', () => {
-  it('renders a Chinese activity line with the tool target', () => {
+  it('renders an English present-tense activity line with the tool target', () => {
     render(
       <ToolUseBlock
         block={{
@@ -19,11 +19,12 @@ describe('ToolUseBlock', () => {
       />,
     )
 
-    expect(screen.getByText('搜索')).toBeInTheDocument()
+    // 进行中：进行时动词
+    expect(screen.getByText('Searching')).toBeInTheDocument()
     expect(screen.getByText(/Edit/)).toBeInTheDocument()
   })
 
-  it('shows preparing and running status labels', () => {
+  it('uses present tense while active and past tense once done', () => {
     const { rerender } = render(
       <ToolUseBlock
         block={{
@@ -37,8 +38,7 @@ describe('ToolUseBlock', () => {
         }}
       />,
     )
-
-    expect(screen.getByText('准备中')).toBeInTheDocument()
+    expect(screen.getByText('Running')).toBeInTheDocument()
 
     rerender(
       <ToolUseBlock
@@ -48,13 +48,12 @@ describe('ToolUseBlock', () => {
           toolCallId: 'bash-1',
           toolName: 'Bash',
           arguments: { command: 'pwd' },
-          result: null,
-          status: 'running',
+          result: 'ok',
+          status: 'success',
         }}
       />,
     )
-
-    expect(screen.getByText('运行中')).toBeInTheDocument()
+    expect(screen.getByText('Ran')).toBeInTheDocument()
   })
 
   it('truncates long command targets and hides raw result until expanded', () => {
@@ -78,13 +77,13 @@ describe('ToolUseBlock', () => {
     const button = screen.getByRole('button')
     // 整行使用 truncate 容器，长命令不会撑破布局
     expect(button.querySelector('.truncate')).toBeTruthy()
-    // 折叠态不再展示结果摘要/退出码
+    // 折叠态不展示结果
     expect(screen.queryByText(/access denied/)).toBeNull()
 
     // 展开后命令与错误输出以结构化面板呈现
     fireEvent.click(button)
-    expect(screen.getByText('命令')).toBeInTheDocument()
-    expect(screen.getByText('错误输出')).toBeInTheDocument()
+    expect(screen.getByText('Command')).toBeInTheDocument()
+    expect(screen.getByText('Error')).toBeInTheDocument()
     expect(screen.getByText(/access denied/)).toBeInTheDocument()
   })
 })

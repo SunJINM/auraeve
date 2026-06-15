@@ -8,8 +8,8 @@ export function CollapsedActivityBlock({ block }: { block: TranscriptCollapsedAc
   const [open, setOpen] = useState(false)
   const title =
     block.activityType === 'search'
-      ? `联网检索了 ${block.count} 次`
-      : `读取了 ${block.count} 个文件`
+      ? `Searched ${block.count} times`
+      : `Read ${block.count} files`
 
   return (
     <div className="ml-8 max-w-[760px]">

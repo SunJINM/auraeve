@@ -140,7 +140,7 @@ body {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  padding: 16px;
+  padding: 0;
 }
 
 .shell-content-wrap {
@@ -148,24 +148,15 @@ body {
   min-height: 0;
 }
 
+/* 聊天页全屏占满，不再是悬浮卡片窗口 */
 .shell-content-panel {
   height: 100%;
   min-height: 0;
   overflow: hidden;
-  border-radius: 24px;
-  background: var(--glass-bg);
-  border: 1px solid var(--glass-border);
-  box-shadow: var(--shadow);
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
-}
-
-@media (prefers-reduced-transparency: reduce) {
-  .shell-content-panel {
-    background: var(--surface-1);
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
-  }
+  border-radius: 0;
+  background: var(--surface-1);
+  border: none;
+  box-shadow: none;
 }
 
 /* ---------- 圆形图标按钮 ---------- */
@@ -190,6 +181,27 @@ body {
 
 .icon-btn:active {
   transform: scale(0.92);
+}
+
+/* 无外圈的图标按钮：仅图标，hover 淡底，占位更小 */
+.icon-btn-plain {
+  display: grid;
+  place-items: center;
+  height: 30px;
+  width: 30px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: background 0.15s var(--ease), color 0.15s var(--ease), transform 0.15s var(--ease);
+}
+.icon-btn-plain:hover {
+  background: rgba(127, 127, 127, 0.12);
+  color: var(--text-primary);
+}
+.icon-btn-plain:active {
+  transform: scale(0.9);
 }
 
 /* ---------- 输入区 ---------- */
@@ -394,6 +406,227 @@ body {
   -webkit-text-fill-color: transparent;
   color: transparent;
   animation: toolShimmer 1.6s linear infinite;
+}
+
+/* 工具行目标：文件名可点，悬停下划线提示可在侧栏打开 */
+.tool-target-link {
+  cursor: pointer;
+  text-underline-offset: 2px;
+  transition: color 0.15s var(--ease);
+}
+.tool-target-link:hover {
+  color: var(--accent) !important;
+  text-decoration: underline;
+}
+
+/* 工具详情里的完整路径按钮 */
+.tool-path {
+  border: 1px solid var(--glass-border);
+  background: rgba(127, 127, 127, 0.06);
+  transition: background 0.15s var(--ease), border-color 0.15s var(--ease);
+}
+.tool-path:hover {
+  background: rgba(127, 127, 127, 0.12);
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--glass-border));
+}
+
+/* ---------- 文件侧栏（仅浮于「正文区」之上，顶部栏不动；与聊天同色，淡阴影体现悬浮） ---------- */
+.chat-main {
+  --drawer-w: clamp(380px, 34vw, 560px);
+  transition: padding-right 0.3s var(--ease);
+}
+/* 打开时仅正文区右侧让出「弹框宽度 + 间隔」并平滑收窄，顶部栏保持不动 */
+.chat-main.drawer-open {
+  padding-right: calc(var(--drawer-w) + 28px);
+}
+
+.file-drawer {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  bottom: 8px;
+  width: var(--drawer-w);
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-1);
+  border: 1px solid var(--glass-border);
+  border-radius: 14px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.07);
+  overflow: hidden;
+  transform: translateX(calc(100% + 20px));
+  opacity: 0;
+  transition: transform 0.3s var(--ease), opacity 0.3s var(--ease);
+  z-index: 30;
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+.file-drawer.is-open {
+  transform: translateX(0);
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* 左缘拖拽手柄：调整弹框宽度 */
+.file-drawer-resize {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 9px;
+  cursor: ew-resize;
+  z-index: 5;
+  touch-action: none;
+}
+.file-drawer-resize::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 2px;
+  width: 3px;
+  height: 36px;
+  margin-top: -18px;
+  border-radius: 3px;
+  background: var(--glass-border);
+  opacity: 0;
+  transition: opacity 0.15s var(--ease), background 0.15s var(--ease);
+}
+.file-drawer-resize:hover::after {
+  opacity: 1;
+  background: color-mix(in srgb, var(--accent) 60%, var(--glass-border));
+}
+
+/* 弹框头部：与正文同色，仅一条极细分隔线，不换底色 */
+.file-drawer-head {
+  background: var(--surface-1);
+  border-bottom: 1px solid var(--glass-border);
+}
+.file-drawer-mode {
+  border: 1px solid var(--glass-border);
+  background: var(--surface-1);
+  color: var(--text-tertiary);
+}
+.file-path-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--surface-3);
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+  padding: 5px 6px 5px 10px;
+  font-family: ui-monospace, SFMono-Regular, Consolas, Monaco, monospace;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+}
+.file-path-bar .file-path-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+}
+.file-path-icon {
+  display: grid;
+  place-items: center;
+  height: 24px;
+  width: 24px;
+  border-radius: 6px;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: background 0.15s var(--ease), color 0.15s var(--ease);
+}
+.file-path-icon:hover {
+  background: rgba(127, 127, 127, 0.14);
+  color: var(--text-secondary);
+}
+
+/* 窄屏不挤压正文，弹框退化为近全宽浮层 */
+@media (max-width: 820px) {
+  .chat-main.drawer-open {
+    padding-right: 0;
+  }
+  .file-drawer {
+    width: auto;
+    left: 12px;
+    right: 12px;
+  }
+  .file-drawer-resize {
+    display: none;
+  }
+}
+
+/* ---------- diff / 代码视图 ---------- */
+.code-surface {
+  font-family: ui-monospace, SFMono-Regular, Consolas, Monaco, monospace;
+  font-size: 0.74rem;
+  line-height: 1.7;
+  border: 1px solid var(--glass-border);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--surface-1);
+}
+.diff-row {
+  display: flex;
+  border-left: 2px solid transparent;
+}
+.diff-row:hover {
+  filter: brightness(0.98);
+}
+.diff-ln {
+  flex: 0 0 auto;
+  width: 3.2em;
+  padding: 0 10px;
+  text-align: right;
+  color: var(--text-tertiary);
+  opacity: 0.55;
+  user-select: none;
+  border-right: 1px solid var(--glass-border);
+}
+.diff-code {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0 14px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-secondary);
+}
+.diff-sign {
+  flex: 0 0 auto;
+  width: 1.2em;
+  text-align: center;
+  user-select: none;
+  opacity: 0.7;
+}
+.diff-add {
+  background: color-mix(in srgb, var(--success) 13%, transparent);
+  border-left-color: var(--success);
+}
+.diff-add .diff-code,
+.diff-add .diff-sign {
+  color: color-mix(in srgb, var(--success) 92%, var(--text-primary));
+}
+.diff-del {
+  background: color-mix(in srgb, var(--danger) 11%, transparent);
+  border-left-color: var(--danger);
+}
+.diff-del .diff-code,
+.diff-del .diff-sign {
+  color: color-mix(in srgb, var(--danger) 92%, var(--text-primary));
+}
+.diff-gap {
+  background: var(--surface-3);
+}
+.diff-gap .diff-code {
+  color: var(--text-tertiary);
+  opacity: 0.7;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .file-drawer,
+  .chat-main {
+    transition: none !important;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
