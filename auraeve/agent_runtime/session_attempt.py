@@ -502,6 +502,21 @@ class SessionAttemptRunner:
                             "durationMs": duration_ms,
                         }
                     effective_args = policy_result.rewritten_args
+                    if tc.name == _IMAGE_TOOL_NAME:
+                        self._obs.emit(
+                            level="info",
+                            kind="event",
+                            subsystem="runtime/image",
+                            message="image_generating",
+                            attrs={
+                                "toolCallId": getattr(tc, "id", None),
+                                "prompt": _tool_arg_text(effective_args, "prompt"),
+                                "size": _tool_arg_text(effective_args, "size") or "auto",
+                            },
+                            session_key=thread_id,
+                            channel=channel,
+                            persist=False,
+                        )
 
                     async def _run_tool() -> Any:
                         tool_obj = active_tools.get(tc.name)
@@ -739,6 +754,13 @@ def _tool_result_resources(result: Any) -> list[dict[str, Any]]:
         return []
     resources = result.data.get("resources") or result.data.get("image_refs") or []
     return resources if isinstance(resources, list) else []
+
+
+def _tool_arg_text(args: Any, key: str) -> str:
+    if not isinstance(args, dict):
+        return ""
+    value = args.get(key)
+    return str(value or "").strip()
 
 
 def _compact_tool_result(tool_name: str, result_text: Any) -> Any:

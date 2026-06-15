@@ -14,6 +14,7 @@ export interface TranscriptImageItem {
   mime?: string
   alt?: string
   prompt?: string
+  size?: string
 }
 
 export interface TranscriptResourceItem {
@@ -36,6 +37,7 @@ export interface TranscriptImageBlock {
   images: TranscriptImageItem[]
   prompt?: string
   toolCallId?: string
+  size?: string
 }
 
 export interface TranscriptUserBlock {

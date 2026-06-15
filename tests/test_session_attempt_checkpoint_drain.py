@@ -6,6 +6,7 @@ import pytest
 import auraeve.config  # noqa: F401
 
 from auraeve.agent_runtime.session_attempt import SessionAttemptRunner
+from auraeve.agent.tools.base import ToolExecutionResult
 from auraeve.providers.base import LLMCallError, LLMResponse
 from auraeve.providers.base import ToolCallRequest
 
@@ -170,4 +171,73 @@ async def test_tool_only_turn_does_not_inject_progress_reminder() -> None:
     assert not any(
         message.get("role") == "user" and "阶段性进度" in str(message.get("content") or "")
         for message in second_call_messages
+    )
+
+
+@pytest.mark.asyncio
+async def test_image_tool_emits_generating_placeholder_before_execution() -> None:
+    provider = MagicMock()
+    provider.chat = AsyncMock(
+        side_effect=[
+            LLMResponse(
+                content="",
+                tool_calls=[
+                    ToolCallRequest(
+                        id="call_img",
+                        name="generate_image",
+                        arguments={"prompt": "偏白色版本", "size": "1024x1536"},
+                    )
+                ],
+            ),
+            LLMResponse(content="改好了，已经调成偏白色版本。"),
+        ]
+    )
+
+    tools = MagicMock()
+    tools.get_definitions.return_value = [{"type": "function", "function": {"name": "generate_image"}}]
+    tools.get_metadata.return_value = {"group": "image"}
+    tools.get.return_value = None
+    tools.execute = AsyncMock(
+        return_value=ToolExecutionResult(
+            content="已生成 1 张图片。资源：media://img_1.png。",
+            data={
+                "image_refs": [
+                    {
+                        "id": "img_1.png",
+                        "ref": "media://img_1.png",
+                        "url": "/api/webui/resources/img_1.png/content",
+                        "size": "1024x1536",
+                    }
+                ]
+            },
+        )
+    )
+
+    policy_result = MagicMock()
+    policy_result.allowed = True
+    policy_result.rewritten_args = {"prompt": "偏白色版本", "size": "1024x1536"}
+    policy = MagicMock()
+    policy.infer_tool_group.return_value = "image"
+    policy.evaluate = AsyncMock(return_value=policy_result)
+
+    runner = SessionAttemptRunner(provider=provider, tools=tools, policy=policy)
+    runner._obs = MagicMock()  # noqa: SLF001
+
+    await runner.run(
+        messages=[{"role": "system", "content": "sys"}, {"role": "user", "content": "go"}],
+        model="test-model",
+        temperature=0.0,
+        max_tokens=256,
+        thread_id="webui:s1",
+    )
+
+    runner._obs.emit.assert_any_call(  # noqa: SLF001
+        level="info",
+        kind="event",
+        subsystem="runtime/image",
+        message="image_generating",
+        attrs={"toolCallId": "call_img", "prompt": "偏白色版本", "size": "1024x1536"},
+        session_key="webui:s1",
+        channel=None,
+        persist=False,
     )

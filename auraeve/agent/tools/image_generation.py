@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 import httpx
@@ -15,7 +16,9 @@ from loguru import logger
 from auraeve import resource_store
 from auraeve.agent.tools.base import Tool, ToolExecutionResult
 
-_VALID_SIZES = {"1024x1024", "1024x1536", "1536x1024", "auto"}
+_STANDARD_SIZES = {"1024x1024", "1024x1536", "1536x1024", "auto"}
+_SIZE_RE = re.compile(r"^(?P<w>\d+)x(?P<h>\d+)$")
+_MAX_PIXELS = 3840 * 2160
 
 
 class ImageGenerationTool(Tool):
@@ -68,7 +71,11 @@ class ImageGenerationTool(Tool):
                 },
                 "size": {
                     "type": "string",
-                    "description": "图片尺寸，可选 1024x1024 / 1024x1536 / 1536x1024 / auto，默认 1024x1024。",
+                    "description": (
+                        "可选。图片尺寸；不填则使用 auto。标准值：auto、1024x1024、1536x1024、1024x1536。"
+                        "gpt-image-2 也支持任意 WIDTHxHEIGHT：宽高都必须是 16 的倍数，宽高比在 1:3 到 3:1，"
+                        "总像素不超过 3840x2160；超过 2560x1440 的分辨率属于实验性范围。"
+                    ),
                 },
             },
             "required": ["prompt"],
@@ -89,9 +96,7 @@ class ImageGenerationTool(Tool):
         if not prompt:
             raise ValueError("prompt 不能为空")
         mode = str(kwargs.get("mode") or "generate").strip().lower()
-        size = str(kwargs.get("size") or "1024x1024").strip()
-        if size not in _VALID_SIZES:
-            size = "1024x1024"
+        size = _normalize_size(kwargs.get("size"))
 
         if mode == "edit":
             data = await self._edit(prompt, str(kwargs.get("image") or "").strip(), size)
@@ -102,6 +107,11 @@ class ImageGenerationTool(Tool):
             [{"b64_json": item} for item in data],
             prompt=prompt,
         )
+        tool_call_id = str(getattr(self, "_current_tool_call_id", "") or "")
+        for ref in refs:
+            ref["size"] = size
+            if tool_call_id:
+                ref["toolCallId"] = tool_call_id
         if not refs:
             raise RuntimeError("图片生成失败：未返回图片数据")
 
@@ -159,3 +169,26 @@ class ImageGenerationTool(Tool):
             if isinstance(item, dict) and isinstance(item.get("b64_json"), str):
                 out.append(item["b64_json"])
         return out
+
+
+def _normalize_size(raw: Any) -> str:
+    size = str(raw or "").strip().lower()
+    if not size:
+        return "auto"
+    if size in _STANDARD_SIZES:
+        return size
+    match = _SIZE_RE.match(size)
+    if not match:
+        return "auto"
+    width = int(match.group("w"))
+    height = int(match.group("h"))
+    if width <= 0 or height <= 0:
+        return "auto"
+    if width % 16 != 0 or height % 16 != 0:
+        return "auto"
+    ratio = width / height
+    if ratio < 1 / 3 or ratio > 3:
+        return "auto"
+    if width * height > _MAX_PIXELS:
+        return "auto"
+    return f"{width}x{height}"

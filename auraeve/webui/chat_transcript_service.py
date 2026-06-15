@@ -116,8 +116,10 @@ def project_history_into_transcript_blocks(messages: list[dict[str, Any]]) -> li
 
 def _image_block(block_id: str, refs: list[dict[str, Any]]) -> dict[str, Any]:
     prompt = ""
+    size = ""
     if refs and isinstance(refs[0], dict):
         prompt = str(refs[0].get("prompt") or "")
+        size = str(refs[0].get("size") or "")
     return {
         "id": block_id,
         "type": "image",
@@ -125,6 +127,7 @@ def _image_block(block_id: str, refs: list[dict[str, Any]]) -> dict[str, Any]:
         "images": refs,
         "prompt": prompt,
         "toolCallId": "",
+        "size": size,
     }
 
 

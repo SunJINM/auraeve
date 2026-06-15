@@ -59,4 +59,35 @@ describe('ChatTranscript', () => {
     expect(before.compareDocumentPosition(image) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(image.compareDocumentPosition(after) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
+
+  it('reserves inline image space while generation is still running', () => {
+    const blocks: TranscriptBlock[] = [
+      {
+        id: 'image:call-1',
+        type: 'image',
+        status: 'generating',
+        images: [],
+        prompt: '偏白色版本',
+        toolCallId: 'call-1',
+        size: '1024x1536',
+      },
+      {
+        id: 'assistant_text:1',
+        type: 'assistant_text',
+        content: '改好了，已经调成偏白色版本。\n\n如果你还想继续细化，我可以再往这几个方向改：',
+        timestamp: '2026-06-15T00:00:00',
+      },
+    ] as TranscriptBlock[]
+
+    render(<ChatTranscript blocks={blocks} />)
+
+    const before = screen.getByText('改好了，已经调成偏白色版本。')
+    const placeholderText = screen.getByText('正在生成图片…')
+    const after = screen.getByText('如果你还想继续细化，我可以再往这几个方向改：')
+    const placeholder = placeholderText.closest('[data-image-placeholder]')
+
+    expect(placeholder).toHaveStyle({ aspectRatio: '1024 / 1536' })
+    expect(before.compareDocumentPosition(placeholderText) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(placeholderText.compareDocumentPosition(after) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
 })

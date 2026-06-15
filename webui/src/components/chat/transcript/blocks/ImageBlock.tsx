@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import type { CSSProperties } from 'react'
 import { HiArrowDownTray } from 'react-icons/hi2'
 
 import type { TranscriptImageBlock } from '../types'
@@ -6,6 +7,24 @@ import type { TranscriptImageBlock } from '../types'
 function filenameFromUrl(url: string): string {
   const last = url.split('/').pop() || 'image.png'
   return last.split('?')[0] || 'image.png'
+}
+
+function parseImageSize(size?: string): { width: number; height: number } | null {
+  const match = /^(\d+)x(\d+)$/i.exec(String(size || '').trim())
+  if (!match) return null
+  const width = Number.parseInt(match[1], 10)
+  const height = Number.parseInt(match[2], 10)
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return null
+  return { width, height }
+}
+
+function previewStyle(size?: string): CSSProperties {
+  const parsed = parseImageSize(size)
+  const width = parsed == null ? 340 : parsed.width / parsed.height < 0.85 ? 260 : parsed.width / parsed.height > 1.15 ? 420 : 340
+  return {
+    width: `min(${width}px, 100%)`,
+    aspectRatio: parsed ? `${parsed.width} / ${parsed.height}` : '1 / 1',
+  }
 }
 
 export function ImageBlock({ block }: { block: TranscriptImageBlock }) {
@@ -19,12 +38,15 @@ export function ImageBlock({ block }: { block: TranscriptImageBlock }) {
 export function ImageGallery({ block }: { block: TranscriptImageBlock }) {
   const { status, images, prompt } = block
   const [lightbox, setLightbox] = useState<string | null>(null)
+  const [loaded, setLoaded] = useState<Record<string, boolean>>({})
 
   if (status === 'generating') {
     return (
       <div
-        className="flex h-[160px] w-[200px] animate-pulse items-center justify-center rounded-[14px]"
+        data-image-placeholder
+        className="flex animate-pulse items-center justify-center rounded-[14px]"
         style={{
+          ...previewStyle(block.size),
           background: 'var(--surface-3)',
           border: '1px solid color-mix(in srgb, var(--text-primary) 10%, transparent)',
         }}
@@ -48,16 +70,24 @@ export function ImageGallery({ block }: { block: TranscriptImageBlock }) {
     <>
       <div className="flex max-w-[760px] flex-wrap gap-3">
         {images.map((img, index) => (
-          <div key={img.id || img.url || index} className="group relative inline-block">
+          <div
+            key={img.id || img.url || index}
+            className="group relative overflow-hidden rounded-[14px]"
+            style={{
+              ...previewStyle(img.size || block.size),
+              background: 'var(--surface-3)',
+              border: '1px solid color-mix(in srgb, var(--text-primary) 8%, transparent)',
+            }}
+          >
             <img
               src={img.url}
               alt={img.alt || img.prompt || prompt || '生成的图片'}
               onClick={() => setLightbox(img.url)}
-              className="max-h-[300px] max-w-[min(420px,100%)] rounded-[14px] object-contain"
+              onLoad={() => setLoaded((prev) => ({ ...prev, [img.url]: true }))}
+              className="absolute inset-0 h-full w-full object-contain transition-opacity duration-300"
               style={{
-                border: '1px solid color-mix(in srgb, var(--text-primary) 8%, transparent)',
                 cursor: 'zoom-in',
-                display: 'block',
+                opacity: loaded[img.url] ? 1 : 0,
               }}
             />
             <a

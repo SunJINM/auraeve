@@ -64,6 +64,7 @@ class TranscriptImageItem(BaseModel):
     mime: str = "image/png"
     alt: str = ""
     prompt: str = ""
+    size: str = ""
 
 
 class TranscriptImageBlock(BaseModel):
@@ -74,6 +75,7 @@ class TranscriptImageBlock(BaseModel):
     images: list[TranscriptImageItem] = Field(default_factory=list)
     prompt: str = ""
     toolCallId: str = ""
+    size: str = ""
 
 
 TranscriptCollapsedActivityItem = Annotated[

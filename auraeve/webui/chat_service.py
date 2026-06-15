@@ -484,6 +484,7 @@ class ChatService:
         attrs = event.get("attrs") or {}
         tool_call_id = str(attrs.get("toolCallId") or "")
         prompt = str(attrs.get("prompt") or "")
+        size = str(attrs.get("size") or "")
 
         if message == "image_generating":
             block_id = f"image:{tool_call_id or uuid.uuid4()}"
@@ -494,6 +495,7 @@ class ChatService:
                 "images": [],
                 "prompt": prompt,
                 "toolCallId": tool_call_id,
+                "size": size,
             }
             op = "append"
         elif message == "image_failed":
@@ -505,10 +507,16 @@ class ChatService:
                 "images": [],
                 "prompt": str(attrs.get("error") or ""),
                 "toolCallId": tool_call_id,
+                "size": size,
             }
             op = "replace"
         else:  # image_ready
             images = attrs.get("images") or []
+            if images and isinstance(images[0], dict):
+                if not size:
+                    size = str(images[0].get("size") or "")
+                if not tool_call_id:
+                    tool_call_id = str(images[0].get("toolCallId") or "")
             if tool_call_id:
                 block_id = f"image:{tool_call_id}"
                 op = "replace"
@@ -525,6 +533,7 @@ class ChatService:
                 "images": images,
                 "prompt": prompt,
                 "toolCallId": tool_call_id,
+                "size": size,
             }
 
         await self._broadcast(
