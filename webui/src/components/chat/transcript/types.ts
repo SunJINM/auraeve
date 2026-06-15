@@ -2,10 +2,28 @@ export type TranscriptBlock =
   | TranscriptUserBlock
   | TranscriptToolUseBlock
   | TranscriptAssistantTextBlock
+  | TranscriptImageBlock
   | TranscriptAgentTaskBlock
   | TranscriptCollapsedActivityBlock
   | TranscriptLiveActivityBlock
   | TranscriptSystemNoticeBlock
+
+export interface TranscriptImageItem {
+  id: string
+  url: string
+  mime?: string
+  alt?: string
+  prompt?: string
+}
+
+export interface TranscriptImageBlock {
+  id: string
+  type: 'image'
+  status: 'generating' | 'ready' | 'error'
+  images: TranscriptImageItem[]
+  prompt?: string
+  toolCallId?: string
+}
 
 export interface TranscriptUserBlock {
   id: string

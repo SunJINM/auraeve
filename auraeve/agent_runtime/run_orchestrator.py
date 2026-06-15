@@ -36,6 +36,7 @@ class OrchestratorResult:
     error_class: str | None = None
     recovery_actions: list[str] = field(default_factory=list)
     trace: dict[str, Any] | None = None
+    final_images: list[dict[str, Any]] = field(default_factory=list)
 
 
 class RunOrchestrator:
@@ -111,6 +112,7 @@ class RunOrchestrator:
                     messages=result.messages,
                     recovery_actions=recovery_actions,
                     trace=result.trace,
+                    final_images=result.final_images,
                 )
             except RateLimitError as exc:
                 if attempt >= self._max_retries:

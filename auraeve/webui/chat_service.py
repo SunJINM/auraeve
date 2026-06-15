@@ -239,7 +239,7 @@ class ChatService:
             obs = get_observability()
             if not obs.enabled:
                 return
-            self._obs_sub_id, queue = obs.subscribe(subsystems=["runtime/tools", "runtime/assistant"])
+            self._obs_sub_id, queue = obs.subscribe(subsystems=["runtime/tools", "runtime/assistant", "runtime/image"])
             self._obs_task = asyncio.create_task(self._obs_runtime_listener(queue))
         except Exception:
             logger.debug("无法启动 obs runtime 事件监听")
@@ -253,6 +253,8 @@ class ChatService:
                     subsystem = str(event.get("subsystem") or "")
                     if subsystem == "runtime/assistant":
                         await self._handle_assistant_event(event)
+                    elif subsystem == "runtime/image":
+                        await self._handle_image_event(event)
                     else:
                         await self._handle_tool_event(event)
                 except Exception:
@@ -458,6 +460,81 @@ class ChatService:
                     },
                 ),
             )
+
+    async def _handle_image_event(self, event: dict[str, Any]) -> None:
+        """将 obs image 事件转化为 transcript image block 推送。
+
+        - image_generating：图片工具开始执行，先推送骨架占位块（status=generating）。
+        - image_ready：图片就绪，替换/新增为 status=ready 并携带短引用。
+        """
+        message = str(event.get("message") or "")
+        if message not in ("image_generating", "image_ready", "image_failed"):
+            return
+
+        session_key = str(event.get("sessionKey") or "")
+        if not session_key:
+            return
+
+        state = self._latest_run_for_session(session_key)
+        if state is None or state.done:
+            return
+        run_id = state.run_id
+        attrs = event.get("attrs") or {}
+        tool_call_id = str(attrs.get("toolCallId") or "")
+        prompt = str(attrs.get("prompt") or "")
+
+        if message == "image_generating":
+            block_id = f"image:{tool_call_id or uuid.uuid4()}"
+            block = {
+                "id": block_id,
+                "type": "image",
+                "status": "generating",
+                "images": [],
+                "prompt": prompt,
+                "toolCallId": tool_call_id,
+            }
+            op = "append"
+        elif message == "image_failed":
+            block_id = f"image:{tool_call_id or uuid.uuid4()}"
+            block = {
+                "id": block_id,
+                "type": "image",
+                "status": "error",
+                "images": [],
+                "prompt": str(attrs.get("error") or ""),
+                "toolCallId": tool_call_id,
+            }
+            op = "replace"
+        else:  # image_ready
+            images = attrs.get("images") or []
+            if tool_call_id:
+                block_id = f"image:{tool_call_id}"
+                op = "replace"
+            else:
+                first_id = ""
+                if images and isinstance(images[0], dict):
+                    first_id = str(images[0].get("id") or "")
+                block_id = f"image:{first_id or uuid.uuid4()}"
+                op = "append"
+            block = {
+                "id": block_id,
+                "type": "image",
+                "status": "ready",
+                "images": images,
+                "prompt": prompt,
+                "toolCallId": tool_call_id,
+            }
+
+        await self._broadcast(
+            session_key,
+            self._build_block_event(
+                session_key=session_key,
+                run_id=run_id,
+                seq=self._next_seq(run_id),
+                op=op,
+                block=block,
+            ),
+        )
 
     # ─── SSE 订阅 ──────────────────────────────────────────────────
 

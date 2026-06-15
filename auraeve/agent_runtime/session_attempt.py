@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 
+from auraeve import media_store
 from auraeve.agent.tools.base import ToolExecutionResult
 from auraeve.observability import get_observability
 from auraeve.agent_runtime.tool_policy.contracts import PolicyContext
@@ -31,6 +32,8 @@ if TYPE_CHECKING:
     from auraeve.agent_runtime.tool_policy.engine import ToolPolicyEngine
     from auraeve.providers.base import LLMProvider
 
+
+_IMAGE_TOOL_NAME = "generate_image"
 
 _DEFAULT_LOOP_GUARD = {
     "mode": "balanced",
@@ -86,6 +89,7 @@ class AttemptResult:
     tools_used: list[str] = field(default_factory=list)
     messages: list[dict[str, Any]] = field(default_factory=list)
     trace: dict[str, Any] | None = None
+    final_images: list[dict[str, str]] = field(default_factory=list)
 
 
 class SessionAttemptRunner:
@@ -215,6 +219,8 @@ class SessionAttemptRunner:
         active_tools = tools or self._tools
         final_content: str | None = None
         tools_used: list[str] = []
+        # 本次运行累积的图片引用：统一在最终回复后一次性展示（不在工具块处展示，避免重复）。
+        pending_image_refs: list[dict[str, str]] = []
         recent_fingerprints: list[str] = []
         transcript_messages: list[dict[str, Any]] = []
         file_reads = FileReadStateStore()
@@ -305,8 +311,19 @@ class SessionAttemptRunner:
                 tool_call_declared_callback=_tool_call_declared_cb,
             )
 
+            # 模型原生出图：落盘为短引用并累积，统一到最终回复后展示；图片二进制不入上下文。
+            if getattr(response, "images", None):
+                try:
+                    refs = media_store.refs_from_images_field(response.images)
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(f"[session_attempt] 原生图片落盘失败: {exc}")
+                    refs = []
+                if refs:
+                    pending_image_refs.extend(refs)
+
             if not response.has_tool_calls:
-                if response.content is None or not str(response.content).strip():
+                has_text = response.content is not None and bool(str(response.content).strip())
+                if not has_text and not pending_image_refs:
                     logger.warning(
                         "[session_attempt] empty assistant response without tool calls; "
                         f"finish_reason={response.finish_reason} "
@@ -316,7 +333,19 @@ class SessionAttemptRunner:
                     trace.stop_reason = "empty_response"
                     trace.add("empty_response", finish_reason=response.finish_reason)
                     break
-                final_content = response.content
+                # 移除模型自行嵌入的 media 图片 markdown，避免与下方 image 块重复展示。
+                final_content = _strip_media_image_markdown(response.content or "")
+                if pending_image_refs:
+                    self._obs.emit(
+                        level="info",
+                        kind="event",
+                        subsystem="runtime/image",
+                        message="image_ready",
+                        attrs={"images": pending_image_refs},
+                        session_key=thread_id,
+                        channel=channel,
+                        persist=False,
+                    )
                 trace.stop_reason = "model_completed"
                 trace.add("model_completed", finish_reason=response.finish_reason)
                 break
@@ -488,14 +517,20 @@ class SessionAttemptRunner:
                                 setattr(tool_obj, "_current_tool_call_id", "")
                         return result
 
+                    effective_timeout_s = tool_timeout_s
+                    if isinstance(tool_meta, dict):
+                        meta_timeout = tool_meta.get("timeout_ms")
+                        if isinstance(meta_timeout, (int, float)) and meta_timeout > 0:
+                            effective_timeout_s = meta_timeout / 1000
+
                     status = "success"
                     error_kind = ""
                     try:
-                        raw_result = await asyncio.wait_for(_run_tool(), timeout=tool_timeout_s)
+                        raw_result = await asyncio.wait_for(_run_tool(), timeout=effective_timeout_s)
                     except asyncio.TimeoutError:
                         status = "timeout"
                         error_kind = "timeout"
-                        raw_result = f"工具执行超时：{self._execution_cfg.tool_timeout_ms}ms"
+                        raw_result = f"工具执行超时：{int(effective_timeout_s * 1000)}ms"
                     else:
                         status, error_kind = _classify_tool_result(_tool_result_text(raw_result))
 
@@ -554,6 +589,9 @@ class SessionAttemptRunner:
 
             for tc, result, meta in results:
                 compact_result = _compact_tool_result(tc.name, _tool_result_content(result))
+                image_refs = None
+                if isinstance(result, ToolExecutionResult) and isinstance(result.data, dict):
+                    image_refs = result.data.get("image_refs") or None
                 before_len = len(msgs)
                 msgs = _add_tool_result(msgs, tc.id, tc.name, compact_result)
                 transcript_messages.extend(msgs[before_len:])
@@ -563,6 +601,24 @@ class SessionAttemptRunner:
                         "error_kind": meta.get("errorKind") or None,
                         "duration_ms": meta.get("durationMs"),
                     }
+                if image_refs:
+                    # 累积，统一在最终回复后展示一次（缩略图块）。
+                    pending_image_refs.extend(image_refs)
+                elif tc.name == _IMAGE_TOOL_NAME:
+                    # 图片工具未产出图片（失败/超时）：结束前端占位动画，置为错误态。
+                    self._obs.emit(
+                        level="warn",
+                        kind="event",
+                        subsystem="runtime/image",
+                        message="image_failed",
+                        attrs={
+                            "toolCallId": getattr(tc, "id", None),
+                            "error": _truncate_text(_tool_result_text(result), 200),
+                        },
+                        session_key=thread_id,
+                        channel=channel,
+                        persist=False,
+                    )
                 if isinstance(result, ToolExecutionResult) and result.extra_messages:
                     msgs.extend(result.extra_messages)
 
@@ -577,6 +633,7 @@ class SessionAttemptRunner:
             tools_used=tools_used,
             messages=transcript_messages,
             trace=trace.to_dict(),
+            final_images=pending_image_refs,
         )
 
 
@@ -621,6 +678,18 @@ def _add_tool_result(
         }
     )
     return messages
+
+
+_MEDIA_IMG_MD_RE = re.compile(r"!\[[^\]]*\]\(\s*[^)\s]*?/api/webui/media/[^)\s]*\s*\)")
+
+
+def _strip_media_image_markdown(content: str) -> str:
+    """移除模型自行嵌入的、指向本地 media 的图片 markdown，避免与 image 块重复展示。"""
+    if not content:
+        return content
+    cleaned = _MEDIA_IMG_MD_RE.sub("", content)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    return cleaned.strip()
 
 
 def _safe_json(data: Any) -> str:

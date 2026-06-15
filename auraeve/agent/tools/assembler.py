@@ -13,6 +13,7 @@ from auraeve.agent.tools.task_update import TaskUpdateTool
 from auraeve.agent.tools.registry import ToolRegistry
 from auraeve.agent.tools.shell import BashTool
 from auraeve.agent.tools.agent_tool import AgentTool
+from auraeve.agent.tools.image_generation import ImageGenerationTool
 from auraeve.agent.tools.web import WebFetchTool, WebSearchTool
 from auraeve.config.paths import resolve_state_dir
 from auraeve.execution.dispatcher import ExecutionDispatcher
@@ -64,6 +65,7 @@ def build_tool_registry(
     execution_dispatcher: ExecutionDispatcher | None = None,
     task_session_key: str | None = None,
     task_base_dir: Path | None = None,
+    image_model: str = "gpt-image-2",
 ) -> ToolRegistry:
     registry = ToolRegistry()
     tool_workspace = execution_workspace or str(workspace)
@@ -88,6 +90,14 @@ def build_tool_registry(
         brave_api_key=brave_api_key,
     ))
     registry.register(WebFetchTool())
+
+    image_api_key = str(getattr(provider, "api_key", "") or "")
+    if image_api_key:
+        registry.register(ImageGenerationTool(
+            api_key=image_api_key,
+            api_base=getattr(provider, "api_base", None),
+            image_model=image_model,
+        ))
 
     if subagent_executor is not None and profile == "main":
         registry.register(AgentTool(executor=subagent_executor))

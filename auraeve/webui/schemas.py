@@ -56,6 +56,25 @@ class TranscriptAssistantTextBlock(BaseModel):
     streaming: bool = False
 
 
+class TranscriptImageItem(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = ""
+    url: str = ""
+    mime: str = "image/png"
+    alt: str = ""
+    prompt: str = ""
+
+
+class TranscriptImageBlock(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: str = Field(min_length=1)
+    type: Literal["image"] = "image"
+    status: Literal["generating", "ready", "error"] = "ready"
+    images: list[TranscriptImageItem] = Field(default_factory=list)
+    prompt: str = ""
+    toolCallId: str = ""
+
+
 TranscriptCollapsedActivityItem = Annotated[
     TranscriptToolUseBlock,
     Field(),
@@ -77,6 +96,7 @@ TranscriptBlock = Annotated[
     | TranscriptToolResultBlock
     | TranscriptToolUseBlock
     | TranscriptAssistantTextBlock
+    | TranscriptImageBlock
     | TranscriptCollapsedActivityBlock,
     Field(discriminator="type"),
 ]

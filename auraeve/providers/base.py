@@ -226,6 +226,7 @@ class LLMResponse:
     finish_reason: str = "stop"
     usage: dict[str, int] = field(default_factory=dict)
     reasoning_content: str | None = None  # 部分模型（如 DeepSeek-R1）返回的思考内容
+    images: list[Any] = field(default_factory=list)  # 模型原生出图（message.images/delta.images 原始项）
 
     @property
     def has_tool_calls(self) -> bool:

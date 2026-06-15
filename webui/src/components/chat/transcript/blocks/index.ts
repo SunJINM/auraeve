@@ -1,6 +1,7 @@
 export { AgentTaskBlock } from './AgentTaskBlock'
 export { AssistantTextBlock } from './AssistantTextBlock'
 export { CollapsedActivityBlock } from './CollapsedActivityBlock'
+export { ImageBlock } from './ImageBlock'
 export { SystemNoticeBlock } from './SystemNoticeBlock'
 export { ToolUseBlock } from './ToolUseBlock'
 export { UserBlock } from './UserBlock'

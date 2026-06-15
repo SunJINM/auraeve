@@ -46,6 +46,10 @@ def project_history_into_transcript_blocks(messages: list[dict[str, Any]]) -> li
                     }
                 )
 
+            assistant_images = message.get("images") or []
+            if assistant_images:
+                blocks.append(_image_block(f"image:{message_index}", assistant_images))
+
             tool_calls = message.get("tool_calls") or []
             for call_index, item in enumerate(tool_calls):
                 function = item.get("function") or {}
@@ -92,8 +96,27 @@ def project_history_into_transcript_blocks(messages: list[dict[str, Any]]) -> li
                     }
                 )
 
+            # 图片工具产物：从 tool 消息的 images 字段重建 image 块（与实时 SSE 的 id 对齐）
+            tool_images = message.get("images") or []
+            if tool_images:
+                blocks.append(_image_block(f"image:{tool_call_id or message_index}", tool_images))
+
     # 未回填的 pending 保持 running 状态
     return _collapse_readonly_activity(blocks)
+
+
+def _image_block(block_id: str, refs: list[dict[str, Any]]) -> dict[str, Any]:
+    prompt = ""
+    if refs and isinstance(refs[0], dict):
+        prompt = str(refs[0].get("prompt") or "")
+    return {
+        "id": block_id,
+        "type": "image",
+        "status": "ready",
+        "images": refs,
+        "prompt": prompt,
+        "toolCallId": "",
+    }
 
 
 def _parse_arguments(raw: Any) -> Any:

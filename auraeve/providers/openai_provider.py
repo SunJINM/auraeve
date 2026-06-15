@@ -175,6 +175,7 @@ class OpenAICompatibleProvider(LLMProvider):
         content_parts: list[str] = []
         reasoning_parts: list[str] = []
         tool_calls_map: dict[int, dict[str, Any]] = {}
+        images_acc: list[Any] = []
         finish_reason = "stop"
         usage = {}
 
@@ -203,6 +204,13 @@ class OpenAICompatibleProvider(LLMProvider):
             rc = getattr(delta, "reasoning_content", None)
             if rc:
                 reasoning_parts.append(rc)
+
+            # 模型原生出图：标准 OpenAI 无 images 字段，部分兼容服务在 delta.images 返回，
+            # SDK 将未知字段保留在 model_extra 中，这里两处都兜底读取。
+            imgs = _extra_field(delta, "images")
+            if imgs:
+                for it in imgs:
+                    images_acc.append(_to_plain(it))
 
             if delta.tool_calls:
                 for tc_delta in delta.tool_calls:
@@ -285,6 +293,7 @@ class OpenAICompatibleProvider(LLMProvider):
             finish_reason=finish_reason,
             usage=usage,
             reasoning_content=reasoning_content,
+            images=images_acc,
         )
 
     def get_default_model(self) -> str:
@@ -305,6 +314,28 @@ class OpenAICompatibleProvider(LLMProvider):
         except Exception as e:
             logger.error(f"音频转录失败：{e}")
             return None
+
+
+def _extra_field(obj: Any, key: str) -> Any:
+    """读取 SDK 模型上的字段，未知字段回退到 pydantic model_extra。"""
+    value = getattr(obj, key, None)
+    if value is not None:
+        return value
+    model_extra = getattr(obj, "model_extra", None)
+    if isinstance(model_extra, dict):
+        return model_extra.get(key)
+    return None
+
+
+def _to_plain(item: Any) -> Any:
+    """将 SDK pydantic 对象转换为普通 dict，便于下游统一处理。"""
+    dump = getattr(item, "model_dump", None)
+    if callable(dump):
+        try:
+            return dump()
+        except Exception:  # noqa: BLE001
+            pass
+    return item
 
 
 def _parse_partial_arguments(args_str: str) -> dict[str, Any] | None:

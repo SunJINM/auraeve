@@ -593,6 +593,9 @@ class RuntimeKernel:
 
         final_content = recovery_result.final_content
         tools_used = recovery_result.tools_used
+        final_images = getattr(recovery_result, "final_images", None)
+        if not isinstance(final_images, list):
+            final_images = []
 
         if recovery_result.recovery_actions:
             logger.debug(f"模型恢复动作：{recovery_result.recovery_actions}")
@@ -630,7 +633,8 @@ class RuntimeKernel:
             )
         self._persist_tool_transcript(session, recovery_result.messages)
         session.add_message("assistant", persist_content,
-                            tools_used=tools_used if tools_used else None)
+                            tools_used=tools_used if tools_used else None,
+                            images=final_images if final_images else None)
         self.sessions.save(session)
 
         if self.memory_lifecycle is not None and not is_meta_event:

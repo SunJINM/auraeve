@@ -165,3 +165,9 @@ def resolve_cron_dir(env: dict[str, str] | None = None) -> Path:
 def resolve_cron_store_path(env: dict[str, str] | None = None) -> Path:
     effective_env = env if env is not None else os.environ
     return resolve_cron_dir(effective_env) / "cron.json"
+
+
+def resolve_media_dir(env: dict[str, str] | None = None) -> Path:
+    """图片等媒体产物的统一存储目录（state_dir/media）。"""
+    effective_env = env if env is not None else os.environ
+    return resolve_state_dir(effective_env) / "media"

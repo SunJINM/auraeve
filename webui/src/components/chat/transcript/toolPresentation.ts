@@ -17,6 +17,7 @@ const TOOL_VERB: Record<string, { ing: string; past: string }> = {
   Glob: { ing: 'Finding', past: 'Found' },
   web_search: { ing: 'Searching', past: 'Searched' },
   web_fetch: { ing: 'Fetching', past: 'Fetched' },
+  generate_image: { ing: 'Generating image', past: 'Generated image' },
   agent: { ing: 'Delegating', past: 'Delegated' },
   cron: { ing: 'Scheduling', past: 'Scheduled' },
   TaskCreate: { ing: 'Creating task', past: 'Created task' },
@@ -68,6 +69,8 @@ export function getToolTarget(toolName: string, args: unknown): string {
       return truncate(String(a.url ?? ''), 70)
     case 'web_search':
       return `"${truncate(String(a.query ?? ''), 60)}"`
+    case 'generate_image':
+      return truncate(String(a.prompt ?? ''), 60)
     case 'agent':
       return truncate(String(a.prompt ?? a.goal ?? ''), 60)
     default:

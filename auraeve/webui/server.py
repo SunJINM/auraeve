@@ -11,7 +11,7 @@ import httpx
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from loguru import logger
 from pydantic import BaseModel, ConfigDict
@@ -382,6 +382,16 @@ class WebUIServer:
                     "Connection": "keep-alive",
                 },
             )
+
+        # 图片产物：<img> 标签无法携带鉴权头，依赖随机不可枚举的 id 提供访问。
+        @app.get("/api/webui/media/{image_id}")
+        async def media_file(image_id: str) -> FileResponse:
+            from auraeve import media_store
+
+            path = media_store.resolve_media_path(image_id)
+            if path is None:
+                raise HTTPException(status_code=404, detail="媒体文件不存在")
+            return FileResponse(str(path))
 
         if self._static_dir and self._static_dir.exists():
             app.mount("/", StaticFiles(directory=str(self._static_dir), html=True), name="static")
