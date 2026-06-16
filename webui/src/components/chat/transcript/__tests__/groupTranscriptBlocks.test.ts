@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { groupTranscriptBlocks } from '../groupTranscriptBlocks'
+import { summarizeToolBlocks } from '../toolPresentation'
 
 describe('groupTranscriptBlocks', () => {
   it('collapses consecutive readonly tool_use blocks', () => {
@@ -78,9 +79,49 @@ describe('groupTranscriptBlocks', () => {
     expect(result).toHaveLength(1)
     expect(result[0]?.type).toBe('collapsed_activity')
     if (result[0]?.type === 'collapsed_activity') {
-      expect(result[0].activityType).toBe('search')
-      expect(result[0].count).toBe(2)
+      expect(result[0].blocks).toHaveLength(2)
     }
+  })
+
+  it('collapses consecutive tool_use blocks of mixed types', () => {
+    const result = groupTranscriptBlocks([
+      {
+        id: 'tool_use:1',
+        type: 'tool_use',
+        toolCallId: 'call-1',
+        toolName: 'Edit',
+        arguments: { file_path: 'src/App.tsx' },
+        result: 'ok',
+        status: 'success',
+      },
+      {
+        id: 'tool_use:2',
+        type: 'tool_use',
+        toolCallId: 'call-2',
+        toolName: 'Bash',
+        arguments: { command: 'npm test' },
+        result: 'pass',
+        status: 'success',
+      },
+    ])
+
+    expect(result).toHaveLength(1)
+    expect(result[0]?.type).toBe('collapsed_activity')
+    if (result[0]?.type === 'collapsed_activity') {
+      expect(summarizeToolBlocks(result[0].blocks)).toBe('Edited 1 file · Ran 1 command')
+    }
+  })
+
+  it('summarizes tool blocks grouped by category', () => {
+    expect(
+      summarizeToolBlocks([
+        { toolName: 'Edit' },
+        { toolName: 'edit' },
+        { toolName: 'Edit' },
+        { toolName: 'Bash' },
+        { toolName: 'Bash' },
+      ]),
+    ).toBe('Edited 3 files · Ran 2 commands')
   })
 
   it('keeps generate_image tool_use blocks visible next to dedicated image blocks', () => {

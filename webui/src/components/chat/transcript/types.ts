@@ -11,6 +11,7 @@ export type TranscriptBlock =
 export interface TranscriptImageItem {
   id: string
   url: string
+  ref?: string
   mime?: string
   alt?: string
   prompt?: string
@@ -79,8 +80,6 @@ export interface TranscriptAgentTaskBlock {
 export interface TranscriptCollapsedActivityBlock {
   id: string
   type: 'collapsed_activity'
-  activityType: 'read' | 'search'
-  count: number
   blocks: TranscriptToolUseBlock[]
 }
 

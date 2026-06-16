@@ -1,15 +1,11 @@
 """聊天 transcript 投影服务。"""
 from __future__ import annotations
 
-import hashlib
 import json
 import re
 from typing import Any
 
 
-_READONLY_TOOL_NAMES = {"Read", "read", "read_file", "Grep", "Glob"}
-_SEARCH_TOOL_NAMES = {"web_search", "web_fetch"}
-_COLLAPSIBLE_TOOL_NAMES = _READONLY_TOOL_NAMES | _SEARCH_TOOL_NAMES
 _IMAGE_PLACEHOLDER_RE = re.compile(r"\[\[image(?::[^\]]+)?\]\]")
 
 
@@ -44,13 +40,13 @@ def project_history_into_transcript_blocks(messages: list[dict[str, Any]]) -> li
                     {
                         "id": f"assistant_text:{message_index}",
                         "type": "assistant_text",
-                        "content": _insert_image_placeholders(content, len(assistant_images)),
+                        "content": _insert_image_placeholders(content, assistant_images),
                         "timestamp": str(message.get("timestamp") or ""),
                     }
                 )
 
             if assistant_images:
-                blocks.append(_image_block(f"image:{message_index}", assistant_images))
+                blocks.extend(_image_blocks(f"image:{message_index}", assistant_images))
 
             tool_calls = message.get("tool_calls") or []
             for call_index, item in enumerate(tool_calls):
@@ -107,41 +103,58 @@ def project_history_into_transcript_blocks(messages: list[dict[str, Any]]) -> li
             # 图片工具产物：从 tool 消息的 images 字段重建 image 块（与实时 SSE 的 id 对齐）
             tool_images = message.get("images") or []
             if tool_images:
-                blocks.append(_image_block(f"image:{tool_call_id or message_index}", tool_images))
+                blocks.extend(_image_blocks(f"image:{tool_call_id or message_index}", tool_images))
 
-    # 未回填的 pending 保持 running 状态
-    return _collapse_readonly_activity(blocks)
-
-
-def _image_block(block_id: str, refs: list[dict[str, Any]]) -> dict[str, Any]:
-    prompt = ""
-    size = ""
-    if refs and isinstance(refs[0], dict):
-        prompt = str(refs[0].get("prompt") or "")
-        size = str(refs[0].get("size") or "")
-    return {
-        "id": block_id,
-        "type": "image",
-        "status": "ready",
-        "images": refs,
-        "prompt": prompt,
-        "toolCallId": "",
-        "size": size,
-    }
+    # 未回填的 pending 保持 running 状态。
+    # 折叠（多个工具合并为汇总列表 / 实时活动行）统一由前端处理，后端只发扁平 tool_use，
+    # 确保历史重载与流式输出的折叠行为完全一致。
+    return blocks
 
 
-def _insert_image_placeholders(content: str, image_count: int) -> str:
-    """图片位置由模型用 [[image:N]] 显式标注。
+def _image_blocks(prefix: str, refs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """每张图片单独生成一个 image 块。
 
-    若模型已标注则原样保留；未标注（兜底/历史消息）则把所有图片标记追加到正文末尾，
+    历史投影里 assistant / tool 消息可能在 images 字段累积多张图。若合并为单块，
+    前端是按「块」消费正文中的 [[image:N]] 标记的——会把多张图全部渲染到第一个标记处、
+    后续标记落空。逐张拆块后，[[image:N]] 才能与第 N 张图一一对应。
+    """
+    out: list[dict[str, Any]] = []
+    for index, ref in enumerate(refs):
+        if not isinstance(ref, dict):
+            continue
+        img_id = str(ref.get("id") or "")
+        block_id = f"image:{img_id}" if img_id else f"{prefix}:{index}"
+        out.append(
+            {
+                "id": block_id,
+                "type": "image",
+                "status": "ready",
+                "images": [ref],
+                "prompt": str(ref.get("prompt") or ""),
+                "toolCallId": str(ref.get("toolCallId") or ""),
+                "size": str(ref.get("size") or ""),
+            }
+        )
+    return out
+
+
+def _insert_image_placeholders(content: str, refs: list[dict[str, Any]]) -> str:
+    """图片位置由模型用 [[image:资源引用]] 显式标注（资源引用全局唯一，避免序号错乱）。
+
+    若模型已标注则原样保留；未标注（兜底/历史消息）则把各图片的资源引用标记追加到正文末尾，
     不在文本中间猜测位置。
     """
-    if image_count <= 0 or _IMAGE_PLACEHOLDER_RE.search(content):
+    if not refs or _IMAGE_PLACEHOLDER_RE.search(content):
         return content
 
-    placeholders = "\n".join(f"[[image:{index}]]" for index in range(1, image_count + 1))
+    placeholders = "\n".join(f"[[image:{_image_marker(ref)}]]" for ref in refs if isinstance(ref, dict))
     body = content.strip()
     return f"{body}\n\n{placeholders}" if body else placeholders
+
+
+def _image_marker(ref: dict[str, Any]) -> str:
+    """图片的稳定标记：优先资源引用（media://…），回退到资源 id。"""
+    return str(ref.get("ref") or ref.get("id") or "")
 
 
 def _parse_arguments(raw: Any) -> Any:
@@ -153,52 +166,3 @@ def _parse_arguments(raw: Any) -> Any:
         return json.loads(raw)
     except Exception:
         return raw
-
-
-def _collapse_readonly_activity(blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    collapsed: list[dict[str, Any]] = []
-    cursor = 0
-
-    while cursor < len(blocks):
-        if not _is_readonly_block(blocks[cursor]):
-            collapsed.append(blocks[cursor])
-            cursor += 1
-            continue
-
-        start = cursor
-        while cursor < len(blocks) and _is_readonly_block(blocks[cursor]):
-            cursor += 1
-        group = blocks[start:cursor]
-
-        if len(group) >= 2:
-            activity_type = _activity_type_for_group(group)
-            collapsed.append(
-                {
-                    "id": _build_collapsed_id(activity_type, group),
-                    "type": "collapsed_activity",
-                    "activityType": activity_type,
-                    "count": len(group),
-                    "blocks": group,
-                }
-            )
-        else:
-            collapsed.extend(group)
-
-    return collapsed
-
-
-def _is_readonly_block(block: dict[str, Any]) -> bool:
-    return block.get("type") == "tool_use" and str(block.get("toolName") or "") in _COLLAPSIBLE_TOOL_NAMES
-
-
-def _activity_type_for_group(group: list[dict[str, Any]]) -> str:
-    tool_names = {str(item.get("toolName") or "") for item in group}
-    if tool_names and tool_names <= _SEARCH_TOOL_NAMES:
-        return "search"
-    return "read"
-
-
-def _build_collapsed_id(activity_type: str, group: list[dict[str, Any]]) -> str:
-    stable_source = "|".join(str(item.get("id") or "") for item in group)
-    digest = hashlib.sha1(stable_source.encode("utf-8")).hexdigest()[:12]
-    return f"collapsed_activity:{activity_type}:{digest}"

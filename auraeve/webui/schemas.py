@@ -61,6 +61,7 @@ class TranscriptImageItem(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = ""
     url: str = ""
+    ref: str = ""
     mime: str = "image/png"
     alt: str = ""
     prompt: str = ""
@@ -78,29 +79,13 @@ class TranscriptImageBlock(BaseModel):
     size: str = ""
 
 
-TranscriptCollapsedActivityItem = Annotated[
-    TranscriptToolUseBlock,
-    Field(),
-]
-
-
-class TranscriptCollapsedActivityBlock(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    id: str = Field(min_length=1)
-    type: Literal["collapsed_activity"] = "collapsed_activity"
-    activityType: Literal["read", "search"] = "read"
-    count: int = Field(default=1, ge=1)
-    blocks: list[TranscriptToolUseBlock] = Field(default_factory=list)
-
-
 TranscriptBlock = Annotated[
     TranscriptUserBlock
     | TranscriptToolCallBlock
     | TranscriptToolResultBlock
     | TranscriptToolUseBlock
     | TranscriptAssistantTextBlock
-    | TranscriptImageBlock
-    | TranscriptCollapsedActivityBlock,
+    | TranscriptImageBlock,
     Field(discriminator="type"),
 ]
 

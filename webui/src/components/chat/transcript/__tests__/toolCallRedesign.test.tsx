@@ -53,6 +53,31 @@ describe('tool-call redesign', () => {
     expect(screen.getByText(/· 2/)).toBeInTheDocument()
   })
 
+  it('live row expands to show each tool in the running batch', () => {
+    const doneRead: TranscriptToolUseBlock = { ...activeRead('a', '/x/a.ts'), status: 'success' }
+    const runningBash: TranscriptToolUseBlock = {
+      id: 'b',
+      type: 'tool_use',
+      toolCallId: 'b',
+      toolName: 'Bash',
+      arguments: { command: 'npm test' },
+      result: null,
+      status: 'running',
+    }
+    render(
+      <LiveActivityBlock block={{ id: 'live:a', type: 'live_activity', blocks: [doneRead, runningBash] }} />,
+    )
+    // 折叠态：头部固定展示当前正在执行的那一个（Bash），已完成项的子行尚未渲染
+    expect(screen.getByText('Running')).toBeInTheDocument()
+    expect(screen.queryByText('a.ts')).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: /Running/ }))
+
+    // 展开后按各自状态显示：已完成的 Read 与其文件名
+    expect(screen.getByText('Read')).toBeInTheDocument()
+    expect(screen.getByText('a.ts')).toBeInTheDocument()
+  })
+
   it('lineDiff produces correct add/remove counts', () => {
     const lines = lineDiff('a\nb\nc', 'a\nB\nc\nd')
     const { added, removed } = diffStats(lines)

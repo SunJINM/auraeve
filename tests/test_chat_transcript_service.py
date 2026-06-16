@@ -11,7 +11,6 @@ from auraeve.webui.schemas import (
     ChatTranscriptBlockEvent,
     ChatTranscriptDoneEvent,
     ChatTranscriptHistoryResponse,
-    TranscriptCollapsedActivityBlock,
     TranscriptToolUseBlock,
 )
 
@@ -120,7 +119,49 @@ def test_generate_image_history_projects_tool_and_image_blocks(tmp_path: Path) -
     assert blocks[3]["images"][0]["id"] == "img-1"
 
 
-def test_collapse_readonly_activity_into_single_block(tmp_path: Path) -> None:
+def test_assistant_multi_image_projects_one_block_per_image(tmp_path: Path) -> None:
+    """assistant 消息累积多张图时，应逐张拆成独立 image 块并保留资源引用，使 [[image:引用]] 能逐张定位。"""
+    sm = SessionManager(tmp_path / "sessions")
+    session = sm.get_or_create("webui:test-user")
+    session.add_message("user", "生成两张有趣的图片")
+    session.add_message(
+        "assistant",
+        "给你两张：\n第一张：月球烤红薯。\n[[image:media://img_a.png]]\n\n第二张：柴犬视频会议。\n[[image:media://img_b.png]]",
+        images=[
+            {"id": "img_a.png", "ref": "media://img_a.png", "toolCallId": "call_a", "size": "1024x1024"},
+            {"id": "img_b.png", "ref": "media://img_b.png", "size": "1024x1024"},
+        ],
+    )
+
+    blocks = project_history_into_transcript_blocks(session.messages)
+
+    assert [item["type"] for item in blocks] == ["user", "assistant_text", "image", "image"]
+    # 每个 image 块只含一张图，且 id 各不相同，[[image:引用]] 才能逐张对应
+    assert [len(item["images"]) for item in blocks[2:]] == [1, 1]
+    assert blocks[2]["id"] != blocks[3]["id"]
+    # 资源引用须透传到 image item，供前端按 ref 精确匹配标记
+    assert [item["images"][0]["ref"] for item in blocks[2:]] == ["media://img_a.png", "media://img_b.png"]
+
+
+def test_unmarked_images_append_ref_based_placeholders(tmp_path: Path) -> None:
+    """模型未标注时，兜底在正文末尾追加按资源引用的标记，而非数字序号。"""
+    sm = SessionManager(tmp_path / "sessions")
+    session = sm.get_or_create("webui:test-user")
+    session.add_message("user", "来一张图")
+    session.add_message(
+        "assistant",
+        "这是给你的图：",
+        images=[{"id": "img_a.png", "ref": "media://img_a.png", "size": "1024x1024"}],
+    )
+
+    blocks = project_history_into_transcript_blocks(session.messages)
+    text_block = next(item for item in blocks if item["type"] == "assistant_text")
+    assert "[[image:media://img_a.png]]" in text_block["content"]
+    assert "[[image:1]]" not in text_block["content"]
+
+
+def test_readonly_tools_project_as_flat_tool_use_blocks(tmp_path: Path) -> None:
+    """后端不再预折叠：连续只读工具投影为扁平 tool_use，折叠交给前端统一处理。"""
     sm = SessionManager(tmp_path / "sessions")
     session = sm.get_or_create("webui:test-user")
     session.add_message("user", "读一下配置文件和 README")
@@ -152,26 +193,32 @@ def test_collapse_readonly_activity_into_single_block(tmp_path: Path) -> None:
 
     blocks = project_history_into_transcript_blocks(session.messages)
 
-    assert [item["type"] for item in blocks] == ["user", "collapsed_activity", "assistant_text"]
+    assert [item["type"] for item in blocks] == ["user", "tool_use", "tool_use", "assistant_text"]
     assert all(isinstance(item.get("id"), str) and item["id"] for item in blocks)
-    assert blocks[1]["activityType"] == "read"
-    assert blocks[1]["count"] == 2
-    # 折叠块内部现在是 tool_use 类型
-    assert [item["type"] for item in blocks[1]["blocks"]] == [
-        "tool_use",
-        "tool_use",
-    ]
-    assert all(isinstance(item.get("id"), str) and item["id"] for item in blocks[1]["blocks"])
+    assert [item["toolName"] for item in blocks[1:3]] == ["Read", "Read"]
 
     payload = {"sessionKey": "webui:test-user", "blocks": blocks}
     model = ChatTranscriptHistoryResponse.model_validate(payload)
-    assert model.blocks[1].type == "collapsed_activity"
+    assert [block.type for block in model.blocks] == ["user", "tool_use", "tool_use", "assistant_text"]
 
 
-def test_collapse_web_search_activity_into_single_block(tmp_path: Path) -> None:
+def test_mixed_tools_project_as_flat_tool_use_blocks(tmp_path: Path) -> None:
+    """任务类与检索类工具混排时，后端均投影为扁平 tool_use，由前端合并为一个折叠列表。"""
     sm = SessionManager(tmp_path / "sessions")
     session = sm.get_or_create("webui:test-user")
     session.add_message("user", "搜索相关情报")
+    session.add_message(
+        "assistant",
+        "",
+        tool_calls=[
+            {
+                "id": "task_1",
+                "type": "function",
+                "function": {"name": "TaskCreate", "arguments": "{\"title\":\"调研\"}"},
+            }
+        ],
+    )
+    session.add_message("tool", "task created", tool_call_id="task_1", name="TaskCreate")
     session.add_message(
         "assistant",
         "",
@@ -199,13 +246,11 @@ def test_collapse_web_search_activity_into_single_block(tmp_path: Path) -> None:
 
     blocks = project_history_into_transcript_blocks(session.messages)
 
-    assert [item["type"] for item in blocks] == ["user", "collapsed_activity"]
-    assert blocks[1]["activityType"] == "search"
-    assert blocks[1]["count"] == 2
-    assert [item["toolName"] for item in blocks[1]["blocks"]] == ["web_search", "web_fetch"]
+    assert [item["type"] for item in blocks] == ["user", "tool_use", "tool_use", "tool_use"]
+    assert [item["toolName"] for item in blocks[1:]] == ["TaskCreate", "web_search", "web_fetch"]
 
 
-def test_bash_tool_use_is_not_collapsed_as_readonly_activity(tmp_path: Path) -> None:
+def test_bash_tool_use_projects_as_tool_use(tmp_path: Path) -> None:
     sm = SessionManager(tmp_path / "sessions")
     session = sm.get_or_create("webui:test-user")
     session.add_message("user", "跑一下命令")
@@ -291,42 +336,3 @@ def test_tool_use_block_accepts_preparing_status() -> None:
     )
 
     assert block.status == "preparing"
-
-
-def test_collapsed_activity_nested_blocks_require_structured_items() -> None:
-    TranscriptCollapsedActivityBlock.model_validate(
-        {
-            "id": "collapsed:read:1",
-            "type": "collapsed_activity",
-            "activityType": "read",
-            "count": 1,
-            "blocks": [
-                {
-                    "id": "tool_use:1",
-                    "type": "tool_use",
-                    "toolCallId": "call_1",
-                    "toolName": "Read",
-                    "arguments": {"file_path": "README.md"},
-                    "result": "content",
-                    "status": "success",
-                }
-            ],
-        }
-    )
-
-    with pytest.raises(ValidationError):
-        TranscriptCollapsedActivityBlock.model_validate(
-            {
-                "id": "collapsed:read:2",
-                "type": "collapsed_activity",
-                "activityType": "read",
-                "count": 1,
-                "blocks": [
-                    {
-                        "type": "tool_use",
-                        "toolName": "Read",
-                        "arguments": {"file_path": "README.md"},
-                    }
-                ],
-            }
-        )

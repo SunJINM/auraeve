@@ -120,4 +120,36 @@ describe('ChatTranscript', () => {
     expect(screen.queryByText(/\[\[image/)).toBeNull()
     expect(first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
+
+  it('places images by resource ref regardless of marker order', () => {
+    // 标记顺序与图片块顺序相反，但按 ref 精确定位，仍各归其位
+    const blocks: TranscriptBlock[] = [
+      {
+        id: 'assistant_text:1',
+        type: 'assistant_text',
+        content: '柴犬：\n\n[[image:media://img_b.png]]\n\n月球猫：\n\n[[image:media://img_a.png]]',
+        timestamp: '2026-06-15T00:00:00',
+      },
+      {
+        id: 'image:img_a.png',
+        type: 'image',
+        status: 'ready',
+        images: [{ id: 'img_a.png', ref: 'media://img_a.png', url: '/api/webui/resources/img_a/content', alt: '月球猫' }],
+      },
+      {
+        id: 'image:img_b.png',
+        type: 'image',
+        status: 'ready',
+        images: [{ id: 'img_b.png', ref: 'media://img_b.png', url: '/api/webui/resources/img_b/content', alt: '柴犬' }],
+      },
+    ] as TranscriptBlock[]
+
+    render(<ChatTranscript blocks={blocks} />)
+
+    const dog = screen.getByAltText('柴犬')
+    const cat = screen.getByAltText('月球猫')
+    expect(screen.queryByText(/\[\[image/)).toBeNull()
+    // 柴犬标记在前 → 柴犬图先于月球猫图
+    expect(dog.compareDocumentPosition(cat) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
 })

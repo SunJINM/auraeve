@@ -20,31 +20,40 @@ function hasImagePlaceholder(content: string): boolean {
   return IMAGE_PLACEHOLDER_RE.test(content)
 }
 
-// 模型未显式布局时的兜底：把所有图片标记追加到正文末尾，不在文本中间猜位置。
-function appendTrailingMarkers(content: string, imageCount: number): string {
-  const placeholders = Array.from({ length: imageCount }, (_, index) => `[[image:${index + 1}]]`).join('\n')
+// 取图片块的稳定标记：优先资源引用（media://…），回退到图片 id / 块 id。
+function imageMarker(block: TranscriptImageBlock): string {
+  return block.images[0]?.ref || block.images[0]?.id || block.id
+}
+
+// 流式中尾部「已开始但未闭合」的图片标记起点（[[image… 之后还没出现 ]]）。
+// 未闭合标记不会被 IMAGE_PLACEHOLDER_RE 匹配，会被当作普通文本逐字显示出半截 ref，
+// 故需在此止步，待标记闭合后再原子渲染为图片。无则返回 -1。
+function pendingMarkerStart(text: string): number {
+  const open = text.lastIndexOf('[[image')
+  if (open >= 0 && text.indexOf(']]', open) === -1) return open
+  return -1
+}
+
+// 模型未显式布局时的兜底：把所有图片按资源引用标记追加到正文末尾，不在文本中间猜位置。
+function appendTrailingMarkers(content: string, images: TranscriptImageBlock[]): string {
+  const placeholders = images.map((block) => `[[image:${imageMarker(block)}]]`).join('\n')
   const body = content.trimEnd()
   return body ? `${body}\n\n${placeholders}` : placeholders
 }
 
+// 标记按资源引用精确定位到对应图片；无法匹配时顺序消费下一张未用图片（兼容未标注的图片）。
 function findImageBlock(
   images: TranscriptImageBlock[],
   marker: string | undefined,
   consumed: Set<number>,
 ): { block: TranscriptImageBlock; index: number } | null {
   if (marker) {
-    const numeric = Number.parseInt(marker, 10)
-    if (Number.isInteger(numeric) && numeric > 0) {
-      const index = numeric - 1
-      if (images[index] && !consumed.has(index)) return { block: images[index], index }
-    }
-
     const exactIndex = images.findIndex((block, index) => {
       if (consumed.has(index)) return false
       return (
         block.id === marker ||
         block.toolCallId === marker ||
-        block.images.some((image) => image.id === marker || image.url === marker)
+        block.images.some((image) => image.ref === marker || image.id === marker || image.url === marker)
       )
     })
     if (exactIndex >= 0) return { block: images[exactIndex], index: exactIndex }
@@ -109,19 +118,23 @@ export function AssistantTextBlock({
     if (inlineImages.length === 0) return content
     if (hasImagePlaceholder(content)) return content
     if (streaming) return content
-    return appendTrailingMarkers(content, inlineImages.length)
-  }, [content, inlineImages.length, streaming])
+    return appendTrailingMarkers(content, inlineImages)
+  }, [content, inlineImages, streaming])
 
   const segments = useMemo(() => buildSegments(prepared, inlineImages), [prepared, inlineImages])
 
   // 仅文本中间的 marker（start<end 且不在正文末尾）参与门控；末尾追加的图片不阻塞文字。
-  const gates = useMemo<SmoothGate[]>(
-    () =>
-      segments
-        .filter((seg): seg is Extract<Segment, { kind: 'image' }> => seg.kind === 'image' && seg.end > seg.start)
-        .map((seg) => ({ start: seg.start, end: seg.end, released: !!loaded[seg.key] })),
-    [segments, loaded],
-  )
+  const gates = useMemo<SmoothGate[]>(() => {
+    const list = segments
+      .filter((seg): seg is Extract<Segment, { kind: 'image' }> => seg.kind === 'image' && seg.end > seg.start)
+      .map((seg) => ({ start: seg.start, end: seg.end, released: !!loaded[seg.key] }))
+    // 流式中遇到未闭合的图片标记，止步于其起点，避免逐字显示半截资源引用。
+    if (streaming) {
+      const pending = pendingMarkerStart(prepared)
+      if (pending >= 0) list.push({ start: pending, end: prepared.length + 1, released: false })
+    }
+    return list
+  }, [segments, loaded, streaming, prepared])
 
   // 流式期间前端匀速铺开，遇到图片 marker 暂停等加载；流结束后排空剩余积压。
   const display = useSmoothText(prepared, streaming, block.id, gates)

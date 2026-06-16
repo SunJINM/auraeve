@@ -2,14 +2,12 @@ import { useState } from 'react'
 import { HiChevronRight } from 'react-icons/hi2'
 
 import type { TranscriptCollapsedActivityBlock } from '../types'
+import { summarizeToolBlocks } from '../toolPresentation'
 import { ToolUseBlock } from './ToolUseBlock'
 
 export function CollapsedActivityBlock({ block }: { block: TranscriptCollapsedActivityBlock }) {
   const [open, setOpen] = useState(false)
-  const title =
-    block.activityType === 'search'
-      ? `Searched ${block.count} times`
-      : `Read ${block.count} files`
+  const title = summarizeToolBlocks(block.blocks)
 
   return (
     <div className="ml-8 max-w-[760px]">

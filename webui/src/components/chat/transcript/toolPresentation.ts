@@ -39,6 +39,59 @@ export function getVerb(toolName: string, status: ToolStatus): string {
   return isActiveStatus(status) ? verb.ing : verb.past
 }
 
+/** 工具 -> 汇总用过去式动词 + 计量单位（单数）。供完成态折叠行的汇总标题使用。 */
+const TOOL_SUMMARY: Record<string, { verb: string; unit: string }> = {
+  Read: { verb: 'Read', unit: 'file' },
+  read: { verb: 'Read', unit: 'file' },
+  read_file: { verb: 'Read', unit: 'file' },
+  Write: { verb: 'Wrote', unit: 'file' },
+  write: { verb: 'Wrote', unit: 'file' },
+  create_file: { verb: 'Created', unit: 'file' },
+  Edit: { verb: 'Edited', unit: 'file' },
+  edit: { verb: 'Edited', unit: 'file' },
+  Bash: { verb: 'Ran', unit: 'command' },
+  bash: { verb: 'Ran', unit: 'command' },
+  Grep: { verb: 'Searched', unit: 'time' },
+  Glob: { verb: 'Found', unit: 'match' },
+  web_search: { verb: 'Searched the web', unit: 'time' },
+  web_fetch: { verb: 'Fetched', unit: 'page' },
+  generate_image: { verb: 'Generated', unit: 'image' },
+  agent: { verb: 'Delegated', unit: 'task' },
+  cron: { verb: 'Scheduled', unit: 'task' },
+  TaskCreate: { verb: 'Created', unit: 'task' },
+  TaskUpdate: { verb: 'Updated', unit: 'task' },
+  TaskGet: { verb: 'Read', unit: 'task' },
+  TaskList: { verb: 'Listed', unit: 'task' },
+}
+
+function pluralize(unit: string, count: number): string {
+  if (count === 1) return unit
+  return /(ch|sh|s|x|z)$/.test(unit) ? `${unit}es` : `${unit}s`
+}
+
+/** 把一组已完成工具按类别汇总为「Edited 3 files · Ran 2 commands」，保持首次出现顺序。 */
+export function summarizeToolBlocks(blocks: { toolName: string }[]): string {
+  const order: string[] = []
+  const groups = new Map<string, { verb: string; unit: string; count: number }>()
+  for (const b of blocks) {
+    const s = TOOL_SUMMARY[b.toolName] ?? { verb: 'Ran', unit: 'tool' }
+    const key = `${s.verb}|${s.unit}`
+    const existing = groups.get(key)
+    if (existing) {
+      existing.count += 1
+    } else {
+      groups.set(key, { ...s, count: 1 })
+      order.push(key)
+    }
+  }
+  return order
+    .map((key) => {
+      const g = groups.get(key)!
+      return `${g.verb} ${g.count} ${pluralize(g.unit, g.count)}`
+    })
+    .join(' · ')
+}
+
 /** 从参数中提取目标（文件、命令、模式等）。 */
 export function getToolTarget(toolName: string, args: unknown): string {
   if (!args || typeof args !== 'object') {

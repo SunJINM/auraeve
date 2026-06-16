@@ -119,6 +119,19 @@ def _build_ref(
     return ref
 
 
+# 资源 id 随机段长度（hex 字符数）。短 id 让 media:// 引用更短，降低模型照抄出错率；
+# 10 位 hex（~1万亿组合）配合下方按 index 查重重试，碰撞概率可忽略。
+_RESOURCE_ID_LEN = 10
+
+
+def _generate_resource_id(prefix: str, suffix: str, index: dict[str, dict[str, Any]]) -> str:
+    """生成短而唯一的资源 id；与既有索引查重，极小概率碰撞时重试。"""
+    while True:
+        resource_id = f"{prefix}_{uuid.uuid4().hex[:_RESOURCE_ID_LEN]}{suffix}"
+        if resource_id not in index:
+            return resource_id
+
+
 def save_bytes(
     data: bytes,
     *,
@@ -133,7 +146,8 @@ def save_bytes(
 ) -> dict[str, str]:
     suffix = ext or _EXT_BY_MIME.get((mime or "").lower(), "")
     prefix = "img" if kind == "image" else kind
-    resource_id = f"{prefix}_{uuid.uuid4().hex}{suffix}"
+    index = _read_index()
+    resource_id = _generate_resource_id(prefix, suffix, index)
     filename = resource_id
     path = _kind_dir(kind) / filename
     path.write_bytes(data)
@@ -149,7 +163,6 @@ def save_bytes(
         tool_call_id=tool_call_id,
         session_key=session_key,
     )
-    index = _read_index()
     index[resource_id] = {
         **ref,
         "path": str(path),

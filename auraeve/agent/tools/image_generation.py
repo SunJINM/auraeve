@@ -112,11 +112,12 @@ class ImageGenerationTool(Tool):
 
         refs_text = "、".join(ref["ref"] for ref in refs)
         content = (
-            f"已生成 {len(refs)} 张图片。资源：{refs_text}。"
-            "在最终回复正文中，用 [[image:N]] 标记每张图片应出现的位置（N 从 1 开始，"
-            "按本轮图片生成的先后顺序）。建议先用一句话引出，再放图片标记，"
-            "不要把图片直接放在正文最前面；多张图片分散到各自相关的段落，不必堆在一起。"
-            "未标记的图片会自动追加到回复末尾。" 
+            f"已生成 {len(refs)} 张图片，资源引用：{refs_text}。"
+            "在最终回复正文中，用 [[image:资源引用]] 标记每张图片应出现的位置，"
+            "其中“资源引用”填该图片对应的完整引用，例如 [[image:media://img_xxx.png]]。"
+            "用资源引用而非序号，可避免多次生成、多张图片时位置错乱。"
+            "建议先用一句话引出，再放图片标记，不要把图片直接放在正文最前面；"
+            "多张图片分散到各自相关的段落，不必堆在一起。未标记的图片会自动追加到回复末尾。"
             "如需在此基础上继续编辑，把资源引用作为 image 参数、mode=edit 调用本工具。"
         )
         return ToolExecutionResult(content=content, data={"image_refs": refs})

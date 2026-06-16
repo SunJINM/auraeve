@@ -111,20 +111,22 @@ def test_chat_transcript_route_returns_blocks_and_run_state(tmp_path: Path) -> N
 
 
 def test_chat_transcript_projection_appends_image_placeholder_when_unmarked() -> None:
-    # 模型未用 [[image:N]] 显式布局时，图片标记追加到正文末尾（不再在文本中间猜位置）。
+    # 模型未显式布局时，按资源引用的图片标记追加到正文末尾（不再用数字序号，避免多图错乱）。
     blocks = project_history_into_transcript_blocks(
         [
             {
                 "role": "assistant",
                 "content": "这是生成的版本：\n\n如果还想继续，我可以再调整。",
                 "timestamp": "2026-06-15T00:00:00",
-                "images": [{"id": "img-1", "url": "/api/webui/resources/img-1/content"}],
+                "images": [
+                    {"id": "img-1", "ref": "media://img-1.png", "url": "/api/webui/resources/img-1/content"}
+                ],
             }
         ]
     )
 
     assert blocks[0]["type"] == "assistant_text"
-    assert blocks[0]["content"] == "这是生成的版本：\n\n如果还想继续，我可以再调整。\n\n[[image:1]]"
+    assert blocks[0]["content"] == "这是生成的版本：\n\n如果还想继续，我可以再调整。\n\n[[image:media://img-1.png]]"
     assert blocks[1]["type"] == "image"
 
 
