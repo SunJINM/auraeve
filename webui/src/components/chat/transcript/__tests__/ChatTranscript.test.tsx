@@ -1,10 +1,15 @@
 import { fireEvent, render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { ChatTranscript } from '../ChatTranscript'
 import type { TranscriptBlock } from '../types'
 
 describe('ChatTranscript', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.restoreAllMocks()
+  })
+
   it('expands an agent task block inline', () => {
     const blocks: TranscriptBlock[] = [
       {
@@ -60,8 +65,14 @@ describe('ChatTranscript', () => {
     expect(image.compareDocumentPosition(after) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
-  it('reserves inline image space while generation is still running', () => {
+  it('does not render a placeholder box for an in-flight image', () => {
     const blocks: TranscriptBlock[] = [
+      {
+        id: 'assistant_text:1',
+        type: 'assistant_text',
+        content: '改好了，已经调成偏白色版本。',
+        timestamp: '2026-06-15T00:00:00',
+      },
       {
         id: 'image:call-1',
         type: 'image',
@@ -71,23 +82,42 @@ describe('ChatTranscript', () => {
         toolCallId: 'call-1',
         size: '1024x1536',
       },
+    ] as TranscriptBlock[]
+
+    render(<ChatTranscript blocks={blocks} />)
+
+    expect(screen.getByText('改好了，已经调成偏白色版本。')).toBeInTheDocument()
+    expect(screen.queryByText('正在生成图片…')).toBeNull()
+    expect(document.querySelector('[data-image-placeholder]')).toBeNull()
+  })
+
+  it('renders multiple model-placed images at their marker positions', () => {
+    const blocks: TranscriptBlock[] = [
       {
         id: 'assistant_text:1',
         type: 'assistant_text',
-        content: '改好了，已经调成偏白色版本。\n\n如果你还想继续细化，我可以再往这几个方向改：',
+        content: '第一版：\n\n[[image:1]]\n\n第二版：\n\n[[image:2]]',
         timestamp: '2026-06-15T00:00:00',
+      },
+      {
+        id: 'image:1',
+        type: 'image',
+        status: 'ready',
+        images: [{ id: 'img-1', url: '/api/webui/resources/img-1/content', alt: '第一张' }],
+      },
+      {
+        id: 'image:2',
+        type: 'image',
+        status: 'ready',
+        images: [{ id: 'img-2', url: '/api/webui/resources/img-2/content', alt: '第二张' }],
       },
     ] as TranscriptBlock[]
 
     render(<ChatTranscript blocks={blocks} />)
 
-    const before = screen.getByText('改好了，已经调成偏白色版本。')
-    const placeholderText = screen.getByText('正在生成图片…')
-    const after = screen.getByText('如果你还想继续细化，我可以再往这几个方向改：')
-    const placeholder = placeholderText.closest('[data-image-placeholder]')
-
-    expect(placeholder).toHaveStyle({ aspectRatio: '1024 / 1536' })
-    expect(before.compareDocumentPosition(placeholderText) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(placeholderText.compareDocumentPosition(after) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    const first = screen.getByAltText('第一张')
+    const second = screen.getByAltText('第二张')
+    expect(screen.queryByText(/\[\[image/)).toBeNull()
+    expect(first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 })

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { HiArrowDownTray } from 'react-icons/hi2'
 
@@ -9,6 +9,8 @@ function filenameFromUrl(url: string): string {
   return last.split('?')[0] || 'image.png'
 }
 
+const MAX_PREVIEW_WIDTH = 420
+
 function parseImageSize(size?: string): { width: number; height: number } | null {
   const match = /^(\d+)x(\d+)$/i.exec(String(size || '').trim())
   if (!match) return null
@@ -18,13 +20,19 @@ function parseImageSize(size?: string): { width: number; height: number } | null
   return { width, height }
 }
 
-function previewStyle(size?: string): CSSProperties {
-  const parsed = parseImageSize(size)
-  const width = parsed == null ? 340 : parsed.width / parsed.height < 0.85 ? 260 : parsed.width / parsed.height > 1.15 ? 420 : 340
-  return {
-    width: `min(${width}px, 100%)`,
-    aspectRatio: parsed ? `${parsed.width} / ${parsed.height}` : '1 / 1',
+/** 容器尺寸：未知真实尺寸前按 size 提示预留中性盒子（避免塌陷/突兀），
+ *  加载出真实尺寸后据其比例贴合，消除灰边与跳动。 */
+function containerStyle(dim?: { width: number; height: number }, size?: string): CSSProperties {
+  const parsed = dim ?? parseImageSize(size)
+  if (parsed) {
+    const width = Math.min(parsed.width, MAX_PREVIEW_WIDTH)
+    return {
+      width: `min(${width}px, 100%)`,
+      aspectRatio: `${parsed.width} / ${parsed.height}`,
+    }
   }
+  // 完全未知尺寸：预留一个中性盒子占位，加载后再按真实比例调整
+  return { width: 'min(320px, 100%)', aspectRatio: '4 / 3' }
 }
 
 export function ImageBlock({ block }: { block: TranscriptImageBlock }) {
@@ -35,27 +43,34 @@ export function ImageBlock({ block }: { block: TranscriptImageBlock }) {
   )
 }
 
-export function ImageGallery({ block }: { block: TranscriptImageBlock }) {
+export function ImageGallery({
+  block,
+  onAllLoaded,
+}: {
+  block: TranscriptImageBlock
+  /** 该块全部缩略图加载完成（或失败/超时定型）后回调一次，供上层放行后续文字。 */
+  onAllLoaded?: () => void
+}) {
   const { status, images, prompt } = block
   const [lightbox, setLightbox] = useState<string | null>(null)
   const [loaded, setLoaded] = useState<Record<string, boolean>>({})
+  const [dims, setDims] = useState<Record<string, { width: number; height: number }>>({})
+  const settledRef = useRef<Set<string>>(new Set())
 
+  // 每张图片 load/error 都记为「定型」，全部定型后通知上层一次。
+  const settle = useCallback(
+    (url: string, total: number) => {
+      const set = settledRef.current
+      if (set.has(url)) return
+      set.add(url)
+      if (set.size >= total) onAllLoaded?.()
+    },
+    [onAllLoaded],
+  )
+
+  // 不再渲染生成中占位框：图片由文本流门控在加载完成后就位。
   if (status === 'generating') {
-    return (
-      <div
-        data-image-placeholder
-        className="flex animate-pulse items-center justify-center rounded-[14px]"
-        style={{
-          ...previewStyle(block.size),
-          background: 'var(--surface-3)',
-          border: '1px solid color-mix(in srgb, var(--text-primary) 10%, transparent)',
-        }}
-      >
-        <span className="text-[12px]" style={{ color: 'var(--text-tertiary)' }}>
-          正在生成图片…
-        </span>
-      </div>
-    )
+    return null
   }
 
   if (status === 'error') {
@@ -74,7 +89,7 @@ export function ImageGallery({ block }: { block: TranscriptImageBlock }) {
             key={img.id || img.url || index}
             className="group relative overflow-hidden rounded-[14px]"
             style={{
-              ...previewStyle(img.size || block.size),
+              ...containerStyle(dims[img.url], img.size || block.size),
               background: 'var(--surface-3)',
               border: '1px solid color-mix(in srgb, var(--text-primary) 8%, transparent)',
             }}
@@ -83,7 +98,17 @@ export function ImageGallery({ block }: { block: TranscriptImageBlock }) {
               src={img.url}
               alt={img.alt || img.prompt || prompt || '生成的图片'}
               onClick={() => setLightbox(img.url)}
-              onLoad={() => setLoaded((prev) => ({ ...prev, [img.url]: true }))}
+              onLoad={(e) => {
+                const el = e.currentTarget
+                setLoaded((prev) => ({ ...prev, [img.url]: true }))
+                if (el.naturalWidth > 0 && el.naturalHeight > 0) {
+                  setDims((prev) =>
+                    prev[img.url] ? prev : { ...prev, [img.url]: { width: el.naturalWidth, height: el.naturalHeight } },
+                  )
+                }
+                settle(img.url, images.length)
+              }}
+              onError={() => settle(img.url, images.length)}
               className="absolute inset-0 h-full w-full object-contain transition-opacity duration-300"
               style={{
                 cursor: 'zoom-in',

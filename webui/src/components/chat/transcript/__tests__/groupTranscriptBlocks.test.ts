@@ -82,4 +82,35 @@ describe('groupTranscriptBlocks', () => {
       expect(result[0].count).toBe(2)
     }
   })
+
+  it('keeps generate_image tool_use blocks visible next to dedicated image blocks', () => {
+    const result = groupTranscriptBlocks([
+      {
+        id: 'assistant_text:1',
+        type: 'assistant_text',
+        content: '我直接给你生成一张偏真实风格的狗狗照片。',
+        timestamp: '2026-06-16T00:00:00',
+      },
+      {
+        id: 'tool_use:call_img',
+        type: 'tool_use',
+        toolCallId: 'call_img',
+        toolName: 'generate_image',
+        arguments: { prompt: '狗狗照片' },
+        result: null,
+        status: 'running',
+      },
+      {
+        id: 'image:call_img',
+        type: 'image',
+        status: 'generating',
+        images: [],
+        prompt: '狗狗照片',
+        toolCallId: 'call_img',
+      },
+    ])
+
+    expect(result.map((block) => block.type)).toEqual(['assistant_text', 'tool_use', 'image'])
+    expect(result[1]).toMatchObject({ type: 'tool_use', toolName: 'generate_image' })
+  })
 })

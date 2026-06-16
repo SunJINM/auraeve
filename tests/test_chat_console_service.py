@@ -346,6 +346,41 @@ async def test_chat_service_tool_completion_keeps_arguments_in_replace_event(tmp
 
 
 @pytest.mark.asyncio
+async def test_chat_service_shows_generate_image_tool_rows(tmp_path: Path) -> None:
+    queue = RuntimeCommandQueue()
+    session_manager = SessionManager(tmp_path / "sessions")
+    service = ChatService(session_manager=session_manager, command_queue=queue)
+    run_id, _ = await service.send(
+        session_key="webui:s1",
+        message="hello",
+        idempotency_key="idem-1",
+        user_id="u1",
+    )
+
+    events_task = asyncio.create_task(_collect_events(service, "webui:s1", expected_count=1))
+    await asyncio.sleep(0)
+
+    await service._handle_tool_event(  # noqa: SLF001
+        {
+            "message": "tool_call_started",
+            "sessionKey": "webui:s1",
+            "attrs": {
+                "toolName": "generate_image",
+                "toolCallId": "call_img",
+                "argsPreview": '{"prompt":"狗狗照片"}',
+            },
+        }
+    )
+
+    events = await asyncio.wait_for(events_task, timeout=2)
+    block_event = ChatTranscriptBlockEvent.model_validate(events[0]).model_dump()
+    assert block_event["runId"] == run_id
+    assert block_event["block"]["type"] == "tool_use"
+    assert block_event["block"]["toolName"] == "generate_image"
+    assert block_event["block"]["arguments"] == {"prompt": "狗狗照片"}
+
+
+@pytest.mark.asyncio
 async def test_chat_service_tool_declared_then_started_then_completed_updates_same_block(tmp_path: Path) -> None:
     queue = RuntimeCommandQueue()
     session_manager = SessionManager(tmp_path / "sessions")
@@ -500,6 +535,60 @@ async def test_chat_service_marks_delta_assistant_text_as_streaming(tmp_path: Pa
     assert delta_event["block"]["streaming"] is True
     assert final_event["op"] == "replace"
     assert final_event["block"]["streaming"] is False
+
+
+@pytest.mark.asyncio
+async def test_chat_service_defers_image_placeholder_until_assistant_text(tmp_path: Path) -> None:
+    queue = RuntimeCommandQueue()
+    session_manager = SessionManager(tmp_path / "sessions")
+    service = ChatService(session_manager=session_manager, command_queue=queue)
+    run_id, _ = await service.send(
+        session_key="webui:s1",
+        message="hello",
+        idempotency_key="idem-1",
+        user_id="u1",
+    )
+
+    events_iter = service.subscribe("webui:s1")
+    first_event_task = asyncio.create_task(events_iter.__anext__())
+    await asyncio.sleep(0)
+
+    await service._handle_image_event(  # noqa: SLF001
+        {
+            "message": "image_ready",
+            "sessionKey": "webui:s1",
+            "attrs": {
+                "toolCallId": "call_img",
+                "prompt": "偏白色版本",
+                "size": "1024x1536",
+                "images": [{"id": "img_1", "url": "/api/webui/resources/img_1.png", "size": "1024x1536"}],
+            },
+        }
+    )
+    await asyncio.sleep(0)
+
+    assert not first_event_task.done()
+
+    await service._handle_assistant_event(  # noqa: SLF001
+        {
+            "message": "assistant_text_delta",
+            "sessionKey": "webui:s1",
+            "attrs": {"delta": "改好了，已经调成偏白色版本。"},
+        }
+    )
+
+    first_event = await asyncio.wait_for(first_event_task, timeout=2)
+    second_event = await asyncio.wait_for(events_iter.__anext__(), timeout=2)
+    await events_iter.aclose()
+
+    # 图片块先于文本块广播：保证前端在文本铺开前已就位，门控才能在 [[image:N]] 处暂停。
+    image_event = ChatTranscriptBlockEvent.model_validate(first_event).model_dump()
+    text_event = ChatTranscriptBlockEvent.model_validate(second_event).model_dump()
+    assert image_event["block"]["type"] == "image"
+    assert image_event["block"]["status"] == "ready"
+    assert image_event["block"]["toolCallId"] == "call_img"
+    assert text_event["runId"] == run_id
+    assert text_event["block"]["type"] == "assistant_text"
 
 
 @pytest.mark.asyncio

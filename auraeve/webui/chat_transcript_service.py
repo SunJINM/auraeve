@@ -11,8 +11,6 @@ _READONLY_TOOL_NAMES = {"Read", "read", "read_file", "Grep", "Glob"}
 _SEARCH_TOOL_NAMES = {"web_search", "web_fetch"}
 _COLLAPSIBLE_TOOL_NAMES = _READONLY_TOOL_NAMES | _SEARCH_TOOL_NAMES
 _IMAGE_PLACEHOLDER_RE = re.compile(r"\[\[image(?::[^\]]+)?\]\]")
-_IMAGE_ANCHOR_WORDS = ("图", "图片", "版本", "效果", "结果", "生成", "完成")
-_FOLLOWUP_PREFIXES = ("如果", "还想", "你可以", "可以", "需要", "想要")
 
 
 def project_history_into_transcript_blocks(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -79,6 +77,7 @@ def project_history_into_transcript_blocks(messages: list[dict[str, Any]]) -> li
             tool_call_id = str(message.get("tool_call_id") or "")
             result_content = str(message.get("content") or "")
             is_error = "error" in result_content.lower()[:100] if result_content else False
+            tool_name = str(message.get("name") or tool_names.get(tool_call_id) or "")
 
             # 回填到已有的 tool_use block
             if tool_call_id in pending_tool_uses:
@@ -97,7 +96,7 @@ def project_history_into_transcript_blocks(messages: list[dict[str, Any]]) -> li
                         "id": f"tool_use:{stable_result_key}",
                         "type": "tool_use",
                         "toolCallId": tool_call_id,
-                        "toolName": str(message.get("name") or tool_names.get(tool_call_id) or ""),
+                        "toolName": tool_name,
                         "arguments": None,
                         "result": result_content,
                         "status": "error" if is_error else "success",
@@ -132,29 +131,17 @@ def _image_block(block_id: str, refs: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def _insert_image_placeholders(content: str, image_count: int) -> str:
-    if image_count <= 0 or not content.strip() or _IMAGE_PLACEHOLDER_RE.search(content):
+    """图片位置由模型用 [[image:N]] 显式标注。
+
+    若模型已标注则原样保留；未标注（兜底/历史消息）则把所有图片标记追加到正文末尾，
+    不在文本中间猜测位置。
+    """
+    if image_count <= 0 or _IMAGE_PLACEHOLDER_RE.search(content):
         return content
 
     placeholders = "\n".join(f"[[image:{index}]]" for index in range(1, image_count + 1))
-    paragraphs = re.split(r"\n\s*\n", content.strip())
-    if not paragraphs:
-        return content
-
-    insert_after = 0
-    for index, paragraph in enumerate(paragraphs):
-        stripped = paragraph.strip()
-        if stripped.endswith((":", "：")) and any(word in stripped for word in _IMAGE_ANCHOR_WORDS):
-            insert_after = index
-            break
-    else:
-        for index, paragraph in enumerate(paragraphs[1:], start=1):
-            stripped = paragraph.strip()
-            if stripped.startswith(_FOLLOWUP_PREFIXES):
-                insert_after = index - 1
-                break
-
-    paragraphs.insert(insert_after + 1, placeholders)
-    return "\n\n".join(paragraphs)
+    body = content.strip()
+    return f"{body}\n\n{placeholders}" if body else placeholders
 
 
 def _parse_arguments(raw: Any) -> Any:

@@ -89,6 +89,37 @@ def test_assistant_text_precedes_tool_use_in_same_turn(tmp_path: Path) -> None:
     assert blocks[2]["status"] == "success"
 
 
+def test_generate_image_history_projects_tool_and_image_blocks(tmp_path: Path) -> None:
+    sm = SessionManager(tmp_path / "sessions")
+    session = sm.get_or_create("webui:test-user")
+    session.add_message("user", "生成狗狗照片")
+    session.add_message(
+        "assistant",
+        "我直接给你生成一张偏真实风格的狗狗照片。",
+        tool_calls=[
+            {
+                "id": "call_img",
+                "type": "function",
+                "function": {"name": "generate_image", "arguments": "{\"prompt\":\"狗狗照片\"}"},
+            }
+        ],
+    )
+    session.add_message(
+        "tool",
+        "已生成 1 张图片。",
+        tool_call_id="call_img",
+        name="generate_image",
+        images=[{"id": "img-1", "url": "/api/webui/resources/img-1/content", "size": "1024x1024"}],
+    )
+
+    blocks = project_history_into_transcript_blocks(session.messages)
+
+    assert [item["type"] for item in blocks] == ["user", "assistant_text", "tool_use", "image"]
+    assert blocks[2]["toolName"] == "generate_image"
+    assert blocks[2]["status"] == "success"
+    assert blocks[3]["images"][0]["id"] == "img-1"
+
+
 def test_collapse_readonly_activity_into_single_block(tmp_path: Path) -> None:
     sm = SessionManager(tmp_path / "sessions")
     session = sm.get_or_create("webui:test-user")

@@ -32,6 +32,7 @@ class RunState:
     streaming_content: str = ""
     streaming_seq: int = 0
     assistant_text_emitted: bool = False
+    pending_image_blocks: dict[str, dict[str, Any]] = field(default_factory=dict)
 
 
 class ChatService:
@@ -409,6 +410,9 @@ class ChatService:
                 state.streaming_content += delta
                 op = "replace"
             state.assistant_text_emitted = True
+            # 先放出待定的图片块，确保前端在文本铺开前已拿到图片（进入 inlineImages），
+            # 文本流到 [[image:N]] 处的门控才能生效、暂停等待缩略图加载。
+            await self._flush_pending_image_blocks(state)
 
             await self._broadcast(
                 session_key,
@@ -445,6 +449,8 @@ class ChatService:
                 block_id = f"assistant_text:{run_id}:{seq}"
                 op = "append"
             state.assistant_text_emitted = True
+            # 同上：图片块先于文本块广播，保证门控就位。
+            await self._flush_pending_image_blocks(state)
 
             await self._broadcast(
                 session_key,
@@ -466,11 +472,14 @@ class ChatService:
     async def _handle_image_event(self, event: dict[str, Any]) -> None:
         """将 obs image 事件转化为 transcript image block 推送。
 
-        - image_generating：图片工具开始执行，先推送骨架占位块（status=generating）。
+        - image_generating：仅表示工具开始执行，进度由工具调用块表达，不再推送独立
+          占位块（避免在工具调用阶段悬浮出一个与最终文本位置脱节的大灰框）。
+          图片在文本内的占位由就绪后 `<img>` 加载阶段承担。
         - image_ready：图片就绪，替换/新增为 status=ready 并携带短引用。
+        - image_failed：生成失败，置为错误态。
         """
         message = str(event.get("message") or "")
-        if message not in ("image_generating", "image_ready", "image_failed"):
+        if message not in ("image_ready", "image_failed"):
             return
 
         session_key = str(event.get("sessionKey") or "")
@@ -486,19 +495,7 @@ class ChatService:
         prompt = str(attrs.get("prompt") or "")
         size = str(attrs.get("size") or "")
 
-        if message == "image_generating":
-            block_id = f"image:{tool_call_id or uuid.uuid4()}"
-            block = {
-                "id": block_id,
-                "type": "image",
-                "status": "generating",
-                "images": [],
-                "prompt": prompt,
-                "toolCallId": tool_call_id,
-                "size": size,
-            }
-            op = "append"
-        elif message == "image_failed":
+        if message == "image_failed":
             block_id = f"image:{tool_call_id or uuid.uuid4()}"
             block = {
                 "id": block_id,
@@ -536,6 +533,10 @@ class ChatService:
                 "size": size,
             }
 
+        if not state.assistant_text_emitted:
+            state.pending_image_blocks[block_id] = block
+            return
+
         await self._broadcast(
             session_key,
             self._build_block_event(
@@ -546,6 +547,23 @@ class ChatService:
                 block=block,
             ),
         )
+
+    async def _flush_pending_image_blocks(self, state: RunState) -> None:
+        if not state.pending_image_blocks:
+            return
+        blocks = list(state.pending_image_blocks.values())
+        state.pending_image_blocks.clear()
+        for block in blocks:
+            await self._broadcast(
+                state.session_key,
+                self._build_block_event(
+                    session_key=state.session_key,
+                    run_id=state.run_id,
+                    seq=self._next_seq(state.run_id),
+                    op="append",
+                    block=block,
+                ),
+            )
 
     # ─── SSE 订阅 ──────────────────────────────────────────────────
 

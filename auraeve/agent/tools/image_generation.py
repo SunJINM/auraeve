@@ -7,7 +7,6 @@
 
 from __future__ import annotations
 
-import re
 from typing import Any
 
 import httpx
@@ -15,10 +14,6 @@ from loguru import logger
 
 from auraeve import resource_store
 from auraeve.agent.tools.base import Tool, ToolExecutionResult
-
-_STANDARD_SIZES = {"1024x1024", "1024x1536", "1536x1024", "auto"}
-_SIZE_RE = re.compile(r"^(?P<w>\d+)x(?P<h>\d+)$")
-_MAX_PIXELS = 3840 * 2160
 
 
 class ImageGenerationTool(Tool):
@@ -72,9 +67,8 @@ class ImageGenerationTool(Tool):
                 "size": {
                     "type": "string",
                     "description": (
-                        "可选。图片尺寸；不填则使用 auto。标准值：auto、1024x1024、1536x1024、1024x1536。"
-                        "gpt-image-2 也支持任意 WIDTHxHEIGHT：宽高都必须是 16 的倍数，宽高比在 1:3 到 3:1，"
-                        "总像素不超过 3840x2160；超过 2560x1440 的分辨率属于实验性范围。"
+                        "可选。用户指定的图片尺寸或比例（如 1024x1024、1536x1024）；"
+                        "不填则不指定，由生成端自行决定。"
                     ),
                 },
             },
@@ -96,7 +90,7 @@ class ImageGenerationTool(Tool):
         if not prompt:
             raise ValueError("prompt 不能为空")
         mode = str(kwargs.get("mode") or "generate").strip().lower()
-        size = _normalize_size(kwargs.get("size"))
+        size = str(kwargs.get("size") or "").strip()
 
         if mode == "edit":
             data = await self._edit(prompt, str(kwargs.get("image") or "").strip(), size)
@@ -109,7 +103,8 @@ class ImageGenerationTool(Tool):
         )
         tool_call_id = str(getattr(self, "_current_tool_call_id", "") or "")
         for ref in refs:
-            ref["size"] = size
+            if size:
+                ref["size"] = size
             if tool_call_id:
                 ref["toolCallId"] = tool_call_id
         if not refs:
@@ -117,13 +112,19 @@ class ImageGenerationTool(Tool):
 
         refs_text = "、".join(ref["ref"] for ref in refs)
         content = (
-            f"已生成 {len(refs)} 张图片并展示给用户。资源：{refs_text}。"
+            f"已生成 {len(refs)} 张图片。资源：{refs_text}。"
+            "在最终回复正文中，用 [[image:N]] 标记每张图片应出现的位置（N 从 1 开始，"
+            "按本轮图片生成的先后顺序）。建议先用一句话引出，再放图片标记，"
+            "不要把图片直接放在正文最前面；多张图片分散到各自相关的段落，不必堆在一起。"
+            "未标记的图片会自动追加到回复末尾。" 
             "如需在此基础上继续编辑，把资源引用作为 image 参数、mode=edit 调用本工具。"
         )
         return ToolExecutionResult(content=content, data={"image_refs": refs})
 
     async def _generate(self, prompt: str, size: str) -> list[str]:
-        payload = {"model": self._model, "prompt": prompt, "size": size, "n": 1}
+        payload: dict[str, Any] = {"model": self._model, "prompt": prompt, "n": 1}
+        if size:
+            payload["size"] = size
         async with httpx.AsyncClient(timeout=self._timeout_s) as client:
             resp = await client.post(
                 f"{self._api_base}/images/generations",
@@ -141,7 +142,9 @@ class ImageGenerationTool(Tool):
         # 压缩后再上传，避免原图过大触发网关 413。
         data, filename, mime = resource_store.compress_for_upload(path)
         files = {"image": (filename, data, mime)}
-        form = {"model": self._model, "prompt": prompt, "size": size, "n": "1"}
+        form = {"model": self._model, "prompt": prompt, "n": "1"}
+        if size:
+            form["size"] = size
         async with httpx.AsyncClient(timeout=self._timeout_s) as client:
             resp = await client.post(
                 f"{self._api_base}/images/edits",
@@ -169,26 +172,3 @@ class ImageGenerationTool(Tool):
             if isinstance(item, dict) and isinstance(item.get("b64_json"), str):
                 out.append(item["b64_json"])
         return out
-
-
-def _normalize_size(raw: Any) -> str:
-    size = str(raw or "").strip().lower()
-    if not size:
-        return "auto"
-    if size in _STANDARD_SIZES:
-        return size
-    match = _SIZE_RE.match(size)
-    if not match:
-        return "auto"
-    width = int(match.group("w"))
-    height = int(match.group("h"))
-    if width <= 0 or height <= 0:
-        return "auto"
-    if width % 16 != 0 or height % 16 != 0:
-        return "auto"
-    ratio = width / height
-    if ratio < 1 / 3 or ratio > 3:
-        return "auto"
-    if width * height > _MAX_PIXELS:
-        return "auto"
-    return f"{width}x{height}"

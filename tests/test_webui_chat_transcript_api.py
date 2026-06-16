@@ -110,7 +110,8 @@ def test_chat_transcript_route_returns_blocks_and_run_state(tmp_path: Path) -> N
     assert [item["type"] for item in payload["blocks"]] == ["user", "assistant_text"]
 
 
-def test_chat_transcript_projection_inserts_image_placeholder_before_followup_text() -> None:
+def test_chat_transcript_projection_appends_image_placeholder_when_unmarked() -> None:
+    # 模型未用 [[image:N]] 显式布局时，图片标记追加到正文末尾（不再在文本中间猜位置）。
     blocks = project_history_into_transcript_blocks(
         [
             {
@@ -123,8 +124,27 @@ def test_chat_transcript_projection_inserts_image_placeholder_before_followup_te
     )
 
     assert blocks[0]["type"] == "assistant_text"
-    assert blocks[0]["content"] == "这是生成的版本：\n\n[[image:1]]\n\n如果还想继续，我可以再调整。"
+    assert blocks[0]["content"] == "这是生成的版本：\n\n如果还想继续，我可以再调整。\n\n[[image:1]]"
     assert blocks[1]["type"] == "image"
+
+
+def test_chat_transcript_projection_keeps_model_placed_image_markers() -> None:
+    # 模型已显式布局：原样保留其 [[image:N]] 标记，不追加、不改写。
+    blocks = project_history_into_transcript_blocks(
+        [
+            {
+                "role": "assistant",
+                "content": "第一版：\n\n[[image:1]]\n\n第二版：\n\n[[image:2]]",
+                "timestamp": "2026-06-15T00:00:00",
+                "images": [
+                    {"id": "img-1", "url": "/api/webui/resources/img-1/content"},
+                    {"id": "img-2", "url": "/api/webui/resources/img-2/content"},
+                ],
+            }
+        ]
+    )
+
+    assert blocks[0]["content"] == "第一版：\n\n[[image:1]]\n\n第二版：\n\n[[image:2]]"
 
 
 def test_chat_transcript_events_route_streams_transcript_events(tmp_path: Path) -> None:
