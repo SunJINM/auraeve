@@ -121,6 +121,77 @@ describe('ChatTranscript', () => {
     expect(first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
+  it('attaches the image to the text block whose marker references it, not the preceding text', () => {
+    // 真实流式时序：模型先说一句话 → 生成图片 → 再输出含 marker 的最终回复
+    const blocks: TranscriptBlock[] = [
+      {
+        id: 'assistant_text:a',
+        type: 'assistant_text',
+        content: '好的，我来生成一张图。',
+        timestamp: '2026-06-15T00:00:00',
+      },
+      {
+        id: 'image:img_x.png',
+        type: 'image',
+        status: 'ready',
+        images: [{ id: 'img_x.png', ref: 'media://img_x.png', url: '/api/webui/resources/img_x/content', alt: '流程图' }],
+      },
+      {
+        id: 'assistant_text:b',
+        type: 'assistant_text',
+        content: '这是结果：\n\n[[image:media://img_x.png]]\n\n完成。',
+        timestamp: '2026-06-15T00:00:01',
+      },
+    ] as TranscriptBlock[]
+
+    render(<ChatTranscript blocks={blocks} />)
+
+    const result = screen.getByText('这是结果：')
+    const image = screen.getByAltText('流程图')
+    // 图片落在文本B 的标记处（"这是结果：" 之后），而非错挂为文本A 的末尾追加图（那会排在 "这是结果：" 之前）
+    expect(screen.getAllByAltText('流程图')).toHaveLength(1)
+    expect(result.compareDocumentPosition(image) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(screen.queryByText(/\[\[image/)).toBeNull()
+  })
+
+  it('attaches referenced images even when a tool block sits between text and image', () => {
+    const blocks: TranscriptBlock[] = [
+      {
+        id: 'assistant_text_stream:run-1:0',
+        type: 'assistant_text',
+        content: '这是结果：\n\n[[image:media://img_x.png]]\n\n完成。',
+        timestamp: '2026-06-15T00:00:00',
+      },
+      {
+        id: 'tool_use:call_img',
+        type: 'tool_use',
+        toolCallId: 'call_img',
+        toolName: 'generate_image',
+        arguments: { prompt: '流程图' },
+        result: 'ok',
+        status: 'success',
+      },
+      {
+        id: 'image:call_img',
+        type: 'image',
+        status: 'ready',
+        toolCallId: 'call_img',
+        images: [{ id: 'img_x.png', ref: 'media://img_x.png', url: '/api/webui/resources/img_x/content', alt: '流程图' }],
+      },
+    ] as TranscriptBlock[]
+
+    render(<ChatTranscript blocks={blocks} />)
+
+    const result = screen.getByText('这是结果：')
+    const image = screen.getByAltText('流程图')
+    const done = screen.getByText('完成。')
+
+    expect(screen.getAllByAltText('流程图')).toHaveLength(1)
+    expect(result.compareDocumentPosition(image) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(image.compareDocumentPosition(done) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(screen.queryByText(/\[\[image/)).toBeNull()
+  })
+
   it('places images by resource ref regardless of marker order', () => {
     // 标记顺序与图片块顺序相反，但按 ref 精确定位，仍各归其位
     const blocks: TranscriptBlock[] = [

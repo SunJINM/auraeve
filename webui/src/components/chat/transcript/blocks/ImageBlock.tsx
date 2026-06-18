@@ -68,6 +68,18 @@ export function ImageGallery({
     [onAllLoaded],
   )
 
+  // 图片加载完成：记 loaded、记真实尺寸（消除占位比例误差导致的留白缝隙）、再 settle。
+  const markImgLoaded = useCallback(
+    (el: HTMLImageElement, url: string, total: number) => {
+      setLoaded((prev) => (prev[url] ? prev : { ...prev, [url]: true }))
+      if (el.naturalWidth > 0 && el.naturalHeight > 0) {
+        setDims((prev) => (prev[url] ? prev : { ...prev, [url]: { width: el.naturalWidth, height: el.naturalHeight } }))
+      }
+      settle(url, total)
+    },
+    [settle],
+  )
+
   // 不再渲染生成中占位框：图片由文本流门控在加载完成后就位。
   if (status === 'generating') {
     return null
@@ -87,6 +99,7 @@ export function ImageGallery({
         {images.map((img, index) => (
           <div
             key={img.id || img.url || index}
+            data-image-loading={loaded[img.url] ? undefined : 'true'}
             className="group relative overflow-hidden rounded-[14px]"
             style={{
               ...containerStyle(dims[img.url], img.size || block.size),
@@ -94,20 +107,30 @@ export function ImageGallery({
               border: '1px solid color-mix(in srgb, var(--text-primary) 8%, transparent)',
             }}
           >
+            {!loaded[img.url] ? (
+              <div
+                className="absolute inset-0 flex items-center justify-center"
+                style={{ color: 'var(--text-tertiary)' }}
+              >
+                <div
+                  className="thinking-spin h-7 w-7 rounded-full"
+                  style={{
+                    border: '2px solid color-mix(in srgb, var(--text-primary) 12%, transparent)',
+                    borderTopColor: 'var(--accent)',
+                  }}
+                />
+              </div>
+            ) : null}
             <img
               src={img.url}
               alt={img.alt || img.prompt || prompt || '生成的图片'}
               onClick={() => setLightbox(img.url)}
-              onLoad={(e) => {
-                const el = e.currentTarget
-                setLoaded((prev) => ({ ...prev, [img.url]: true }))
-                if (el.naturalWidth > 0 && el.naturalHeight > 0) {
-                  setDims((prev) =>
-                    prev[img.url] ? prev : { ...prev, [img.url]: { width: el.naturalWidth, height: el.naturalHeight } },
-                  )
-                }
-                settle(img.url, images.length)
+              ref={(el) => {
+                // 缓存命中的图片可能在 React 绑定 onLoad 前就已 complete，导致 onLoad 不再触发；
+                // 这里在挂载时补判一次，避免门控因 load 事件缺失而卡住，或留下未填充的空盒缝隙。
+                if (el && el.complete && el.naturalWidth > 0) markImgLoaded(el, img.url, images.length)
               }}
+              onLoad={(e) => markImgLoaded(e.currentTarget, img.url, images.length)}
               onError={() => settle(img.url, images.length)}
               className="absolute inset-0 h-full w-full object-contain transition-opacity duration-300"
               style={{

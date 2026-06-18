@@ -10,10 +10,9 @@ from auraeve.agent_runtime.kernel import RuntimeKernel
 from auraeve.session.manager import SessionManager
 
 
-def test_resolve_runtime_tools_registers_task_v2_for_any_main_channel(tmp_path: Path) -> None:
+def test_resolve_runtime_tools_does_not_register_task_tools_for_main_channel(tmp_path: Path) -> None:
     kernel = object.__new__(RuntimeKernel)
     kernel.tools = ToolRegistry()
-    kernel._task_base_dir = tmp_path / "tasks"
 
     registry = RuntimeKernel._resolve_runtime_tools(
         kernel,
@@ -22,10 +21,10 @@ def test_resolve_runtime_tools_registers_task_v2_for_any_main_channel(tmp_path: 
         thread_id="napcat:user-1",
     )
 
-    assert registry.has("TaskCreate")
-    assert registry.has("TaskGet")
-    assert registry.has("TaskUpdate")
-    assert registry.has("TaskList")
+    assert registry.has("TaskCreate") is False
+    assert registry.has("TaskGet") is False
+    assert registry.has("TaskUpdate") is False
+    assert registry.has("TaskList") is False
     assert registry.has("todo") is False
 
 
@@ -93,7 +92,7 @@ async def test_process_message_persists_tool_transcript_messages(tmp_path: Path)
     kernel._orchestrator.run = AsyncMock(
         return_value=MagicMock(
             final_content="完成",
-            tools_used=["TaskUpdate"],
+            tools_used=["Read"],
             recovery_actions=[],
             messages=[
                 {
@@ -103,11 +102,11 @@ async def test_process_message_persists_tool_transcript_messages(tmp_path: Path)
                         {
                             "id": "call-1",
                             "type": "function",
-                            "function": {"name": "TaskUpdate", "arguments": "{\"taskId\":\"1\",\"status\":\"completed\"}"},
+                            "function": {"name": "Read", "arguments": "{\"file_path\":\"D:/repo/README.md\"}"},
                         }
                     ],
                 },
-                {"role": "tool", "tool_call_id": "call-1", "name": "TaskUpdate", "content": "已更新"},
+                {"role": "tool", "tool_call_id": "call-1", "name": "Read", "content": "# README"},
             ],
         )
     )
@@ -134,4 +133,4 @@ async def test_process_message_persists_tool_transcript_messages(tmp_path: Path)
 
     session = kernel.sessions.get_or_create("napcat:user-1")
     assert any(item.get("role") == "assistant" and item.get("tool_calls") for item in session.messages)
-    assert any(item.get("role") == "tool" and item.get("name") == "TaskUpdate" for item in session.messages)
+    assert any(item.get("role") == "tool" and item.get("name") == "Read" for item in session.messages)

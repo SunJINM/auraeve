@@ -1,6 +1,6 @@
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 
 import type { TranscriptAssistantTextBlock, TranscriptImageBlock } from '../types'
@@ -8,12 +8,15 @@ import { useSmoothText, type SmoothGate } from '../useSmoothText'
 import { ImageGallery } from './ImageBlock'
 
 const IMAGE_PLACEHOLDER_RE = /\[\[image(?::([^\]]+))?\]\]/g
-// 图片缩略图迟迟未触发 load/error 时的兜底放行时长，避免后续文字被永久卡住。
-const GATE_TIMEOUT_MS = 4000
+// 图片缩略图迟迟未触发 load/error 时的兜底放行时长。仅用于防止图片彻底卡死时
+// 后续文字被永久阻塞；正常加载/失败都会即时放行。取较长值以贯彻「宁可多等也要按序」。
+const GATE_TIMEOUT_MS = 15000
+const IMAGE_RELEASE_DELAY_MS = 500
 
 type Segment =
   | { kind: 'text'; start: number; end: number }
   | { kind: 'image'; start: number; end: number; block: TranscriptImageBlock; key: string }
+  | { kind: 'pending_image'; start: number; end: number; key: string }
 
 function hasImagePlaceholder(content: string): boolean {
   IMAGE_PLACEHOLDER_RE.lastIndex = 0
@@ -84,6 +87,13 @@ function buildSegments(prepared: string, images: TranscriptImageBlock[]): Segmen
         block: found.block,
         key: found.block.id || `img-${found.index}`,
       })
+    } else if (match[1]) {
+      segments.push({
+        kind: 'pending_image',
+        start: match.index,
+        end: match.index + match[0].length,
+        key: `pending-${match[1]}`,
+      })
     }
     last = match.index + match[0].length
   }
@@ -110,8 +120,29 @@ export function AssistantTextBlock({
   const [loaded, setLoaded] = useState<Record<string, boolean>>({})
 
   const markLoaded = useCallback((key: string) => {
-    setLoaded((prev) => (prev[key] ? prev : { ...prev, [key]: true }))
+    window.setTimeout(() => {
+      setLoaded((prev) => (prev[key] ? prev : { ...prev, [key]: true }))
+    }, IMAGE_RELEASE_DELAY_MS)
   }, [])
+
+  // 预加载：图片块一进入 inlineImages（远早于铺字到达 marker）就把图片下载进浏览器缓存，
+  // 文字铺到 marker、图片正式挂载时即可从缓存命中、几乎无网络等待。
+  // 注意：预加载只暖缓存、不放行门控——门控仍由真正挂载的 <img> 加载完成后触发，
+  // 确保「图片真正渲染出来后」才继续后续文字，不会让文字先于图片浮现。
+  const preloadedRef = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    for (const imgBlock of inlineImages) {
+      const key = imgBlock.id || imageMarker(imgBlock)
+      if (preloadedRef.current.has(key)) continue
+      preloadedRef.current.add(key)
+      for (const item of imgBlock.images) {
+        if (item.url) {
+          const preimg = new Image()
+          preimg.src = item.url
+        }
+      }
+    }
+  }, [inlineImages])
 
   // 模型已用 [[image:N]] 标注则原样保留；流结束仍无标注则把图片追加到末尾兜底。
   const prepared = useMemo(() => {
@@ -126,7 +157,10 @@ export function AssistantTextBlock({
   // 仅文本中间的 marker（start<end 且不在正文末尾）参与门控；末尾追加的图片不阻塞文字。
   const gates = useMemo<SmoothGate[]>(() => {
     const list = segments
-      .filter((seg): seg is Extract<Segment, { kind: 'image' }> => seg.kind === 'image' && seg.end > seg.start)
+      .filter(
+        (seg): seg is Extract<Segment, { kind: 'image' | 'pending_image' }> =>
+          (seg.kind === 'image' || seg.kind === 'pending_image') && seg.end > seg.start,
+      )
       .map((seg) => ({ start: seg.start, end: seg.end, released: !!loaded[seg.key] }))
     // 流式中遇到未闭合的图片标记，止步于其起点，避免逐字显示半截资源引用。
     if (streaming) {
@@ -164,7 +198,10 @@ export function AssistantTextBlock({
           </ReactMarkdown>,
         )
       }
-    } else if (len >= seg.end) {
+    } else if (seg.kind === 'image' && len >= seg.end) {
+      // 流式期间不展示「尚未被正文标记引用」的末尾追加图片（start===end 的零宽段），
+      // 避免图片先于其标记位置在文末闪现造成乱序；待标记铺出（受门控）或流结束后再就位。
+      if (streaming && seg.start === seg.end) continue
       nodes.push(
         <div key={`image-${seg.start}-${seg.key}`} className="my-1">
           <ImageGallery block={seg.block} onAllLoaded={() => markLoaded(seg.key)} />

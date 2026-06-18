@@ -24,7 +24,7 @@ from auraeve.providers.base import LLMProvider
 from auraeve.agent.tools.registry import ToolRegistry
 from auraeve.agent.tools.agent_tool import AgentTool
 from auraeve.agent.tools.cron import CronTool
-from auraeve.agent.tools.assembler import build_tool_registry, register_task_tools
+from auraeve.agent.tools.assembler import build_tool_registry
 from auraeve.agent.context import ContextBuilder, SILENT_REPLY_TOKEN, HEARTBEAT_OK
 from auraeve.session.manager import SessionManager
 from auraeve.mcp import MCPRuntimeManager
@@ -32,7 +32,6 @@ from auraeve.mcp import MCPRuntimeManager
 from .prompt.assembler import PromptAssembler
 from .session_attempt import SessionAttemptRunner
 from .run_orchestrator import RunOrchestrator
-from .task_reminders import build_task_runtime_instruction
 from .tool_policy.engine import ToolPolicyEngine
 
 if TYPE_CHECKING:
@@ -113,9 +112,8 @@ class RuntimeKernel:
         self.memory_lifecycle = memory_lifecycle
         self._reload_lock = asyncio.Lock()
 
-        # 会话管理与任务存储
+        # 会话管理
         self.sessions = SessionManager(sessions_dir)
-        self._task_base_dir = sessions_dir.parent / "tasks"
 
         # Tool registry (main agent).
         self.tools = ToolRegistry()
@@ -165,7 +163,6 @@ class RuntimeKernel:
                 origin_chat_id=task.origin_chat_id or None,
                 thread_id=f"sub:{task.task_id}",
                 execution_workspace=task.worktree_path or self._execution_workspace,
-                task_base_dir=self._task_base_dir,
             ),
             policy=self.policy,
             model=self.model,
@@ -342,7 +339,6 @@ class RuntimeKernel:
             subagent_executor=self._subagent_executor,
             cron_service=self.cron_service,
             execution_workspace=self._execution_workspace,
-            task_base_dir=self._task_base_dir,
         )
         self._runner._tools = self.tools
 
@@ -451,11 +447,6 @@ class RuntimeKernel:
     def _resolve_runtime_tools(self, channel: str, chat_id: str, thread_id: str) -> ToolRegistry:
         base_tools = getattr(self, "tools", None)
         registry = base_tools.clone() if isinstance(base_tools, ToolRegistry) else ToolRegistry()
-        register_task_tools(
-            registry,
-            task_session_key=thread_id,
-            task_base_dir=getattr(self, "_task_base_dir", None),
-        )
         self._set_tool_context(registry, channel, chat_id, thread_id)
         return registry
 
@@ -562,12 +553,6 @@ class RuntimeKernel:
         extracted_attachments = await self._extract_attachments_legacy(attachments)
 
         # PromptAssembler
-        runtime_instruction = build_task_runtime_instruction(
-            session_key=session.key,
-            session_messages=session.messages,
-            available_tools=set(runtime_tools.tool_names),
-            task_base_dir=getattr(self, "_task_base_dir", None),
-        )
         assemble_result = await self.assembler.assemble(
             session_id=session.key,
             messages=session.get_history(),
@@ -577,7 +562,6 @@ class RuntimeKernel:
             media=media if media else None,
             attachments=extracted_attachments,
             available_tools=set(runtime_tools.tool_names),
-            runtime_instruction=runtime_instruction or "",
         )
         # 通过统一编排器执行（含恢复策略）
         recovery_result = await self._orchestrator.run(

@@ -2,45 +2,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from auraeve.agent.tasks import TaskStore
 from auraeve.agent.tools.cron import CronTool
 from auraeve.agent.tools.filesystem import EditTool, ReadTool, WriteTool
 from auraeve.agent.tools.search import GlobTool, GrepTool
-from auraeve.agent.tools.task_create import TaskCreateTool
-from auraeve.agent.tools.task_get import TaskGetTool
-from auraeve.agent.tools.task_list import TaskListTool
-from auraeve.agent.tools.task_update import TaskUpdateTool
 from auraeve.agent.tools.registry import ToolRegistry
 from auraeve.agent.tools.shell import BashTool
 from auraeve.agent.tools.agent_tool import AgentTool
 from auraeve.agent.tools.image_generation import ImageGenerationTool
 from auraeve.agent.tools.web import WebFetchTool, WebSearchTool
-from auraeve.config.paths import resolve_state_dir
 from auraeve.execution.dispatcher import ExecutionDispatcher
-
-
-def _resolve_task_base_dir(task_base_dir: Path | None) -> Path:
-    if task_base_dir is not None:
-        return Path(task_base_dir)
-    return resolve_state_dir() / "tasks"
-
-
-def register_task_tools(
-    registry: ToolRegistry,
-    *,
-    task_session_key: str | None,
-    task_base_dir: Path | None = None,
-) -> None:
-    if not task_session_key:
-        raise ValueError("task_session_key is required when registering task tools")
-    store = TaskStore(
-        base_dir=_resolve_task_base_dir(task_base_dir),
-        task_list_id=task_session_key,
-    )
-    registry.register(TaskCreateTool(store))
-    registry.register(TaskGetTool(store))
-    registry.register(TaskUpdateTool(store))
-    registry.register(TaskListTool(store))
 
 
 def build_tool_registry(
@@ -67,6 +37,7 @@ def build_tool_registry(
     task_base_dir: Path | None = None,
     image_model: str = "gpt-image-2",
 ) -> ToolRegistry:
+    del task_session_key, task_base_dir
     registry = ToolRegistry()
     tool_workspace = execution_workspace or str(workspace)
     dispatcher = execution_dispatcher or ExecutionDispatcher()
@@ -107,12 +78,5 @@ def build_tool_registry(
         if origin_channel and origin_chat_id:
             cron_tool.set_context(origin_channel, origin_chat_id)
         registry.register(cron_tool)
-
-    if task_session_key:
-        register_task_tools(
-            registry,
-            task_session_key=task_session_key,
-            task_base_dir=task_base_dir,
-        )
 
     return registry

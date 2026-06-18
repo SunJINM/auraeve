@@ -226,7 +226,6 @@ class WebUIServer:
         self._chat_console = ChatConsoleService(
             chat_service,
             getattr(subagent_executor, "_store", None),
-            task_base_dir=cfg.resolve_state_dir() / "tasks",
         )
         self._server: uvicorn.Server | None = None
         self._stopped = asyncio.Event()

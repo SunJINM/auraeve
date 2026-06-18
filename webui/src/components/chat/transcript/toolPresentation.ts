@@ -20,10 +20,6 @@ const TOOL_VERB: Record<string, { ing: string; past: string }> = {
   generate_image: { ing: 'Generating image', past: 'Generated image' },
   agent: { ing: 'Delegating', past: 'Delegated' },
   cron: { ing: 'Scheduling', past: 'Scheduled' },
-  TaskCreate: { ing: 'Creating task', past: 'Created task' },
-  TaskUpdate: { ing: 'Updating task', past: 'Updated task' },
-  TaskGet: { ing: 'Reading task', past: 'Read task' },
-  TaskList: { ing: 'Listing tasks', past: 'Listed tasks' },
 }
 
 export type ToolStatus = 'preparing' | 'running' | 'success' | 'error'
@@ -58,10 +54,6 @@ const TOOL_SUMMARY: Record<string, { verb: string; unit: string }> = {
   generate_image: { verb: 'Generated', unit: 'image' },
   agent: { verb: 'Delegated', unit: 'task' },
   cron: { verb: 'Scheduled', unit: 'task' },
-  TaskCreate: { verb: 'Created', unit: 'task' },
-  TaskUpdate: { verb: 'Updated', unit: 'task' },
-  TaskGet: { verb: 'Read', unit: 'task' },
-  TaskList: { verb: 'Listed', unit: 'task' },
 }
 
 function pluralize(unit: string, count: number): string {

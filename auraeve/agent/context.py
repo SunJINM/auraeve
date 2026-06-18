@@ -156,21 +156,17 @@ class ContextBuilder:
             "generate_image": "生成或编辑图片（mode=generate 生成新图 / edit 编辑已有图）",
             "agent":          "启动子智能体执行复杂多步骤任务，支持查询和管理已创建的子智能体",
             "cron":           "管理定时任务和唤醒事件（用于提醒；设置提醒时，写入自然语言描述以便触发时读起来像提醒）",
-            "TaskCreate":     "创建任务项",
-            "TaskGet":        "读取单个任务详情",
-            "TaskUpdate":     "增量更新任务状态与字段",
-            "TaskList":       "列出当前任务列表",
         }
         TOOL_ORDER = [
             "Read", "Write", "Edit", "Grep", "Glob", "Bash",
             "web_search", "web_fetch",
             "generate_image",
             "agent", "cron",
-            "TaskCreate", "TaskGet", "TaskUpdate", "TaskList",
         ]
 
         enabled = [t for t in TOOL_ORDER if t in tools]
-        extra = sorted(t for t in tools if t not in TOOL_ORDER and t != "todo")
+        removed_tools = {"todo", "TaskCreate", "TaskGet", "TaskUpdate", "TaskList"}
+        extra = sorted(t for t in tools if t not in TOOL_ORDER and t not in removed_tools)
         all_tools = enabled + extra
 
         if not all_tools:
@@ -180,16 +176,6 @@ class ContextBuilder:
         for t in all_tools:
             summary = CORE_TOOL_SUMMARIES.get(t)
             tool_lines.append(f"- {t}: {summary}" if summary else f"- {t}")
-
-        task_guidance: list[str] = []
-        if {"TaskCreate", "TaskGet", "TaskUpdate", "TaskList"} & tools:
-            task_guidance = [
-                "## 任务管理",
-                "复杂任务（3 步以上）或非平凡工作，使用 TaskCreate / TaskGet / TaskUpdate / TaskList 管理进度；纯对话或简单单步任务通常不需要。",
-                "推荐流程：先用 TaskList 看概览，再用 TaskGet 获取某个将要处理的任务详情；开始时用 TaskUpdate 标记 in_progress，完成后立刻标记 completed。",
-                "完成一个任务后，优先再次调用 TaskList 查看下一项可执行工作，而不是反复读取同一个任务。",
-                "",
-            ]
 
         return [
             "## 工具目录",
@@ -247,7 +233,6 @@ class ContextBuilder:
             "只有彼此独立、互不依赖的只读工具调用，才应并发发出。",
             "依赖前一步结果的调用必须串行执行。",
             "",
-            *task_guidance,
         ]
 
     def _section_safety(self) -> list[str]:

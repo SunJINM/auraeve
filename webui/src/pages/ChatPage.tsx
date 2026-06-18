@@ -222,53 +222,63 @@ export function ChatPage() {
         className={`chat-main relative flex min-h-0 flex-1 flex-col ${drawerOpen ? 'drawer-open' : ''}`}
         style={{ '--drawer-w': drawerWidthCss, transition: drawerResizing ? 'none' : undefined } as React.CSSProperties}
       >
-        <div ref={scrollRef} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto px-4 pb-8 pt-6 sm:px-6 sm:pt-8">
-          <div ref={innerRef} className="mx-auto w-full max-w-[860px] pb-28">
-            {!loading && blocks.length === 0 ? (
-              <div
-                className="mx-auto mt-[14vh] max-w-2xl text-center"
-              >
-                <img src="/auraeve.png" alt="AuraEve" className="mx-auto h-14 w-14 rounded-[18px]" style={{ boxShadow: 'var(--shadow-soft)' }} />
-                <h2 className="mt-6 text-4xl font-semibold tracking-tight sm:text-[42px]" style={{ color: 'var(--text-primary)' }}>
-                  想聊什么？
-                </h2>
-                <p className="mx-auto mt-3 max-w-[36ch] text-[15px] leading-7" style={{ color: 'var(--text-secondary)' }}>
-                  随便开个头，剩下的慢慢展开。
-                </p>
-                <div className="mt-8 flex flex-wrap justify-center gap-2">
-                  {[
-                    { label: '整理想法', prompt: '帮我把这些零散的想法整理成清晰的思路：', icon: HiCircleStack },
-                    { label: '推进任务', prompt: '我想推进一件事，先帮我拆解成可执行的步骤：', icon: HiBolt },
-                    { label: '继续完善', prompt: '帮我把下面这段内容打磨得更好：', icon: HiSparkles },
-                  ].map((item) => {
-                    const Icon = item.icon
-                    return (
-                      <button
-                        key={item.label}
-                        type="button"
-                        onClick={() => setInput(item.prompt)}
-                        className="suggest-chip inline-flex items-center gap-2 rounded-full border px-4 py-2 text-[13px]"
-                        style={{ borderColor: 'var(--glass-border)', background: 'var(--surface-1)', color: 'var(--text-secondary)', boxShadow: 'var(--shadow-soft)' }}
-                      >
-                        <Icon size={15} style={{ color: 'var(--accent)' }} />
-                        {item.label}
-                      </button>
-                    )
-                  })}
-                  </div>
-              </div>
-            ) : (
-              <ChatTranscript blocks={blocks} />
-            )}
-            {showIndicator && thinkingStartedAt != null && (
-              <div className="mt-5 ml-10">
-                <ThinkingIndicator
-                  startedAt={thinkingStartedAt}
-                  generating={generating}
-                  firstOutputAt={firstOutputAt}
-                />
-              </div>
-            )}
+        <div
+          ref={scrollRef}
+          data-chat-scroll
+          onScroll={onScroll}
+          className="min-h-0 flex-1 overflow-y-auto px-4 pb-8 pt-6 sm:px-6 sm:pt-8"
+        >
+          <div ref={innerRef} className="mx-auto w-full max-w-[860px]">
+            <div data-transcript-flow>
+              {!loading && blocks.length === 0 ? (
+                <div
+                  className="mx-auto mt-[14vh] max-w-2xl text-center"
+                >
+                  <img src="/auraeve.png" alt="AuraEve" className="mx-auto h-14 w-14 rounded-[18px]" style={{ boxShadow: 'var(--shadow-soft)' }} />
+                  <h2 className="mt-6 text-4xl font-semibold tracking-tight sm:text-[42px]" style={{ color: 'var(--text-primary)' }}>
+                    想聊什么？
+                  </h2>
+                  <p className="mx-auto mt-3 max-w-[36ch] text-[15px] leading-7" style={{ color: 'var(--text-secondary)' }}>
+                    随便开个头，剩下的慢慢展开。
+                  </p>
+                  <div className="mt-8 flex flex-wrap justify-center gap-2">
+                    {[
+                      { label: '整理想法', prompt: '帮我把这些零散的想法整理成清晰的思路：', icon: HiCircleStack },
+                      { label: '推进任务', prompt: '我想推进一件事，先帮我拆解成可执行的步骤：', icon: HiBolt },
+                      { label: '继续完善', prompt: '帮我把下面这段内容打磨得更好：', icon: HiSparkles },
+                    ].map((item) => {
+                      const Icon = item.icon
+                      return (
+                        <button
+                          key={item.label}
+                          type="button"
+                          onClick={() => setInput(item.prompt)}
+                          className="suggest-chip inline-flex items-center gap-2 rounded-full border px-4 py-2 text-[13px]"
+                          style={{ borderColor: 'var(--glass-border)', background: 'var(--surface-1)', color: 'var(--text-secondary)', boxShadow: 'var(--shadow-soft)' }}
+                        >
+                          <Icon size={15} style={{ color: 'var(--accent)' }} />
+                          {item.label}
+                        </button>
+                      )
+                    })}
+                    </div>
+                </div>
+              ) : (
+                <ChatTranscript blocks={blocks} />
+              )}
+            </div>
+            <div data-status-slot data-status-anchor="transcript-tail" className="pointer-events-none mt-5 h-7">
+              {showIndicator && thinkingStartedAt != null && (
+                <div className="ml-10">
+                  <ThinkingIndicator
+                    startedAt={thinkingStartedAt}
+                    generating={generating}
+                    firstOutputAt={firstOutputAt}
+                  />
+                </div>
+              )}
+            </div>
+            <div aria-hidden className="h-28" />
           </div>
         </div>
 

@@ -168,7 +168,6 @@ class ChatConsoleSnapshotResponse(BaseModel):
     run: dict[str, Any] = Field(default_factory=dict)
     toolCalls: list[dict[str, Any]] = Field(default_factory=list)
     tasks: list[dict[str, Any]] = Field(default_factory=list)
-    mainTasks: list[dict[str, Any]] = Field(default_factory=list)
     approvals: list[dict[str, Any]] = Field(default_factory=list)
     timeline: list[dict[str, Any]] = Field(default_factory=list)
     summary: dict[str, Any] = Field(default_factory=dict)

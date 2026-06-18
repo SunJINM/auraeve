@@ -7,7 +7,7 @@ from auraeve.agent.context import ContextBuilder
 from auraeve.agent.tools.assembler import build_tool_registry
 
 
-def test_build_tool_registry_registers_task_v2_tools_when_session_key_is_present(tmp_path: Path) -> None:
+def test_build_tool_registry_does_not_register_task_tools_when_session_key_is_present(tmp_path: Path) -> None:
     registry = build_tool_registry(
         profile="main",
         workspace=tmp_path,
@@ -15,15 +15,15 @@ def test_build_tool_registry_registers_task_v2_tools_when_session_key_is_present
         exec_timeout=5,
         brave_api_key=None,
         bus_publish_outbound=AsyncMock(),
-        provider=MagicMock(),
+        provider=MagicMock(api_key=""),
         model="test-model",
         task_session_key="webui:chat-1",
     )
 
-    assert registry.has("TaskCreate")
-    assert registry.has("TaskGet")
-    assert registry.has("TaskUpdate")
-    assert registry.has("TaskList")
+    assert registry.has("TaskCreate") is False
+    assert registry.has("TaskGet") is False
+    assert registry.has("TaskUpdate") is False
+    assert registry.has("TaskList") is False
     assert registry.has("Bash")
     assert registry.has("message") is False
     assert registry.has("browser") is False
@@ -39,7 +39,7 @@ def test_build_tool_registry_skips_task_tools_without_session_key(tmp_path: Path
         exec_timeout=5,
         brave_api_key=None,
         bus_publish_outbound=AsyncMock(),
-        provider=MagicMock(),
+        provider=MagicMock(api_key=""),
         model="test-model",
     )
 
@@ -51,7 +51,7 @@ def test_build_tool_registry_skips_task_tools_without_session_key(tmp_path: Path
     assert registry.has("todo") is False
 
 
-def test_context_builder_includes_task_v2_guidance(tmp_path: Path) -> None:
+def test_context_builder_ignores_removed_task_guidance(tmp_path: Path) -> None:
     builder = ContextBuilder(tmp_path)
 
     prompt = builder.build_system_prompt(
@@ -60,8 +60,9 @@ def test_context_builder_includes_task_v2_guidance(tmp_path: Path) -> None:
         available_tools={"TaskCreate", "TaskGet", "TaskUpdate", "TaskList"},
     )
 
-    assert "TaskCreate" in prompt
-    assert "TaskUpdate" in prompt
+    assert "TaskCreate" not in prompt
+    assert "TaskUpdate" not in prompt
+    assert "TaskList" not in prompt
     assert "复杂任务（3 步以上）先调用 todo 建立计划" not in prompt
 
 

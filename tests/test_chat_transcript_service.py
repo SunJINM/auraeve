@@ -203,7 +203,7 @@ def test_readonly_tools_project_as_flat_tool_use_blocks(tmp_path: Path) -> None:
 
 
 def test_mixed_tools_project_as_flat_tool_use_blocks(tmp_path: Path) -> None:
-    """任务类与检索类工具混排时，后端均投影为扁平 tool_use，由前端合并为一个折叠列表。"""
+    """子体与检索类工具混排时，后端均投影为扁平 tool_use，由前端合并为一个折叠列表。"""
     sm = SessionManager(tmp_path / "sessions")
     session = sm.get_or_create("webui:test-user")
     session.add_message("user", "搜索相关情报")
@@ -212,13 +212,13 @@ def test_mixed_tools_project_as_flat_tool_use_blocks(tmp_path: Path) -> None:
         "",
         tool_calls=[
             {
-                "id": "task_1",
+                "id": "agent_1",
                 "type": "function",
-                "function": {"name": "TaskCreate", "arguments": "{\"title\":\"调研\"}"},
+                "function": {"name": "agent", "arguments": "{\"prompt\":\"调研\"}"},
             }
         ],
     )
-    session.add_message("tool", "task created", tool_call_id="task_1", name="TaskCreate")
+    session.add_message("tool", "agent created", tool_call_id="agent_1", name="agent")
     session.add_message(
         "assistant",
         "",
@@ -247,7 +247,7 @@ def test_mixed_tools_project_as_flat_tool_use_blocks(tmp_path: Path) -> None:
     blocks = project_history_into_transcript_blocks(session.messages)
 
     assert [item["type"] for item in blocks] == ["user", "tool_use", "tool_use", "tool_use"]
-    assert [item["toolName"] for item in blocks[1:]] == ["TaskCreate", "web_search", "web_fetch"]
+    assert [item["toolName"] for item in blocks[1:]] == ["agent", "web_search", "web_fetch"]
 
 
 def test_bash_tool_use_projects_as_tool_use(tmp_path: Path) -> None:
