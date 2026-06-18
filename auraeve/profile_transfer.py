@@ -74,7 +74,7 @@ def export_profile_archive(output_path: str | Path) -> dict[str, Any]:
             total_bytes += file_path.stat().st_size
 
         if include_external_config:
-            arc_cfg = "external/config/auraeve.json"
+            arc_cfg = "external/config/auraeve.toml"
             zf.write(config_path, arcname=arc_cfg)
             total_files += 1
             total_bytes += config_path.stat().st_size
@@ -125,7 +125,7 @@ def import_profile_archive(archive_path: str | Path, *, force: bool = False) -> 
     with tempfile.TemporaryDirectory(prefix="auraeve-import-") as tmp:
         temp_root = Path(tmp)
         temp_state = temp_root / "state"
-        temp_external_cfg = temp_root / "external" / "config" / "auraeve.json"
+        temp_external_cfg = temp_root / "external" / "config" / "auraeve.toml"
         manifest: dict[str, Any] | None = None
 
         with zipfile.ZipFile(archive, mode="r") as zf:

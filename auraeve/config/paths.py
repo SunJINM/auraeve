@@ -6,7 +6,7 @@ from typing import Any
 
 
 STATE_DIRNAME = ".auraeve"
-CONFIG_FILENAME = "auraeve.json"
+CONFIG_FILENAME = "auraeve.toml"
 DEFAULT_AGENT_ID = "default"
 
 

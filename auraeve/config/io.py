@@ -1,17 +1,16 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import os
+import re
 import shutil
+import tomllib
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from .defaults import DEFAULTS, SENSITIVE_KEYS
 from .env_substitution import substitute_env
-from .includes import resolve_includes
-from .legacy import migrate_legacy_config_object
 from .paths import (
     resolve_config_path,
 )
@@ -21,62 +20,223 @@ from .types import ConfigSnapshot
 
 DEFAULT_BACKUP_KEEP = 5
 
-def _strip_json_comments(raw: str) -> str:
-    out: list[str] = []
-    i = 0
-    in_string = False
-    in_line_comment = False
-    in_block_comment = False
-    while i < len(raw):
-        ch = raw[i]
-        nxt = raw[i + 1] if i + 1 < len(raw) else ""
-        if in_line_comment:
-            if ch == "\n":
-                in_line_comment = False
-                out.append(ch)
-            i += 1
-            continue
-        if in_block_comment:
-            if ch == "*" and nxt == "/":
-                in_block_comment = False
-                i += 2
-                continue
-            i += 1
-            continue
-        if in_string:
-            out.append(ch)
-            if ch == "\\":
-                if i + 1 < len(raw):
-                    out.append(raw[i + 1])
-                    i += 2
-                    continue
-            elif ch == "\"":
-                in_string = False
-            i += 1
-            continue
-        if ch == "\"":
-            in_string = True
-            out.append(ch)
-            i += 1
-            continue
-        if ch == "/" and nxt == "/":
-            in_line_comment = True
-            i += 2
-            continue
-        if ch == "/" and nxt == "*":
-            in_block_comment = True
-            i += 2
-            continue
-        out.append(ch)
-        i += 1
-    return "".join(out)
-
-
-def _parse_json(raw: str) -> dict[str, Any]:
-    payload = json.loads(_strip_json_comments(raw))
+def _parse_toml(raw: str) -> dict[str, Any]:
+    payload = tomllib.loads(raw)
     if not isinstance(payload, dict):
         raise ValueError("config root must be an object")
     return payload
+
+
+def _toml_key(key: str) -> str:
+    if key.replace("_", "").replace("-", "").isalnum():
+        return key
+    escaped = key.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
+
+
+def _toml_string(value: str) -> str:
+    escaped = (
+        value.replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("\b", "\\b")
+        .replace("\f", "\\f")
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
+        .replace("\t", "\\t")
+    )
+    return f'"{escaped}"'
+
+
+def _toml_scalar(value: Any) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, int | float) and not isinstance(value, bool):
+        return str(value)
+    if isinstance(value, str):
+        return _toml_string(value)
+    raise TypeError(f"unsupported TOML scalar: {type(value).__name__}")
+
+
+def _is_scalar(value: Any) -> bool:
+    return isinstance(value, bool | int | float | str)
+
+
+def _toml_inline_value(value: Any) -> str:
+    if value is None:
+        raise TypeError("TOML does not support null")
+    if _is_scalar(value):
+        return _toml_scalar(value)
+    if isinstance(value, list):
+        return "[" + ", ".join(_toml_inline_value(item) for item in value if item is not None) + "]"
+    if isinstance(value, dict):
+        parts = [
+            f"{_toml_key(str(key))} = {_toml_inline_value(item)}"
+            for key, item in value.items()
+            if item is not None
+        ]
+        return "{ " + ", ".join(parts) + " }"
+    raise TypeError(f"unsupported TOML value: {type(value).__name__}")
+
+
+def _toml_assignment(key: str, value: Any) -> str:
+    return f"{_toml_key(key)} = {_toml_inline_value(value)}"
+
+
+def _emit_toml_table(lines: list[str], table: dict[str, Any], prefix: list[str]) -> None:
+    simple_items: list[tuple[str, Any]] = []
+    dict_items: list[tuple[str, dict[str, Any]]] = []
+    list_dict_items: list[tuple[str, list[dict[str, Any]]]] = []
+
+    for raw_key, value in table.items():
+        key = str(raw_key)
+        if value is None:
+            continue
+        if isinstance(value, dict):
+            dict_items.append((key, value))
+        elif isinstance(value, list) and any(isinstance(item, dict) for item in value):
+            if not all(isinstance(item, dict) for item in value):
+                raise TypeError(f"TOML array '{'.'.join([*prefix, key])}' cannot mix objects and scalars")
+            list_dict_items.append((key, value))
+        else:
+            simple_items.append((key, value))
+
+    for key, value in simple_items:
+        lines.append(_toml_assignment(key, value))
+
+    for key, value in dict_items:
+        if lines and lines[-1] != "":
+            lines.append("")
+        section = ".".join(_toml_key(part) for part in [*prefix, key])
+        lines.append(f"[{section}]")
+        _emit_toml_table(lines, value, [*prefix, key])
+
+    for key, items in list_dict_items:
+        for item in items:
+            if lines and lines[-1] != "":
+                lines.append("")
+            section = ".".join(_toml_key(part) for part in [*prefix, key])
+            lines.append(f"[[{section}]]")
+            _emit_toml_table(lines, item, [*prefix, key])
+
+
+def _to_toml(config: dict[str, Any]) -> str:
+    lines: list[str] = []
+    _emit_toml_table(lines, config, [])
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def _replace_first_assignment(text: str, key: str, value: Any) -> tuple[str, bool]:
+    if value is None or isinstance(value, dict | list):
+        return text, False
+    pattern = re.compile(rf"(?m)^({re.escape(key)}\s*=\s*)[^\r\n]*$")
+    next_text, count = pattern.subn(lambda match: match.group(1) + _toml_inline_value(value), text, count=1)
+    return next_text, count > 0
+
+
+def _replace_section_assignment(text: str, section: str, key: str, value: Any) -> tuple[str, bool]:
+    if value is None or isinstance(value, dict | list):
+        return text, False
+    pattern = re.compile(
+        rf"(?ms)^(\[{re.escape(section)}\]\s*\n.*?^){re.escape(key)}\s*=\s*[^\r\n]*$"
+    )
+    next_text, count = pattern.subn(
+        lambda match: match.group(1) + f"{key} = {_toml_inline_value(value)}",
+        text,
+        count=1,
+    )
+    return next_text, count > 0
+
+
+def _replace_first_array_table_assignment(text: str, table: str, key: str, value: Any) -> tuple[str, bool]:
+    if value is None or isinstance(value, dict | list):
+        return text, False
+    pattern = re.compile(
+        rf"(?ms)^(\[\[{re.escape(table)}\]\]\s*\n.*?^){re.escape(key)}\s*=\s*[^\r\n]*$"
+    )
+    next_text, count = pattern.subn(
+        lambda match: match.group(1) + f"{key} = {_toml_inline_value(value)}",
+        text,
+        count=1,
+    )
+    return next_text, count > 0
+
+
+def _remove_empty_template_entry(text: str, key: str) -> str:
+    text = re.sub(rf"(?ms)^# 配置项：{re.escape(key)}\n.*?^{re.escape(key)}\s*=\s*(?:\{{\}}|\[\])\n", "", text, count=1)
+    text = re.sub(rf"(?m)^\[{re.escape(key)}\]\n(?:\n)?", "", text, count=1)
+    return text
+
+
+def _to_commented_toml(config: dict[str, Any]) -> str:
+    template_path = Path(__file__).resolve().parents[1] / "config.example.toml"
+    try:
+        text = template_path.read_text(encoding="utf-8")
+    except Exception:
+        return _to_toml(config)
+
+    replaced: set[str] = set()
+    for key, value in config.items():
+        next_text, ok = _replace_first_assignment(text, key, value)
+        if ok:
+            text = next_text
+            replaced.add(key)
+
+    first_model = (config.get("LLM_MODELS") or [{}])[0]
+    if isinstance(first_model, dict):
+        for key, value in first_model.items():
+            if key in {"extraHeaders", "capabilities"}:
+                continue
+            text, _ok = _replace_first_array_table_assignment(text, "LLM_MODELS", key, value)
+        capabilities = first_model.get("capabilities")
+        if isinstance(capabilities, dict):
+            for key, value in capabilities.items():
+                text, _ok = _replace_section_assignment(text, "LLM_MODELS.capabilities", key, value)
+
+    for section in ("READ_ROUTING", "RUNTIME_LOOP_GUARD", "ASR", "MCP", "LOGGING"):
+        table = config.get(section)
+        if not isinstance(table, dict):
+            continue
+        replaced.add(section)
+        for key, value in table.items():
+            text, _ok = _replace_section_assignment(text, section, key, value)
+
+    logging = config.get("LOGGING")
+    if isinstance(logging, dict):
+        stream = logging.get("stream")
+        if isinstance(stream, dict):
+            for key, value in stream.items():
+                text, _ok = _replace_section_assignment(text, "LOGGING.stream", key, value)
+        search = logging.get("search")
+        if isinstance(search, dict):
+            for key, value in search.items():
+                text, _ok = _replace_section_assignment(text, "LOGGING.search", key, value)
+
+    empty_template_keys = {
+        "AGENTS_DEFAULTS",
+        "AGENTS_LIST",
+        "SKILLS_ENTRIES",
+        "SESSION_TOOL_POLICY",
+        "CHANNEL_USERS",
+    }
+    missing = {
+        key: value
+        for key, value in config.items()
+        if key not in replaced and key not in {"LLM_MODELS"}
+    }
+    for key in empty_template_keys:
+        value = config.get(key)
+        if value in ({}, []):
+            missing.pop(key, None)
+        elif key in missing:
+            text = _remove_empty_template_entry(text, key)
+    if missing:
+        text = text.rstrip() + "\n\n# ============================================================\n"
+        text += "# 自动追加配置\n"
+        text += "# 作用：保存当前版本支持但注释模板尚未显式展示的配置项。\n"
+        text += "# ============================================================\n\n"
+        text += _to_toml(missing).rstrip() + "\n"
+
+    return text.rstrip() + "\n"
 
 
 def _hash_raw(raw: str | None) -> str:
@@ -167,13 +327,10 @@ def read_config_snapshot() -> ConfigSnapshot:
     raw = path.read_text(encoding="utf-8")
     warnings: list[dict[str, str]] = []
     try:
-        parsed = _parse_json(raw)
-        resolved_includes = resolve_includes(parsed, path, path.parent)
-        resolved = substitute_env(resolved_includes, warnings)
+        parsed = _parse_toml(raw)
+        resolved = substitute_env(parsed, warnings)
         if not isinstance(resolved, dict):
             raise ValueError("resolved config must be object")
-        resolved, migration_notes = migrate_legacy_config_object(resolved)
-        warnings.extend({"path": "legacy", "message": note} for note in migration_notes)
         valid, issues = validate_config_object(resolved)
         config = normalize_config_object(resolved if valid else {})
         return ConfigSnapshot(
@@ -279,7 +436,7 @@ def write_config(
     output = _stamp_meta(normalized)
     output = _restore_sensitive_refs(output, snapshot.parsed, set(changed))
 
-    raw = json.dumps(output, ensure_ascii=False, indent=2) + "\n"
+    raw = _to_commented_toml(output)
     path = resolve_config_path()
     _maintain_backups(path)
     write_text_atomic(path, raw)

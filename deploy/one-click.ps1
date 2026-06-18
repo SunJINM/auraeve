@@ -12,7 +12,7 @@ if (-not $env:HOME -and $HOME) {
 $RuntimeDir = Join-Path $HOME ".auraeve"
 $EnvFile = Join-Path $ProjectDir ".env"
 $EnvTemplate = Join-Path $ProjectDir ".env.docker.example"
-$ConfigFile = Join-Path $RuntimeDir "auraeve.json"
+$ConfigFile = Join-Path $RuntimeDir "auraeve.toml"
 $AppLog = Join-Path $ScriptDir "app.log"
 $AppPidFile = Join-Path $ScriptDir "app.pid"
 
@@ -66,7 +66,7 @@ function Stop-LocalDockerServices {
 New-Item -ItemType Directory -Force -Path $RuntimeDir | Out-Null
 
 if (!(Test-Path $ConfigFile)) {
-  Copy-Item (Join-Path $ProjectDir "auraeve/config.example.json") $ConfigFile -Force
+  Copy-Item (Join-Path $ProjectDir "auraeve/config.example.toml") $ConfigFile -Force
   Write-Host "[one-click] initialized config: $ConfigFile"
 }
 
@@ -74,14 +74,6 @@ if (!(Test-Path $EnvFile)) {
   Copy-Item $EnvTemplate $EnvFile -Force
   Write-Host "[one-click] initialized env: $EnvFile"
 }
-
-python -c @"
-import json
-from pathlib import Path
-cfg = Path(r'$ConfigFile')
-payload = json.loads(cfg.read_text(encoding='utf-8'))
-cfg.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + '`n', encoding='utf-8')
-"@
 
 $VenvPython = Join-Path $ProjectDir ".venv\Scripts\python.exe"
 if (!(Test-Path $VenvPython)) {

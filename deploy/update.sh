@@ -13,7 +13,7 @@ MODE="${1:-auto}" # auto(default=local)|docker|local
 ENV_FILE="${PROJECT_DIR}/.env"
 ENV_TEMPLATE="${PROJECT_DIR}/.env.docker.example"
 STATE_DIR="${HOME}/.auraeve"
-CONFIG_FILE="${STATE_DIR}/auraeve.json"
+CONFIG_FILE="${STATE_DIR}/auraeve.toml"
 
 VENV_PYTHON="${PROJECT_DIR}/.venv/bin/python"
 
@@ -23,7 +23,7 @@ APP_LOG="${SCRIPT_DIR}/app.log"
 mkdir -p "${STATE_DIR}" "${SCRIPT_DIR}"
 
 if [[ ! -f "${CONFIG_FILE}" ]]; then
-  cp "${PROJECT_DIR}/auraeve/config.example.json" "${CONFIG_FILE}"
+  cp "${PROJECT_DIR}/auraeve/config.example.toml" "${CONFIG_FILE}"
   echo "[update] initialized config: ${CONFIG_FILE}"
 fi
 
@@ -31,17 +31,6 @@ if [[ ! -f "${ENV_FILE}" && -f "${ENV_TEMPLATE}" ]]; then
   cp "${ENV_TEMPLATE}" "${ENV_FILE}"
   echo "[update] initialized env: ${ENV_FILE}"
 fi
-
-sync_runtime_config() {
-  python - "${CONFIG_FILE}" <<'PY'
-from pathlib import Path
-import json
-import sys
-cfg = Path(sys.argv[1])
-payload = json.loads(cfg.read_text(encoding='utf-8'))
-cfg.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
-PY
-}
 
 setup_python() {
   if [[ ! -x "${VENV_PYTHON}" ]]; then
@@ -112,8 +101,6 @@ git pull --rebase
 
 echo "[update] installing dependencies..."
 setup_python
-
-sync_runtime_config
 
 if [[ "${MODE}" == "docker" ]]; then
   echo "[update] mode=docker, restarting compose stack..."

@@ -8,7 +8,7 @@ MODE="${1:-auto}" # auto(default=local)|docker|local
 STATE_DIR="${HOME}/.auraeve"
 ENV_FILE="${PROJECT_DIR}/.env"
 ENV_TEMPLATE="${PROJECT_DIR}/.env.docker.example"
-CONFIG_FILE="${STATE_DIR}/auraeve.json"
+CONFIG_FILE="${STATE_DIR}/auraeve.toml"
 APP_LOG="${SCRIPT_DIR}/app.log"
 APP_PID_FILE="${SCRIPT_DIR}/app.pid"
 
@@ -46,7 +46,7 @@ stop_local_webui_containers() {
 mkdir -p "${STATE_DIR}" "${SCRIPT_DIR}"
 
 if [[ ! -f "${CONFIG_FILE}" ]]; then
-  cp "${PROJECT_DIR}/auraeve/config.example.json" "${CONFIG_FILE}"
+  cp "${PROJECT_DIR}/auraeve/config.example.toml" "${CONFIG_FILE}"
   echo "[one-click] initialized config: ${CONFIG_FILE}"
 fi
 
@@ -54,15 +54,6 @@ if [[ ! -f "${ENV_FILE}" ]]; then
   cp "${ENV_TEMPLATE}" "${ENV_FILE}"
   echo "[one-click] initialized env: ${ENV_FILE}"
 fi
-
-python - "${CONFIG_FILE}" <<'PY'
-from pathlib import Path
-import json
-import sys
-config_path = Path(sys.argv[1])
-payload = json.loads(config_path.read_text(encoding="utf-8"))
-config_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-PY
 
 PYTHON_BIN="${PROJECT_DIR}/.venv/bin/python"
 if [[ ! -x "${PYTHON_BIN}" ]]; then

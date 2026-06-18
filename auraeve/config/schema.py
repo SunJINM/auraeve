@@ -745,16 +745,16 @@ _LABEL_OVERRIDES = {
 _DESCRIPTION_OVERRIDES = {
     # 模型配置
     "LLM_MODELS": "模型配置卡片列表，手动声明主模型与能力标记。",
-    "READ_ROUTING": "Read 工具的图片降级和失败策略（JSON 对象）。",
+    "READ_ROUTING": "Read 工具的图片降级和失败策略（TOML 表）。",
     "LLM_MAX_TOOL_ITERATIONS": "单轮对话中模型调用工具的最大迭代次数。",
     "LLM_MEMORY_WINDOW": "发送给模型的历史消息条数上限。",
-    "RUNTIME_LOOP_GUARD": "循环检测与降速/阻断策略（JSON 对象）。",
+    "RUNTIME_LOOP_GUARD": "循环检测与降速/阻断策略（TOML 表）。",
     # 运行时配置
     "TOKEN_BUDGET": "单次会话的总 Token 预算，超出后触发上下文压缩。",
     "COMPACTION_THRESHOLD_RATIO": "Token 用量达到预算的此比例时触发压缩，范围 0-1。",
     "USE_UNIFIED_TOOL_ASSEMBLER": "使用统一工具装配器合并所有工具来源。",
     "GLOBAL_DENY_TOOLS": "全局禁用的工具名称列表（JSON 数组）。",
-    "SESSION_TOOL_POLICY": "按会话/场景的工具权限策略（JSON 对象）。",
+    "SESSION_TOOL_POLICY": "按会话/场景的工具权限策略（TOML 表）。",
     "MAX_GLOBAL_SUBAGENT_CONCURRENT": "全局同时运行的子体数量上限。",
     "MAX_SESSION_SUBAGENT_CONCURRENT": "单个会话同时运行的子体数量上限。",
     # 渠道配置
@@ -767,13 +767,13 @@ _DESCRIPTION_OVERRIDES = {
     "NAPCAT_ACCESS_TOKEN": "NapCat 的访问令牌。",
     "NAPCAT_ALLOW_FROM": "允许接收私聊消息的 QQ 号码列表。",
     "NAPCAT_ALLOW_GROUPS": "允许接收群消息的 QQ 群号列表。",
-    "CHANNEL_USERS": "渠道 ID 到内部用户 ID 的映射关系（JSON 对象）。",
+    "CHANNEL_USERS": "渠道 ID 到内部用户 ID 的映射关系（TOML 表）。",
     "NOTIFY_CHANNEL": "系统通知发送的目标渠道标识。",
     # 语音转写
-    "ASR": "语音转文本运行参数与服务列表（JSON 对象）。",
+    "ASR": "语音转文本运行参数与服务列表（TOML 表）。",
     # 技能
     "SKILLS_ENABLED": "是否启用技能系统。",
-    "SKILLS_ENTRIES": "按技能 key 的启停与自定义配置（JSON 对象）。",
+    "SKILLS_ENTRIES": "按技能 key 的启停与自定义配置（TOML 表）。",
     "SKILLS_LOAD_EXTRA_DIRS": "额外的技能搜索目录列表。",
     "SKILLS_INSTALL_NODE_MANAGER": "安装 Node.js 依赖时使用的包管理器（npm/yarn/pnpm）。",
     "SKILLS_INSTALL_PREFER_BREW": "macOS 上安装系统依赖时优先使用 Homebrew。",
@@ -783,16 +783,16 @@ _DESCRIPTION_OVERRIDES = {
     "SKILLS_LIMIT_MAX_PROMPT_CHARS": "技能注入 Prompt 的最大总字符数。",
     "SKILLS_LIMIT_MAX_FILE_BYTES": "单个技能文件的最大字节数。",
     # 日志
-    "LOGGING": "日志系统配置（级别、目录、分段、保留策略等，JSON 对象）。",
+    "LOGGING": "日志系统配置（级别、目录、分段、保留策略等，TOML 表）。",
     # WebUI
     "WEBUI_ENABLED": "是否启用 WebUI 管理界面。",
     "WEBUI_HOST": "WebUI 监听的网络地址，0.0.0.0 表示所有接口。",
     "WEBUI_PORT": "WebUI 监听的端口号。",
     "WEBUI_TOKEN": "访问 WebUI 所需的认证令牌。",
     # MCP
-    "MCP": "MCP 运行时配置（服务器列表、重载策略、超时等，JSON 对象）。",
+    "MCP": "MCP 运行时配置（服务器列表、重载策略、超时等，TOML 表）。",
     # 存储与路径
-    "AGENTS_DEFAULTS": "多 Agent 的默认配置（如 workspace 等，JSON 对象）。",
+    "AGENTS_DEFAULTS": "多 Agent 的默认配置（如 workspace 等，TOML 表）。",
     "AGENTS_LIST": "Agent 列表，每项可定义 id、workspace 等属性。",
     "WORKSPACE_PATH": "主工作区的文件系统路径。",
     "SESSIONS_DIR": "会话数据的存储目录。",

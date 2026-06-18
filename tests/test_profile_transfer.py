@@ -37,7 +37,7 @@ class ProfileTransferTests(unittest.TestCase):
         )
         (self.state_dir / "skills" / "state.json").write_text('{"entries":{"demo":{"enabled":true}}}\n', encoding="utf-8")
         (self.state_dir / "plugins" / "state.json").write_text('{"entries":{"p.demo":{"enabled":true}}}\n', encoding="utf-8")
-        (self.state_dir / "auraeve.json").write_text('{"LLM_API_KEY":"test-key"}\n', encoding="utf-8")
+        (self.state_dir / "auraeve.toml").write_text('TAVILY_API_KEY = "test-key"\n', encoding="utf-8")
 
     def test_export_import_roundtrip(self) -> None:
         self._seed_state()
@@ -51,7 +51,7 @@ class ProfileTransferTests(unittest.TestCase):
         imported = import_profile_archive(archive, force=True)
         self.assertTrue(imported["ok"])
 
-        self.assertTrue((self.state_dir / "auraeve.json").exists())
+        self.assertTrue((self.state_dir / "auraeve.toml").exists())
         self.assertTrue((self.state_dir / "workspace" / "memory" / "MEMORY.md").exists())
         self.assertTrue((self.state_dir / "workspace" / "memory" / "logs" / "2026-03-14.md").exists())
         self.assertTrue((self.state_dir / "skills" / "state.json").exists())

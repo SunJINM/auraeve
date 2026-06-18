@@ -24,13 +24,12 @@ pip install -r requirements.txt
 
 ```bash
 mkdir -p ~/.auraeve
-cp auraeve/config.example.json ~/.auraeve/auraeve.json
+cp auraeve/config.example.toml ~/.auraeve/auraeve.toml
 ```
 
 至少填写以下配置项：
 
-- `LLM_API_KEY`
-- `LLM_MODEL`
+- `LLM_MODELS` 中主模型的 `model` 和 `apiKey`
 - 渠道相关配置（按需）：`NAPCAT_*`、`DINGTALK_*`
 
 ### 3. 启动
@@ -81,7 +80,7 @@ AuraEve 当前记忆体系保持轻量可控：
 
 ## 配置说明
 
-- 默认配置路径：`~/.auraeve/auraeve.json`
+- 默认配置路径：`~/.auraeve/auraeve.toml`
 - 可通过环境变量覆盖：
   - `AURAEVE_STATE_DIR`
   - `AURAEVE_CONFIG_PATH`
@@ -99,9 +98,9 @@ python -m auraeve config validate
 python -m auraeve config doctor --fix
 
 # 读写配置
-python -m auraeve config get LLM_MODEL
-python -m auraeve config set LLM_MODEL '"gpt-4o-mini"' --strict-json
-python -m auraeve config unset LLM_MODEL
+python -m auraeve config get LLM_MODELS
+python -m auraeve config set WEBUI_PORT 8080 --strict-json
+python -m auraeve config unset WEBUI_TOKEN
 
 # 个人资料迁移（配置/记忆/技能/状态）
 python -m auraeve profile export ./my-profile.auraeve
@@ -161,5 +160,5 @@ auraeve/
 ## 安全与公开仓库说明
 
 - 仓库中的配置均为模板或占位符，不包含真实密钥
-- 不要提交真实 `auraeve.json`、账号 ID、私有路径、令牌或私钥
+- 不要提交真实 `auraeve.toml`、账号 ID、私有路径、令牌或私钥
 - 建议通过环境变量或私有配置注入敏感信息

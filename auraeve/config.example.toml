@@ -1,0 +1,695 @@
+# ============================================================
+# AuraEve 配置文件示例
+# 作用：集中管理模型、运行时、渠道、语音转写、MCP、WebUI、日志、工具与路径。
+# 说明：TOML 支持 # 注释，比 JSON 更适合人工维护；本文件可直接复制为 auraeve.toml 使用。
+# 约定：密钥类配置建议写成 "${环境变量名}"，运行时会自动替换环境变量。
+# ============================================================
+
+# ============================================================
+# 顶层模型与运行时配置
+# 作用：控制模型工具迭代、上下文窗口、Token 预算、工具策略和子智能体并发。
+# 示例：本地开发可适当放宽预算和并发；资源有限时降低数值。
+# ============================================================
+
+# 配置项：LLM_MAX_TOOL_ITERATIONS
+# 作用：单轮对话中模型调用工具的最大迭代次数。
+# 示例：10 更保守；20 适合复杂任务；50 适合长链路自动化。
+LLM_MAX_TOOL_ITERATIONS = 20
+
+# 配置项：LLM_MEMORY_WINDOW
+# 作用：发送给模型的历史消息条数上限。
+# 示例：20 节省上下文；50 平衡效果；100 保留更多历史。
+LLM_MEMORY_WINDOW = 50
+
+# 配置项：TOKEN_BUDGET
+# 作用：单次会话可使用的总 Token 预算。
+# 示例：60000 节省成本；120000 适合长任务；200000 适合超长上下文模型。
+TOKEN_BUDGET = 120000
+
+# 配置项：COMPACTION_THRESHOLD_RATIO
+# 作用：Token 用量达到预算的该比例时触发上下文压缩。
+# 示例：0.75 更早压缩；0.85 平衡；0.95 更晚压缩。
+COMPACTION_THRESHOLD_RATIO = 0.85
+
+# 配置项：USE_UNIFIED_TOOL_ASSEMBLER
+# 作用：是否使用统一工具装配器合并内置工具、MCP 工具和其他工具来源。
+# 示例：true 表示启用统一装配器。
+USE_UNIFIED_TOOL_ASSEMBLER = true
+
+# 配置项：GLOBAL_DENY_TOOLS
+# 作用：全局禁用的工具名称列表。
+# 示例：["Shell", "WebSearch"]
+GLOBAL_DENY_TOOLS = []
+
+# 配置项：SESSION_TOOL_POLICY
+# 作用：按会话或场景定义工具权限策略。
+# 示例：{ default = { deny = ["Shell"] } }
+SESSION_TOOL_POLICY = {}
+
+# 配置项：MAX_GLOBAL_SUBAGENT_CONCURRENT
+# 作用：全局同时运行的子智能体数量上限。
+# 示例：3 保守；10 默认；20 适合高性能机器。
+MAX_GLOBAL_SUBAGENT_CONCURRENT = 10
+
+# 配置项：MAX_SESSION_SUBAGENT_CONCURRENT
+# 作用：单个会话同时运行的子智能体数量上限。
+# 示例：2 保守；8 默认；16 适合复杂并行任务。
+MAX_SESSION_SUBAGENT_CONCURRENT = 8
+
+# ============================================================
+# 渠道配置
+# 作用：控制钉钉、NapCat/QQ、渠道用户映射和通知目标。
+# 示例：只使用 WebUI 时可以保持所有外部渠道关闭。
+# ============================================================
+
+# 配置项：DINGTALK_ENABLED
+# 作用：是否启用钉钉机器人渠道。
+# 示例：true 启用；false 关闭。
+DINGTALK_ENABLED = false
+
+# 配置项：DINGTALK_CLIENT_ID
+# 作用：钉钉应用 Client ID。
+# 示例："dingxxxx"
+DINGTALK_CLIENT_ID = ""
+
+# 配置项：DINGTALK_CLIENT_SECRET
+# 作用：钉钉应用 Client Secret。
+# 示例："${DINGTALK_CLIENT_SECRET}"
+DINGTALK_CLIENT_SECRET = ""
+
+# 配置项：DINGTALK_ALLOW_FROM
+# 作用：允许接收消息的钉钉用户或群组 ID 列表。
+# 示例：["user-id-1", "group-id-1"]
+DINGTALK_ALLOW_FROM = []
+
+# 配置项：NAPCAT_ENABLED
+# 作用：是否启用 NapCat/QQ 渠道。
+# 示例：true 启用；false 关闭。
+NAPCAT_ENABLED = false
+
+# 配置项：NAPCAT_WS_URL
+# 作用：NapCat WebSocket 地址。
+# 示例："ws://127.0.0.1:3001"
+NAPCAT_WS_URL = "ws://127.0.0.1:3001"
+
+# 配置项：NAPCAT_ACCESS_TOKEN
+# 作用：NapCat 访问令牌。
+# 示例："${NAPCAT_ACCESS_TOKEN}"
+NAPCAT_ACCESS_TOKEN = ""
+
+# 配置项：NAPCAT_ALLOW_FROM
+# 作用：允许接收私聊消息的 QQ 号列表。
+# 示例：["10001", "10002"]
+NAPCAT_ALLOW_FROM = []
+
+# 配置项：NAPCAT_ALLOW_GROUPS
+# 作用：允许接收群消息的 QQ 群号列表。
+# 示例：["12345678"]
+NAPCAT_ALLOW_GROUPS = []
+
+# 配置项：CHANNEL_USERS
+# 作用：渠道用户 ID 到内部用户 ID 的映射。
+# 示例：{ "napcat:10001" = "me" }
+CHANNEL_USERS = {}
+
+# 配置项：NOTIFY_CHANNEL
+# 作用：系统通知发送目标渠道。
+# 示例："dingtalk:default"、"napcat:10001"
+NOTIFY_CHANNEL = ""
+
+# ============================================================
+# 技能配置
+# 作用：控制技能系统启停、加载目录、安装策略和注入 Prompt 的规模限制。
+# 示例：本地开发一般保持启用；受限环境可关闭自动安装或限制下载域名。
+# ============================================================
+
+# 配置项：SKILLS_ENABLED
+# 作用：是否启用技能系统。
+# 示例：true 启用；false 关闭。
+SKILLS_ENABLED = true
+
+# 配置项：SKILLS_ENTRIES
+# 作用：按技能 key 配置启停或自定义参数。
+# 示例：{ "my-skill" = { enabled = true } }
+SKILLS_ENTRIES = {}
+
+# 配置项：SKILLS_LOAD_EXTRA_DIRS
+# 作用：额外技能搜索目录。
+# 示例：["D:/WorkProjects/my-skills"]
+SKILLS_LOAD_EXTRA_DIRS = []
+
+# 配置项：SKILLS_INSTALL_NODE_MANAGER
+# 作用：安装 Node 依赖时使用的包管理器。
+# 示例："npm"、"pnpm"、"yarn"
+SKILLS_INSTALL_NODE_MANAGER = "npm"
+
+# 配置项：SKILLS_INSTALL_PREFER_BREW
+# 作用：macOS 上安装系统依赖时是否优先使用 Homebrew。
+# 示例：true 优先 brew；Windows/Linux 可保持默认。
+SKILLS_INSTALL_PREFER_BREW = true
+
+# 配置项：SKILLS_INSTALL_TIMEOUT_MS
+# 作用：技能安装超时时间，单位毫秒。
+# 示例：300000 表示 5 分钟。
+SKILLS_INSTALL_TIMEOUT_MS = 300000
+
+# 配置项：SKILLS_SECURITY_ALLOWED_DOWNLOAD_DOMAINS
+# 作用：技能安装时允许下载资源的域名白名单。
+# 示例：["github.com", "raw.githubusercontent.com"]
+SKILLS_SECURITY_ALLOWED_DOWNLOAD_DOMAINS = []
+
+# 配置项：SKILLS_LIMIT_MAX_IN_PROMPT
+# 作用：单次 Prompt 中最多注入多少个技能。
+# 示例：50 更保守；150 默认。
+SKILLS_LIMIT_MAX_IN_PROMPT = 150
+
+# 配置项：SKILLS_LIMIT_MAX_PROMPT_CHARS
+# 作用：技能注入 Prompt 的最大总字符数。
+# 示例：30000
+SKILLS_LIMIT_MAX_PROMPT_CHARS = 30000
+
+# 配置项：SKILLS_LIMIT_MAX_FILE_BYTES
+# 作用：单个技能文件最大读取字节数。
+# 示例：256000
+SKILLS_LIMIT_MAX_FILE_BYTES = 256000
+
+# ============================================================
+# WebUI 配置
+# 作用：控制浏览器管理界面的启停、监听地址、端口和访问令牌。
+# 示例：本机使用可监听 127.0.0.1；局域网访问可监听 0.0.0.0 并设置 token。
+# ============================================================
+
+# 配置项：WEBUI_ENABLED
+# 作用：是否启用 WebUI。
+# 示例：true 启用；false 关闭。
+WEBUI_ENABLED = true
+
+# 配置项：WEBUI_HOST
+# 作用：WebUI 监听地址。
+# 示例："127.0.0.1" 仅本机；"0.0.0.0" 允许外部访问。
+WEBUI_HOST = "0.0.0.0"
+
+# 配置项：WEBUI_PORT
+# 作用：WebUI 监听端口。
+# 示例：8080、3000、5173
+WEBUI_PORT = 8080
+
+# 配置项：WEBUI_TOKEN
+# 作用：访问 WebUI 的认证令牌，留空表示不启用令牌校验。
+# 示例："${AURAEVE_WEBUI_TOKEN}"
+WEBUI_TOKEN = ""
+
+# ============================================================
+# 存储与路径配置
+# 作用：控制工作区、会话目录和多 Agent 工作区映射。
+# 示例：单用户本地开发通常只需要 WORKSPACE_PATH。
+# ============================================================
+
+# 配置项：AGENTS_DEFAULTS
+# 作用：多 Agent 默认配置。
+# 示例：{ workspace = "workspace" }
+AGENTS_DEFAULTS = {}
+
+# 配置项：AGENTS_LIST
+# 作用：多 Agent 列表，每项可配置 id 与 workspace。
+# 示例：[{ id = "dev", workspace = "D:/WorkProjects/auraeve" }]
+AGENTS_LIST = []
+
+# 配置项：WORKSPACE_PATH
+# 作用：默认 Agent 的工作区路径。
+# 示例："workspace"、"D:/WorkProjects/auraeve"
+WORKSPACE_PATH = "workspace"
+
+# 配置项：SESSIONS_DIR
+# 作用：会话数据存储目录。
+# 示例："D:/auraeve/sessions"；留空时使用默认 state 目录。
+SESSIONS_DIR = ""
+
+# ============================================================
+# 工具与安全配置
+# 作用：配置搜索服务、命令执行超时、工作区限制和 Git 凭据。
+# 示例：不使用联网搜索或 Git 自动操作时可保持密钥为空。
+# ============================================================
+
+# 配置项：TAVILY_API_KEY
+# 作用：Tavily 搜索 API Key。
+# 示例："${TAVILY_API_KEY}"
+TAVILY_API_KEY = ""
+
+# 配置项：BRAVE_API_KEY
+# 作用：Brave 搜索 API Key。
+# 示例："${BRAVE_API_KEY}"
+BRAVE_API_KEY = ""
+
+# 配置项：EXEC_TIMEOUT
+# 作用：命令执行默认超时时间，单位秒。
+# 示例：60 默认；300 适合较长构建任务。
+EXEC_TIMEOUT = 60
+
+# 配置项：RESTRICT_TO_WORKSPACE
+# 作用：是否限制文件工具只能访问工作区。
+# 示例：true 更安全；false 更灵活。
+RESTRICT_TO_WORKSPACE = false
+
+# 配置项：GIT_USERNAME
+# 作用：Git 操作使用的用户名。
+# 示例："your-name"
+GIT_USERNAME = ""
+
+# 配置项：GIT_TOKEN
+# 作用：Git 操作使用的令牌。
+# 示例："${GIT_TOKEN}"
+GIT_TOKEN = ""
+
+# ============================================================
+# 心跳配置
+# 作用：控制系统定时自省或保活任务。
+# 示例：本地长期运行时保持启用，临时调试时可关闭。
+# ============================================================
+
+# 配置项：HEARTBEAT_ENABLED
+# 作用：是否启用心跳任务。
+# 示例：true 启用；false 关闭。
+HEARTBEAT_ENABLED = true
+
+# 配置项：HEARTBEAT_INTERVAL_S
+# 作用：心跳执行间隔，单位秒。
+# 示例：1800 表示 30 分钟。
+HEARTBEAT_INTERVAL_S = 1800
+
+# ============================================================
+# 模型卡片列表
+# 作用：定义系统可用的大模型、主模型、API 地址、密钥和能力标记。
+# 示例：可配置 OpenAI、DeepSeek、OpenRouter、Ollama 或任何 OpenAI 兼容接口。
+# 注意：LLM_MODELS 中必须且只能有一个模型设置 isPrimary = true。
+# ============================================================
+
+[[LLM_MODELS]]
+# 配置项：id
+# 作用：模型卡片唯一标识，供运行时、热更新和 WebUI 查找。
+# 示例："main"、"vision"、"backup"
+id = "main"
+
+# 配置项：label
+# 作用：模型在界面或日志中展示的名称。
+# 示例："主模型"、"视觉模型"、"备用模型"
+label = "主模型"
+
+# 配置项：enabled
+# 作用：是否启用该模型卡片。
+# 示例：true 表示启用；false 表示保留配置但不参与选择。
+enabled = true
+
+# 配置项：isPrimary
+# 作用：是否作为默认主模型。
+# 示例：主模型填 true，其他模型填 false。
+isPrimary = true
+
+# 配置项：model
+# 作用：传给模型服务的模型名称。
+# 示例："gpt-4o-mini"、"gpt-4.1"、"deepseek-chat"
+model = "gpt-4o-mini"
+
+# 配置项：apiBase
+# 作用：OpenAI 兼容接口地址，留空或删除该项表示使用 SDK 默认地址。
+# 示例："https://api.openai.com/v1"、"https://openrouter.ai/api/v1"
+apiBase = ""
+
+# 配置项：apiKey
+# 作用：模型服务 API Key。建议使用环境变量，避免明文写入配置。
+# 示例："${OPENAI_API_KEY}" 或 "sk-..."
+apiKey = ""
+
+# 配置项：maxTokens
+# 作用：单次模型响应的最大输出 Token 数。
+# 示例：4096、8192、16384
+maxTokens = 8192
+
+# 配置项：temperature
+# 作用：控制输出随机性，值越高越发散。
+# 示例：0.2 更稳定；0.7 更自然；1.0 更开放。
+temperature = 0.7
+
+# 配置项：thinkingBudgetTokens
+# 作用：支持思考预算的模型可用该值限制思考 Token；0 表示不设置。
+# 示例：0、1024、4096
+thinkingBudgetTokens = 0
+
+[LLM_MODELS.extraHeaders]
+# 配置项：extraHeaders
+# 作用：调用模型接口时附加的 HTTP Header。
+# 示例：X-API-Source = "auraeve"
+
+[LLM_MODELS.capabilities]
+# 配置项：imageInput
+# 作用：该模型是否支持图片输入。
+# 示例：视觉模型填 true，纯文本模型填 false。
+imageInput = true
+
+# 配置项：audioInput
+# 作用：该模型是否支持音频输入。
+# 示例：支持音频理解填 true，不支持填 false。
+audioInput = false
+
+# 配置项：documentInput
+# 作用：该模型是否适合处理文档内容。
+# 示例：长上下文或文档模型填 true。
+documentInput = true
+
+# 配置项：toolCalling
+# 作用：该模型是否支持工具调用。
+# 示例：需要执行工具的主模型填 true。
+toolCalling = true
+
+# 配置项：streaming
+# 作用：该模型是否支持流式输出。
+# 示例：聊天体验需要逐字输出时填 true。
+streaming = true
+
+# ============================================================
+# Read 工具路由配置
+# 作用：控制图片读取降级、无图片模型时的失败策略和图片转文字提示词。
+# 示例：需要严格图片理解时保持 failWhenNoImageModel = true。
+# ============================================================
+
+[READ_ROUTING]
+# 配置项：imageFallbackEnabled
+# 作用：Read 工具遇到图片时，是否允许调用具备图片能力的模型转写图片。
+# 示例：true 表示自动降级理解图片；false 表示不处理图片内容。
+imageFallbackEnabled = true
+
+# 配置项：failWhenNoImageModel
+# 作用：没有可用图片模型时是否直接失败。
+# 示例：true 表示明确报错；false 表示跳过图片继续处理。
+failWhenNoImageModel = true
+
+# 配置项：imageToTextPrompt
+# 作用：图片转文字时发送给视觉模型的提示词。
+# 示例："请提取图片中的文字、主体和与用户问题相关的信息。"
+imageToTextPrompt = "你是图片理解器。请提取主体、关键文字、与用户问题相关结论，保持简洁。"
+
+# ============================================================
+# 循环防护配置
+# 作用：检测重复工具调用或重复回答，并注入提醒、阻断工具或降速。
+# 示例：默认 balanced 适合日常使用；长任务可改为 long_task。
+# ============================================================
+
+[RUNTIME_LOOP_GUARD]
+# 配置项：mode
+# 作用：循环防护模式，控制重复行为处理强度。
+# 示例："strict"、"balanced"、"long_task"
+mode = "balanced"
+
+# 配置项：fingerprintWindow
+# 作用：检测重复行为时回看最近多少次指纹。
+# 示例：3 表示观察最近 3 次行为。
+fingerprintWindow = 3
+
+# 配置项：repeatBlockThreshold
+# 作用：重复次数达到该阈值后触发防护动作。
+# 示例：3 表示同类行为重复 3 次后处理。
+repeatBlockThreshold = 3
+
+# 配置项：onRepeat
+# 作用：检测到重复后的处理方式。
+# 示例："warn_inject" 注入提醒；"block_tools" 阻断工具；"slowdown" 降速。
+onRepeat = "warn_inject"
+
+# 配置项：slowdownBackoffMs
+# 作用：onRepeat = "slowdown" 时每次退避等待的毫秒数。
+# 示例：500、1000、2000
+slowdownBackoffMs = 500
+
+# ============================================================
+# 语音转文本配置
+# 作用：控制语音消息、音频文件读取时的 ASR 服务、超时、并发和缓存。
+# 示例：默认优先 OpenAI 转写，可启用 whisper-cli、FunASR 或火山引擎。
+# ============================================================
+
+[ASR]
+# 配置项：enabled
+# 作用：是否启用语音转文本能力。
+# 示例：true 启用；false 关闭。
+enabled = true
+
+# 配置项：defaultLanguage
+# 作用：默认语音语言。
+# 示例："zh-CN"、"en-US"、"ja-JP"
+defaultLanguage = "zh-CN"
+
+# 配置项：timeoutMs
+# 作用：单次 ASR 请求默认超时时间，单位毫秒。
+# 示例：15000 表示 15 秒。
+timeoutMs = 15000
+
+# 配置项：maxConcurrency
+# 作用：ASR 最大并发数。
+# 示例：1 串行；4 默认；8 高并发。
+maxConcurrency = 4
+
+# 配置项：retryCount
+# 作用：ASR 失败后的重试次数。
+# 示例：0 不重试；1 默认；3 更稳但更慢。
+retryCount = 1
+
+# 配置项：failoverEnabled
+# 作用：当前 ASR 服务失败时是否尝试下一个服务。
+# 示例：true 启用故障转移。
+failoverEnabled = true
+
+# 配置项：cacheEnabled
+# 作用：是否缓存音频转写结果。
+# 示例：true 避免重复转写；false 每次重新请求。
+cacheEnabled = true
+
+# 配置项：cacheTtlSeconds
+# 作用：ASR 缓存有效期，单位秒。
+# 示例：600 表示 10 分钟。
+cacheTtlSeconds = 600
+
+[[ASR.providers]]
+# 配置项：id
+# 作用：ASR 服务唯一标识。
+# 示例："openai"
+id = "openai"
+# 配置项：enabled
+# 作用：是否启用该 ASR 服务。
+# 示例：true 启用。
+enabled = true
+# 配置项：priority
+# 作用：服务优先级，数值越大越优先。
+# 示例：100 优先于 10。
+priority = 100
+# 配置项：type
+# 作用：ASR 服务类型。
+# 示例："openai"、"whisper-cli"、"funasr-local"、"bytedance-flash"
+type = "openai"
+# 配置项：model
+# 作用：ASR 模型名称。
+# 示例："gpt-4o-mini-transcribe"
+model = "gpt-4o-mini-transcribe"
+# 配置项：apiBase
+# 作用：ASR API 地址，留空则使用 SDK 默认地址。
+# 示例："https://api.openai.com/v1"
+apiBase = ""
+# 配置项：apiKey
+# 作用：ASR API Key。
+# 示例："${OPENAI_API_KEY}"
+apiKey = ""
+# 配置项：formats
+# 作用：该服务支持的音频格式。
+# 示例：["wav", "mp3", "ogg"]
+formats = ["wav", "mp3", "ogg", "m4a", "flac"]
+# 配置项：timeoutMs
+# 作用：该服务单次请求超时时间，单位毫秒。
+# 示例：15000
+timeoutMs = 15000
+
+[[ASR.providers]]
+# 配置项：id
+# 作用：ASR 服务唯一标识。
+# 示例："whisper-cli"
+id = "whisper-cli"
+# 配置项：enabled
+# 作用：是否启用本地 whisper 命令行服务。
+# 示例：true 启用；需要本机已安装 whisper。
+enabled = true
+# 配置项：priority
+# 作用：服务优先级，数值越大越优先。
+# 示例：10 作为备用服务。
+priority = 10
+# 配置项：type
+# 作用：ASR 服务类型。
+# 示例："whisper-cli"
+type = "whisper-cli"
+# 配置项：command
+# 作用：本地 whisper 可执行命令。
+# 示例："whisper"
+command = "whisper"
+# 配置项：argsTemplate
+# 作用：调用命令时的参数模板，{{input}} 为音频路径，{{language}} 为语言。
+# 示例：["{{input}}", "--language", "{{language}}"]
+argsTemplate = ["{{input}}", "--language", "{{language}}"]
+# 配置项：timeoutMs
+# 作用：该服务单次请求超时时间，单位毫秒。
+# 示例：20000
+timeoutMs = 20000
+
+[[ASR.providers]]
+# 配置项：id
+# 作用：ASR 服务唯一标识。
+# 示例："funasr-local"
+id = "funasr-local"
+# 配置项：enabled
+# 作用：是否启用本地 FunASR。
+# 示例：false 表示默认关闭。
+enabled = false
+# 配置项：priority
+# 作用：服务优先级，数值越大越优先。
+# 示例：1 表示最后兜底。
+priority = 1
+# 配置项：type
+# 作用：ASR 服务类型。
+# 示例："funasr-local"
+type = "funasr-local"
+# 配置项：model
+# 作用：FunASR 模型名称。
+# 示例："paraformer-zh"
+model = "paraformer-zh"
+# 配置项：timeoutMs
+# 作用：该服务单次请求超时时间，单位毫秒。
+# 示例：20000
+timeoutMs = 20000
+
+[[ASR.providers]]
+# 配置项：id
+# 作用：ASR 服务唯一标识。
+# 示例："bytedance-flash"
+id = "bytedance-flash"
+# 配置项：enabled
+# 作用：是否启用火山引擎极速语音识别。
+# 示例：false 表示默认关闭。
+enabled = false
+# 配置项：priority
+# 作用：服务优先级，数值越大越优先。
+# 示例：50
+priority = 50
+# 配置项：type
+# 作用：ASR 服务类型。
+# 示例："bytedance-flash"
+type = "bytedance-flash"
+# 配置项：model
+# 作用：火山引擎模型名称。
+# 示例："bigmodel"
+model = "bigmodel"
+# 配置项：apiBase
+# 作用：火山引擎语音 API 地址。
+# 示例："https://openspeech.bytedance.com"
+apiBase = "https://openspeech.bytedance.com"
+# 配置项：apiKey
+# 作用：火山引擎 API Key。
+# 示例："${BYTEDANCE_ASR_API_KEY}"
+apiKey = ""
+# 配置项：resourceId
+# 作用：火山引擎资源 ID。
+# 示例："volc.bigasr.auc_turbo"
+resourceId = "volc.bigasr.auc_turbo"
+# 配置项：uid
+# 作用：调用方用户标识。
+# 示例："auraeve-local"
+uid = ""
+# 配置项：timeoutMs
+# 作用：该服务单次请求超时时间，单位毫秒。
+# 示例：20000
+timeoutMs = 20000
+
+# ============================================================
+# MCP 配置
+# 作用：管理 MCP 服务器、热重载策略、默认超时和工具暴露规则。
+# 示例：可以接入 filesystem、browser、数据库等 MCP Server。
+# ============================================================
+
+[MCP]
+# 配置项：enabled
+# 作用：是否启用 MCP 工具系统。
+# 示例：true 启用；false 关闭全部 MCP。
+enabled = true
+
+# 配置项：reloadPolicy
+# 作用：MCP 配置热重载策略。
+# 示例："none" 不热重载；"full" 全量重载；"diff" 按差异重载。
+reloadPolicy = "diff"
+
+# 配置项：defaultTimeoutMs
+# 作用：MCP 工具默认超时时间，单位毫秒。
+# 示例：20000 表示 20 秒。
+defaultTimeoutMs = 20000
+
+[MCP.servers]
+# 配置项：servers
+# 作用：MCP 服务器映射，key 是服务器 ID。
+# 示例：
+# [MCP.servers.filesystem]
+# enabled = true
+# transport = "stdio"
+# command = "npx"
+# args = ["-y", "@modelcontextprotocol/server-filesystem", "D:/WorkProjects"]
+
+# ============================================================
+# 日志与可观测配置
+# 作用：控制日志目录、级别、分段、保留策略和搜索限制。
+# 示例：开发阶段可用 info，排查问题可改为 debug。
+# ============================================================
+
+[LOGGING]
+# 配置项：enabled
+# 作用：是否启用日志系统。
+# 示例：true 启用；false 关闭。
+enabled = true
+
+# 配置项：level
+# 作用：日志级别。
+# 示例："debug"、"info"、"warning"、"error"
+level = "info"
+
+# 配置项：dir
+# 作用：日志存储目录。
+# 示例："logs" 或 "D:/auraeve/logs"
+dir = "logs"
+
+# 配置项：segmentMaxMB
+# 作用：单个日志分段最大大小，单位 MB。
+# 示例：64
+segmentMaxMB = 64
+
+# 配置项：retentionDays
+# 作用：日志保留天数。
+# 示例：14 表示保留两周。
+retentionDays = 14
+
+# 配置项：maxTotalGB
+# 作用：日志总大小上限，单位 GB。
+# 示例：5
+maxTotalGB = 5
+
+# 配置项：retentionCheckEvery
+# 作用：每写入多少条事件检查一次保留策略。
+# 示例：200
+retentionCheckEvery = 200
+
+[LOGGING.stream]
+# 配置项：queueSize
+# 作用：日志流队列大小。
+# 示例：2000
+queueSize = 2000
+
+[LOGGING.search]
+# 配置项：defaultLimit
+# 作用：日志搜索默认返回条数。
+# 示例：200
+defaultLimit = 200
+
+# 配置项：maxLimit
+# 作用：日志搜索最大返回条数。
+# 示例：5000
+maxLimit = 5000
