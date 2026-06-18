@@ -21,6 +21,7 @@ from auraeve.webui.auth import verify_token
 from auraeve.webui.chat_transcript_service import project_history_into_transcript_blocks
 from auraeve.webui.chat_service import ChatService
 from auraeve.webui.chat_console_service import ChatConsoleService
+from auraeve.webui.file_changes_service import FileChangesService
 from auraeve.webui.schemas import (
     ChatAbortRequest,
     ChatAbortResponse,
@@ -212,12 +213,16 @@ class WebUIServer:
         token: str = "",
         static_dir: Path | None = None,
         subagent_executor: Any | None = None,
+        workspace_dir: Path | None = None,
     ) -> None:
         self._chat = chat_service
         self._host = host
         self._port = port
         self._token = token
         self._static_dir = static_dir
+        self._file_changes = FileChangesService(
+            workspace_dir or cfg.resolve_workspace_dir("default")
+        )
         self._chat_console = ChatConsoleService(
             chat_service,
             getattr(subagent_executor, "_store", None),
@@ -384,6 +389,24 @@ class WebUIServer:
             )
 
         # 资源产物：<img> 标签无法携带鉴权头，依赖随机不可枚举的 id 提供访问。
+        @app.get("/api/webui/files/changes", dependencies=[auth])
+        async def file_changes(
+            path: str = Query(...),
+            oldString: str | None = Query(default=None),
+            newString: str | None = Query(default=None),
+        ) -> dict[str, Any]:
+            if not str(path or "").strip():
+                raise HTTPException(status_code=400, detail="缺少 path 参数")
+            try:
+                return await self._file_changes.compute(path, oldString, newString)
+            except PermissionError:
+                raise HTTPException(status_code=403, detail="路径越权")
+            except FileNotFoundError:
+                raise HTTPException(status_code=404, detail="文件不存在")
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(f"计算文件变更失败：{exc}")
+                raise HTTPException(status_code=500, detail="计算文件变更失败")
+
         @app.get("/api/webui/resources/{resource_id}/content")
         async def resource_content(resource_id: str) -> FileResponse:
             from auraeve import resource_store

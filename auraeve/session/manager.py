@@ -136,7 +136,9 @@ class SessionManager:
 
     def create(self, prefix: str = "webui") -> Session:
         key = f"{prefix}:{uuid.uuid4().hex[:12]}"
-        session = Session(key=key, metadata={"key": key, "title": "新对话"})
+        # 不预设 title，保持为空，以便首轮对话后由 AI 生成会话标题
+        # （列表展示的兜底回退在 ChatService._session_meta_payload 中处理）
+        session = Session(key=key, metadata={"key": key})
         self.save(session)
         return session
 

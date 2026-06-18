@@ -58,6 +58,47 @@ export interface ChatSessionMeta {
   updatedAt: number
 }
 
+export type FileChangeLineType = 'add' | 'del' | 'ctx'
+
+export interface FileChangeLine {
+  type: FileChangeLineType
+  oldNo?: number
+  newNo?: number
+  text: string
+}
+
+export interface FileChangeHunk {
+  header: string | null
+  lines: FileChangeLine[]
+}
+
+export type FileChangeStatus =
+  | 'modified'
+  | 'added'
+  | 'deleted'
+  | 'untracked'
+  | 'renamed'
+  | 'unchanged'
+
+export interface FileChangeEntry {
+  path: string
+  oldPath?: string | null
+  status: FileChangeStatus
+  mode: 'diff' | 'full'
+  added: number
+  removed: number
+  binary?: boolean
+  truncated?: boolean
+  hunks: FileChangeHunk[]
+}
+
+export interface FileChangesResp {
+  git: boolean
+  repoRoot: string | null
+  anchor: string | null
+  files: FileChangeEntry[]
+}
+
 export interface SetupStatusResp {
   configured: boolean
   model: string
@@ -108,6 +149,13 @@ export const chatApi = {
 
   abort: (sessionKey: string, runId?: string) =>
     req<ChatAbortResp>('POST', '/chat/abort', { sessionKey, runId }),
+
+  fileChanges: (filePath: string, oldString?: string, newString?: string) => {
+    const params = new URLSearchParams({ path: filePath })
+    if (oldString !== undefined) params.set('oldString', oldString)
+    if (newString !== undefined) params.set('newString', newString)
+    return req<FileChangesResp>('GET', `/files/changes?${params.toString()}`)
+  },
 
   transcriptEvents(
     sessionKey: string,

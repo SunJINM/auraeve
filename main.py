@@ -204,6 +204,7 @@ async def main(terminal_mode: bool = False) -> None:
             token=getattr(cfg, "WEBUI_TOKEN", ""),
             static_dir=static_dir if static_dir.exists() else None,
             subagent_executor=agent._subagent_executor,
+            workspace_dir=workspace,
         )
         webui_channel = WebUIChannel(WebUIChannelConfig(), agent.command_queue, chat_svc)
         bus.subscribe_outbound("webui", webui_channel.send)
