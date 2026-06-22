@@ -147,8 +147,17 @@ class ChatTranscriptDoneEvent(BaseModel):
     seq: int = Field(ge=0)
 
 
+class ChatTranscriptStatusEvent(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    type: Literal["transcript.status"] = "transcript.status"
+    sessionKey: str
+    runId: str | None = None
+    seq: int = Field(ge=0)
+    phase: Literal["compacting"] = "compacting"
+
+
 ChatTranscriptEvent = Annotated[
-    ChatTranscriptBlockEvent | ChatTranscriptDoneEvent,
+    ChatTranscriptBlockEvent | ChatTranscriptDoneEvent | ChatTranscriptStatusEvent,
     Field(discriminator="type"),
 ]
 

@@ -1,7 +1,9 @@
-import { render, screen } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ChatPage } from '../ChatPage'
+import { chatApi } from '../../api/client'
+import type { ChatTranscriptEvent } from '../../components/chat/transcript/types'
 
 vi.mock('../../store/app', () => ({
   useAppStore: () => ({
@@ -26,6 +28,8 @@ vi.mock('../../api/client', () => ({
     transcriptEvents: vi.fn().mockImplementation(() => () => {}),
   },
 }))
+
+const mockedChatApi = vi.mocked(chatApi)
 
 let mockTranscriptState = {
   blocks: [] as Array<{ id: string; type: 'user' | 'assistant_text'; content: string; timestamp: string; streaming?: boolean }>,
@@ -97,5 +101,38 @@ describe('ChatPage', () => {
     expect(statusSlot?.className).not.toContain('-mt-')
     expect(statusSlot).toContainElement(screen.getByText(/\d+秒/))
     expect(transcriptFlow).not.toContainElement(screen.getByText(/\d+秒/))
+  })
+
+  it('shows compacting status when backend reports session compaction', async () => {
+    let onEvent: ((event: ChatTranscriptEvent) => void) | null = null
+    mockedChatApi.transcriptEvents.mockImplementation((_sessionKey, handler) => {
+      onEvent = handler
+      return () => {}
+    })
+    mockTranscriptState = {
+      blocks: [
+        {
+          id: 'local-user:1',
+          type: 'user',
+          content: '请继续',
+          timestamp: '2026-06-18T00:00:00',
+        },
+      ],
+      run: { runId: 'run-1', status: 'running', done: false, aborted: false },
+    }
+
+    render(<ChatPage />)
+
+    act(() => {
+      onEvent?.({
+        type: 'transcript.status',
+        sessionKey: 'webui:test',
+        runId: 'run-1',
+        seq: 1,
+        phase: 'compacting',
+      })
+    })
+
+    expect(screen.getByText('· 压缩中')).toBeInTheDocument()
   })
 })

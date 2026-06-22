@@ -34,11 +34,12 @@ export function ChatPage() {
   const [errorMsg, setErrorMsg] = useState('')
   const [runId, setRunId] = useState<string | null>(null)
   const [thinkingStartedAt, setThinkingStartedAt] = useState<number | null>(null)
+  const [runtimePhase, setRuntimePhase] = useState<'compacting' | null>(null)
   // 本轮模型首次产出（文本/工具）的时刻，用于冻结「思考用时」并切到「思考完成」态
   const [firstOutputAt, setFirstOutputAt] = useState<number | null>(null)
   const [atBottom, setAtBottom] = useState(true)
-  // 活动中：后端仍在跑，或前端还在铺开文本。两者皆停才算一轮真正结束。
-  const active = sending || animating
+  // 活动中：后端仍在跑、正在压缩，或前端还在铺开文本。全部停止才算一轮真正结束。
+  const active = sending || animating || runtimePhase != null
   const scrollRef = useRef<HTMLDivElement>(null)
   const innerRef = useRef<HTMLDivElement>(null)
   const didInitialScrollRef = useRef(false)
@@ -52,9 +53,20 @@ export function ChatPage() {
     const unsubscribe = chatApi.transcriptEvents(
       sessionKey,
       (event: ChatTranscriptEvent) => {
+        if (event.type === 'transcript.status') {
+          setRuntimePhase(event.phase)
+          setThinkingStartedAt((prev) => prev ?? Date.now())
+          return
+        }
+
         applyEvent(event)
 
+        if (event.type === 'transcript.block') {
+          setRuntimePhase(null)
+        }
+
         if (event.type === 'transcript.done') {
+          setRuntimePhase(null)
           setSending(false)
           void load()
           void loadSessions()
@@ -126,6 +138,7 @@ export function ChatPage() {
       setThinkingStartedAt((prev) => prev ?? Date.now())
     } else {
       setThinkingStartedAt(null)
+      setRuntimePhase(null)
     }
   }, [active])
 
@@ -398,6 +411,7 @@ export function ChatPage() {
                     startedAt={thinkingStartedAt}
                     generating={generating}
                     firstOutputAt={firstOutputAt}
+                    phase={runtimePhase}
                   />
                 </div>
               )}

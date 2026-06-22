@@ -13,7 +13,7 @@ from auraeve.subagents.data.repositories import SubagentStore
 from auraeve.session.manager import SessionManager
 from auraeve.webui.chat_console_service import ChatConsoleService
 from auraeve.webui.chat_service import ChatService, RunState
-from auraeve.webui.schemas import ChatTranscriptBlockEvent, ChatTranscriptDoneEvent
+from auraeve.webui.schemas import ChatTranscriptBlockEvent, ChatTranscriptDoneEvent, ChatTranscriptStatusEvent
 
 
 async def _collect_events(service: ChatService, session_key: str, expected_count: int) -> list[dict]:
@@ -419,6 +419,43 @@ async def test_chat_service_runtime_assistant_event_broadcasts_assistant_text(tm
     assert block_event["runId"] == run_id
     assert block_event["block"]["type"] == "assistant_text"
     assert block_event["block"]["content"] == "正在检查 Edit 工具的行为。"
+
+
+@pytest.mark.asyncio
+async def test_chat_service_compaction_event_broadcasts_compacting_status(tmp_path: Path) -> None:
+    queue = RuntimeCommandQueue()
+    session_manager = SessionManager(tmp_path / "sessions")
+    service = ChatService(session_manager=session_manager, command_queue=queue)
+    run_id, _ = await service.send(
+        session_key="webui:s1",
+        message="hello",
+        idempotency_key="idem-1",
+        user_id="u1",
+    )
+
+    events_task = asyncio.create_task(_collect_events(service, "webui:s1", expected_count=1))
+    await asyncio.sleep(0)
+
+    await service._handle_compaction_event(  # noqa: SLF001
+        {
+            "message": "context_compacted",
+            "sessionKey": "webui:s1",
+            "attrs": {
+                "tokensBefore": 100000,
+                "tokensAfter": 42000,
+            },
+        }
+    )
+    events = await asyncio.wait_for(events_task, timeout=2)
+
+    status_event = ChatTranscriptStatusEvent.model_validate(events[0]).model_dump()
+    assert status_event == {
+        "type": "transcript.status",
+        "sessionKey": "webui:s1",
+        "runId": run_id,
+        "seq": 0,
+        "phase": "compacting",
+    }
 
 
 @pytest.mark.asyncio

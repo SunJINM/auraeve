@@ -43,11 +43,13 @@ export function ThinkingIndicator({
   generating = false,
   firstOutputAt = null,
   tokens,
+  phase = null,
 }: {
   startedAt: number
   generating?: boolean
   firstOutputAt?: number | null
   tokens?: number
+  phase?: 'compacting' | null
 }) {
   const [now, setNow] = useState(() => Date.now())
 
@@ -57,7 +59,9 @@ export function ThinkingIndicator({
   }, [])
 
   let hint = ''
-  if (generating) {
+  if (phase === 'compacting') {
+    hint = '压缩中'
+  } else if (generating) {
     // 刚开始生成：闪现「思考N秒」，随后只留弧与时间
     const thinkMs = firstOutputAt != null ? firstOutputAt - startedAt : 0
     if (firstOutputAt != null && now - firstOutputAt < FLASH_MS && thinkMs >= 1000) {

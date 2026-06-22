@@ -138,4 +138,12 @@ export interface ChatTranscriptDoneEvent {
   seq: number
 }
 
-export type ChatTranscriptEvent = ChatTranscriptBlockEvent | ChatTranscriptDoneEvent
+export interface ChatTranscriptStatusEvent {
+  type: 'transcript.status'
+  sessionKey: string
+  runId?: string | null
+  seq: number
+  phase: 'compacting'
+}
+
+export type ChatTranscriptEvent = ChatTranscriptBlockEvent | ChatTranscriptDoneEvent | ChatTranscriptStatusEvent

@@ -16,7 +16,7 @@ from auraeve.agent_runtime.command_types import QueuedCommand
 from auraeve.bus.events import FileAttachment, OutboundMessage
 from auraeve.observability import get_observability
 from auraeve.session.manager import SessionManager
-from auraeve.webui.schemas import ChatTranscriptBlockEvent, ChatTranscriptDoneEvent
+from auraeve.webui.schemas import ChatTranscriptBlockEvent, ChatTranscriptDoneEvent, ChatTranscriptStatusEvent
 
 
 @dataclass
@@ -294,7 +294,9 @@ class ChatService:
             obs = get_observability()
             if not obs.enabled:
                 return
-            self._obs_sub_id, queue = obs.subscribe(subsystems=["runtime/tools", "runtime/assistant", "runtime/image"])
+            self._obs_sub_id, queue = obs.subscribe(
+                subsystems=["runtime/tools", "runtime/assistant", "runtime/image", "runtime/compaction"]
+            )
             self._obs_task = asyncio.create_task(self._obs_runtime_listener(queue))
         except Exception:
             logger.debug("无法启动 obs runtime 事件监听")
@@ -310,6 +312,8 @@ class ChatService:
                         await self._handle_assistant_event(event)
                     elif subsystem == "runtime/image":
                         await self._handle_image_event(event)
+                    elif subsystem == "runtime/compaction":
+                        await self._handle_compaction_event(event)
                     else:
                         await self._handle_tool_event(event)
                 except Exception:
@@ -523,6 +527,30 @@ class ChatService:
                 ),
             )
 
+    async def _handle_compaction_event(self, event: dict[str, Any]) -> None:
+        """将上下文压缩事件转化为运行期状态推送。"""
+        message = str(event.get("message") or "")
+        if message not in ("tool_results_cleared", "context_compacted"):
+            return
+
+        session_key = str(event.get("sessionKey") or "")
+        if not session_key:
+            return
+
+        state = self._latest_run_for_session(session_key)
+        if state is None or state.done:
+            return
+
+        await self._broadcast(
+            session_key,
+            self._build_status_event(
+                session_key=session_key,
+                run_id=state.run_id,
+                seq=self._next_seq(state.run_id),
+                phase="compacting",
+            ),
+        )
+
     async def _handle_image_event(self, event: dict[str, Any]) -> None:
         """将 obs image 事件转化为 transcript image block 推送。
 
@@ -715,6 +743,18 @@ class ChatService:
                 "sessionKey": session_key,
                 "runId": run_id,
                 "seq": seq,
+            }
+        ).model_dump(mode="json", exclude_none=True)
+
+    @staticmethod
+    def _build_status_event(*, session_key: str, run_id: str | None, seq: int, phase: str) -> dict[str, Any]:
+        return ChatTranscriptStatusEvent.model_validate(
+            {
+                "type": "transcript.status",
+                "sessionKey": session_key,
+                "runId": run_id,
+                "seq": seq,
+                "phase": phase,
             }
         ).model_dump(mode="json", exclude_none=True)
 
