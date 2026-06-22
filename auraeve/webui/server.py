@@ -33,6 +33,8 @@ from auraeve.webui.schemas import (
     ChatTranscriptHistoryResponse,
     ChatSendRequest,
     ChatSendResponse,
+    ChatUploadRequest,
+    ChatUploadResponse,
 )
 
 
@@ -358,8 +360,61 @@ class WebUIServer:
                 idempotency_key=req.idempotencyKey,
                 user_id=req.userId,
                 display_name=req.displayName,
+                attachments=[att.model_dump() for att in req.attachments],
             )
             return ChatSendResponse(runId=run_id, status=status)  # type: ignore[arg-type]
+
+        @app.post("/api/webui/chat/upload", response_model=ChatUploadResponse, dependencies=[auth])
+        async def chat_upload(req: ChatUploadRequest) -> ChatUploadResponse:
+            import base64
+            import binascii
+            from pathlib import Path
+
+            from auraeve import resource_store
+            from auraeve.agent.media import MAX_FILE_BYTES, detect_mime
+
+            raw = req.dataBase64.strip()
+            header_mime = req.mime
+            if raw.startswith("data:"):
+                try:
+                    head, raw = raw.split(",", 1)
+                except ValueError:
+                    raise HTTPException(status_code=400, detail="无效的 data URL")
+                meta = head[len("data:"):].split(";", 1)[0].strip()
+                if meta:
+                    header_mime = meta
+            try:
+                data = base64.b64decode(raw, validate=False)
+            except (binascii.Error, ValueError):
+                raise HTTPException(status_code=400, detail="无效的 base64 数据")
+            if not data:
+                raise HTTPException(status_code=400, detail="空文件")
+            if len(data) > MAX_FILE_BYTES:
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"文件过大，限制 {MAX_FILE_BYTES // (1024 * 1024)}MB",
+                )
+
+            mime = detect_mime(data, header_mime, req.filename)
+            kind = "image" if mime.startswith("image/") else "file"
+            ext = Path(req.filename).suffix.lower()
+            ref = resource_store.save_bytes(
+                data,
+                kind=kind,
+                mime=mime,
+                ext=ext,
+                source="webui_upload",
+            )
+            return ChatUploadResponse(
+                id=ref["id"],
+                ref=ref.get("ref", ""),
+                kind=kind,
+                mime=mime,
+                filename=(req.filename or ref.get("filename") or "file"),
+                url=ref.get("url", ""),
+                downloadUrl=ref.get("downloadUrl", ""),
+                size=len(data),
+            )
 
         @app.post("/api/webui/chat/abort", response_model=ChatAbortResponse, dependencies=[auth])
         async def chat_abort(req: ChatAbortRequest) -> ChatAbortResponse:

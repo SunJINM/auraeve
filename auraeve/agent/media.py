@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import io
 import mimetypes
 import os
 import time
@@ -29,6 +30,8 @@ from loguru import logger
 # ── 对标 openclaw 的限制常量 ──────────────────────────────────────────────────
 MAX_FILE_BYTES = 5 * 1024 * 1024    # 5MB
 MAX_IMAGE_BYTES = 10 * 1024 * 1024  # 10MB
+MAX_LLM_IMAGE_BYTES = 900_000       # 送入模型请求体前的图片上限
+MAX_LLM_IMAGE_EDGE = 1280
 MAX_TEXT_CHARS = 200_000
 PDF_MAX_PAGES = 4
 PDF_MIN_TEXT_CHARS = 200            # 低于此字符数则 fallback 到图片渲染
@@ -303,6 +306,42 @@ def _render_pdf_pages_as_images(data: bytes, max_pages: int = PDF_MAX_PAGES) -> 
         return []
 
 
+def _compress_image_for_llm(data: bytes, mime_type: str) -> tuple[bytes, str]:
+    """压缩图片，避免 base64 内嵌后触发上游请求体限制。"""
+    if len(data) <= MAX_LLM_IMAGE_BYTES:
+        return data, mime_type
+    try:
+        from PIL import Image
+    except ImportError:
+        return data, mime_type
+
+    try:
+        with Image.open(io.BytesIO(data)) as img:
+            img.load()
+            image = img.convert("RGB") if img.mode not in {"RGB", "L"} else img.copy()
+            if max(image.size) > MAX_LLM_IMAGE_EDGE:
+                image.thumbnail((MAX_LLM_IMAGE_EDGE, MAX_LLM_IMAGE_EDGE))
+
+            for max_edge in (MAX_LLM_IMAGE_EDGE, 1024, 768, 512):
+                candidate_image = image.copy()
+                if max(candidate_image.size) > max_edge:
+                    candidate_image.thumbnail((max_edge, max_edge))
+                for quality in (85, 75, 65, 55, 45):
+                    buf = io.BytesIO()
+                    candidate_image.save(buf, format="JPEG", quality=quality, optimize=True)
+                    candidate = buf.getvalue()
+                    if len(candidate) <= MAX_LLM_IMAGE_BYTES:
+                        return candidate, "image/jpeg"
+    except Exception as exc:  # noqa: BLE001
+        logger.debug(f"图片压缩失败，回退原图：{exc}")
+    return data, mime_type
+
+
+def encode_image_for_llm_data_url(data: bytes, mime_type: str) -> str:
+    image_data, image_mime = _compress_image_for_llm(data, mime_type)
+    return f"data:{image_mime};base64,{base64.b64encode(image_data).decode()}"
+
+
 async def extract_pdf_content(data: bytes) -> FileExtractResult:
     """
     PDF 内容提取（对标 openclaw extractPdfContent）：
@@ -346,10 +385,15 @@ async def extract_file_content(
                 filename=filename,
                 description=f"[图片: {filename}, {size_kb:.0f}KB，超过大小限制]",
             )
-        b64 = base64.b64encode(data).decode()
+        image_data, image_mime = _compress_image_for_llm(data, mime_type)
         return FileExtractResult(
             filename=filename,
-            images=[ExtractedImage(data=b64, mime_type=mime_type)],
+            images=[
+                ExtractedImage(
+                    data=base64.b64encode(image_data).decode(),
+                    mime_type=image_mime,
+                )
+            ],
         )
 
     # PDF

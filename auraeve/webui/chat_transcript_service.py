@@ -20,12 +20,14 @@ def project_history_into_transcript_blocks(messages: list[dict[str, Any]]) -> li
         role = str(message.get("role") or "")
 
         if role == "user":
+            user_attachments = message.get("attachments") or []
             blocks.append(
                 {
                     "id": f"user:{message_index}",
                     "type": "user",
                     "content": str(message.get("content") or ""),
                     "timestamp": str(message.get("timestamp") or ""),
+                    "attachments": user_attachments if isinstance(user_attachments, list) else [],
                 }
             )
             continue

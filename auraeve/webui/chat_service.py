@@ -13,7 +13,7 @@ from loguru import logger
 
 from auraeve.agent_runtime.command_queue import RuntimeCommandQueue
 from auraeve.agent_runtime.command_types import QueuedCommand
-from auraeve.bus.events import OutboundMessage
+from auraeve.bus.events import FileAttachment, OutboundMessage
 from auraeve.observability import get_observability
 from auraeve.session.manager import SessionManager
 from auraeve.webui.schemas import ChatTranscriptBlockEvent, ChatTranscriptDoneEvent
@@ -116,6 +116,7 @@ class ChatService:
         idempotency_key: str,
         user_id: str,
         display_name: str | None = None,
+        attachments: list[dict[str, Any]] | None = None,
     ) -> tuple[str, str]:
         """
         发布统一运行时命令，返回 (run_id, status)。
@@ -137,6 +138,12 @@ class ChatService:
         metadata: dict = {"run_id": run_id, "idempotency_key": idempotency_key}
         metadata["webui_user_id"] = user_id
 
+        # 附件：提取用本地路径走统一附件链（kernel.download_and_extract），
+        # 展示信息单独入 metadata 供持久化与 transcript 还原。
+        file_attachments, display_attachments = self._resolve_attachments(attachments or [])
+        if display_attachments:
+            metadata["webui_attachments"] = display_attachments
+
         # 先启动 obs 监听，再入队执行，避免早期流式工具声明事件被竞态错过。
         self._ensure_obs_listener()
 
@@ -151,6 +158,7 @@ class ChatService:
                     "channel": "webui",
                     "sender_id": user_id,
                     "chat_id": session_key,
+                    "attachments": file_attachments,
                     "metadata": metadata,
                 },
                 origin={"kind": "user"},
@@ -158,6 +166,52 @@ class ChatService:
         )
 
         return run_id, "started"
+
+    @staticmethod
+    def _resolve_attachments(
+        attachments: list[dict[str, Any]],
+    ) -> tuple[list[FileAttachment], list[dict[str, Any]]]:
+        """把前端附件转为 (供提取的 FileAttachment, 供展示/持久化的 dict)。
+
+        提取以资源 id 解析出的本地路径为准（不信任前端）；展示信息中的
+        url/downloadUrl 也由后端按 id 重新生成，仅 filename/mime/kind 沿用前端值。
+        """
+        from auraeve import resource_store
+
+        file_attachments: list[FileAttachment] = []
+        display_attachments: list[dict[str, Any]] = []
+        for att in attachments:
+            resource_id = str(att.get("id") or "").strip()
+            if not resource_id:
+                continue
+            path = resource_store.resolve_resource_path(resource_id)
+            if path is None:
+                logger.warning(f"WebUI 附件资源不存在，已跳过：{resource_id}")
+                continue
+            filename = str(att.get("filename") or path.name)
+            mime = str(att.get("mime") or "")
+            kind = str(att.get("kind") or ("image" if mime.startswith("image/") else "file"))
+            file_attachments.append(
+                FileAttachment(
+                    filename=filename,
+                    url=str(path),
+                    mime_type=mime,
+                    size=int(att.get("size") or 0),
+                )
+            )
+            display_attachments.append(
+                {
+                    "id": resource_id,
+                    "ref": resource_store.resource_ref(resource_id),
+                    "kind": kind,
+                    "mime": mime,
+                    "filename": filename,
+                    "url": resource_store.resource_content_url(resource_id),
+                    "downloadUrl": resource_store.resource_download_url(resource_id),
+                    "size": int(att.get("size") or 0),
+                }
+            )
+        return file_attachments, display_attachments
 
     # ─── 终止 ──────────────────────────────────────────────────────
 

@@ -608,13 +608,16 @@ class RuntimeKernel:
                 session.metadata["title"] = generated_title
 
         if not is_meta_event:
-            session.add_message(
-                "user",
-                content,
-                channel=channel,
-                chat_id=chat_id,
-                sender_id=sender_id,
-            )
+            user_kwargs: dict = {
+                "channel": channel,
+                "chat_id": chat_id,
+                "sender_id": sender_id,
+            }
+            # WebUI 附件展示信息随用户消息持久化，供 transcript 重载时还原
+            webui_attachments = metadata.get("webui_attachments")
+            if webui_attachments:
+                user_kwargs["attachments"] = webui_attachments
+            session.add_message("user", content, **user_kwargs)
         self._persist_tool_transcript(session, recovery_result.messages)
         assistant_kwargs = {"tools_used": tools_used if tools_used else None}
         if final_images:

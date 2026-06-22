@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { v4 as uuid } from 'uuid'
 import { HiArrowDown, HiArrowLeftOnRectangle, HiBolt, HiCircleStack, HiSparkles } from 'react-icons/hi2'
 
-import { ChatComposer } from '../components/chat/ChatComposer'
+import { ChatComposer, type PendingAttachment } from '../components/chat/ChatComposer'
 import { SessionSwitcher } from '../components/chat/SessionSwitcher'
 import { ThinkingIndicator } from '../components/chat/ThinkingIndicator'
 import { ChatTranscript } from '../components/chat/transcript/ChatTranscript'
@@ -15,6 +15,9 @@ import { chatApi } from '../api/client'
 import { useAppStore } from '../store/app'
 import { useFileDrawer } from '../store/fileDrawer'
 
+// 与后端 media.MAX_FILE_BYTES 对齐，避免下游附件提取时因超限失败
+const MAX_UPLOAD_BYTES = 5 * 1024 * 1024
+
 export function ChatPage() {
   const { sessionKey, logout, loadSessions, touchSession } = useAppStore()
   const drawerOpen = useFileDrawer((s) => s.open)
@@ -26,6 +29,7 @@ export function ChatPage() {
   // 前端是否仍在平滑铺开文本；与 sending 合并为「活动中」，让指示器持续到展示结束
   const animating = useSmoothActivity()
   const [input, setInput] = useState('')
+  const [attachments, setAttachments] = useState<PendingAttachment[]>([])
   const [sending, setSending] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
   const [runId, setRunId] = useState<string | null>(null)
@@ -137,14 +141,133 @@ export function ChatPage() {
     }
   }, [active, blocks])
 
+  const onAddFiles = (files: File[]) => {
+    const accepted: PendingAttachment[] = []
+    // 用 localId 关联待上传文件，避免按文件名+大小反查时同名同大小文件取错
+    const uploadQueue: { localId: string; file: File }[] = []
+    for (const file of files) {
+      const localId = uuid()
+      if (file.size > MAX_UPLOAD_BYTES) {
+        accepted.push({
+          localId,
+          filename: file.name || 'file',
+          mime: file.type || '',
+          size: file.size,
+          status: 'error',
+          error: `超过 ${MAX_UPLOAD_BYTES / (1024 * 1024)}MB`,
+        })
+        continue
+      }
+      const isImage = (file.type || '').startsWith('image/')
+      accepted.push({
+        localId,
+        filename: file.name || 'file',
+        mime: file.type || '',
+        size: file.size,
+        status: 'uploading',
+        previewUrl: isImage ? URL.createObjectURL(file) : undefined,
+      })
+      uploadQueue.push({ localId, file })
+    }
+    setAttachments((prev) => [...prev, ...accepted])
+
+    for (const { localId, file } of uploadQueue) {
+      chatApi
+        .upload(file)
+        .then((res) => {
+          setAttachments((prev) =>
+            prev.map((a) =>
+              a.localId === localId
+                ? {
+                    ...a,
+                    status: 'ready',
+                    id: res.id,
+                    kind: res.kind,
+                    mime: res.mime || a.mime,
+                    url: res.url,
+                    downloadUrl: res.downloadUrl,
+                    size: res.size || a.size,
+                  }
+                : a,
+            ),
+          )
+        })
+        .catch((err: unknown) => {
+          const msg = err instanceof Error ? err.message : String(err)
+          setAttachments((prev) =>
+            prev.map((a) => (a.localId === localId ? { ...a, status: 'error', error: msg } : a)),
+          )
+        })
+    }
+  }
+
+  const onRemoveAttachment = (localId: string) => {
+    setAttachments((prev) => {
+      const target = prev.find((a) => a.localId === localId)
+      if (target?.previewUrl) URL.revokeObjectURL(target.previewUrl)
+      return prev.filter((a) => a.localId !== localId)
+    })
+  }
+
+  // 跟踪最新附件，供组件卸载时释放预览 URL（不入 effect 依赖，避免重复注册）
+  const attachmentsRef = useRef<PendingAttachment[]>([])
+  attachmentsRef.current = attachments
+
+  // 切换会话：清空上一会话遗留的待发附件并释放其预览 URL，避免跨会话残留
+  useEffect(() => {
+    setAttachments((prev) => {
+      if (prev.length === 0) return prev
+      prev.forEach((a) => {
+        if (a.previewUrl) URL.revokeObjectURL(a.previewUrl)
+      })
+      return []
+    })
+  }, [sessionKey])
+
+  // 组件卸载：释放所有未发送附件的预览 URL
+  useEffect(
+    () => () => {
+      attachmentsRef.current.forEach((a) => {
+        if (a.previewUrl) URL.revokeObjectURL(a.previewUrl)
+      })
+    },
+    [],
+  )
+
   const send = async () => {
     const text = input.trim()
-    if (!text || sending) return
+    const readyAttachments = attachments.filter((a) => a.status === 'ready')
+    const uploading = attachments.some((a) => a.status === 'uploading')
+    if (sending || uploading) return
+    if (!text && readyAttachments.length === 0) return
 
     const idempotencyKey = uuid()
     setErrorMsg('')
     setSending(true)
     setInput('')
+
+    const blockAttachments = readyAttachments.map((a) => ({
+      id: a.id || '',
+      kind: a.kind,
+      mime: a.mime,
+      filename: a.filename,
+      url: a.url,
+      downloadUrl: a.downloadUrl,
+      size: a.size,
+    }))
+    const sendInputs = readyAttachments.map((a) => ({
+      id: a.id || '',
+      filename: a.filename,
+      mime: a.mime,
+      kind: a.kind || (a.mime.startsWith('image/') ? 'image' : 'file'),
+      size: a.size,
+    }))
+
+    // 清空输入与附件（保留缩略图直到 GC：发送后用服务端 url 展示）
+    attachments.forEach((a) => {
+      if (a.previewUrl) URL.revokeObjectURL(a.previewUrl)
+    })
+    setAttachments([])
 
     applyEvent({
       type: 'transcript.block',
@@ -156,6 +279,7 @@ export function ChatPage() {
         type: 'user',
         content: text,
         timestamp: new Date().toISOString(),
+        attachments: blockAttachments,
       },
     })
     touchSession(sessionKey, { updatedAt: Date.now() })
@@ -169,7 +293,7 @@ export function ChatPage() {
     })
 
     try {
-      const resp = await chatApi.send(sessionKey, text, idempotencyKey)
+      const resp = await chatApi.send(sessionKey, text, idempotencyKey, sendInputs)
       setRunId(resp.runId)
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err)
@@ -304,7 +428,16 @@ export function ChatPage() {
           )}
 
           <div className="mx-auto w-full max-w-[860px]">
-            <ChatComposer value={input} sending={sending} onChange={setInput} onSubmit={() => void send()} onAbort={() => void abort()} />
+            <ChatComposer
+              value={input}
+              sending={sending}
+              attachments={attachments}
+              onChange={setInput}
+              onSubmit={() => void send()}
+              onAbort={() => void abort()}
+              onAddFiles={onAddFiles}
+              onRemoveAttachment={onRemoveAttachment}
+            />
           </div>
         </footer>
 

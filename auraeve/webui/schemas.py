@@ -10,12 +10,25 @@ class ChatHistoryResponse(BaseModel):
     messages: list[dict[str, Any]]
 
 
+class TranscriptAttachmentItem(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = ""
+    ref: str = ""
+    kind: str = "file"
+    mime: str = ""
+    filename: str = ""
+    url: str = ""
+    downloadUrl: str = ""
+    size: int = 0
+
+
 class TranscriptUserBlock(BaseModel):
     model_config = ConfigDict(extra="forbid")
     id: str = Field(min_length=1)
     type: Literal["user"] = "user"
     content: str = ""
     timestamp: str = ""
+    attachments: list[TranscriptAttachmentItem] = Field(default_factory=list)
 
 
 class TranscriptToolCallBlock(BaseModel):
@@ -140,17 +153,52 @@ ChatTranscriptEvent = Annotated[
 ]
 
 
+class ChatAttachmentInput(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(min_length=1, max_length=200)
+    filename: str = Field(default="file", max_length=255)
+    mime: str = Field(default="", max_length=200)
+    kind: str = Field(default="file", max_length=40)
+    size: int = Field(default=0, ge=0)
+
+
 class ChatSendRequest(BaseModel):
     sessionKey: str = Field(min_length=1, max_length=200)
     message: str = Field(default="", max_length=20000)
     idempotencyKey: str = Field(min_length=1, max_length=200)
     userId: str = Field(min_length=1, max_length=200)
     displayName: str | None = Field(default=None, max_length=200)
+    attachments: list[ChatAttachmentInput] = Field(default_factory=list, max_length=20)
 
 
 class ChatSendResponse(BaseModel):
     runId: str
     status: Literal["started", "in_flight"]
+
+
+# data URL/base64 字段长度上限：与 media.MAX_FILE_BYTES(5MB) 对齐，原始数据经
+# base64 膨胀约 4/3，再留 data URL 前缀余量。在反序列化层提前挡掉超大请求体，
+# 避免已认证用户发巨型 JSON 撑爆内存（真实字节上限仍由 upload 端点二次校验）。
+_MAX_UPLOAD_BASE64_LEN = 5 * 1024 * 1024 * 4 // 3 + 256
+
+
+class ChatUploadRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    filename: str = Field(default="file", max_length=255)
+    mime: str = Field(default="", max_length=200)
+    # 纯 base64 或 data URL（data:<mime>;base64,<data>）
+    dataBase64: str = Field(min_length=1, max_length=_MAX_UPLOAD_BASE64_LEN)
+
+
+class ChatUploadResponse(BaseModel):
+    id: str
+    ref: str
+    kind: str
+    mime: str
+    filename: str
+    url: str
+    downloadUrl: str
+    size: int
 
 
 class ChatAbortRequest(BaseModel):

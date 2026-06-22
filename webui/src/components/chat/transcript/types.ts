@@ -41,11 +41,23 @@ export interface TranscriptImageBlock {
   size?: string
 }
 
+export interface TranscriptAttachmentItem {
+  id: string
+  ref?: string
+  kind?: string
+  mime?: string
+  filename?: string
+  url?: string
+  downloadUrl?: string
+  size?: number
+}
+
 export interface TranscriptUserBlock {
   id: string
   type: 'user'
   content: string
   timestamp: string
+  attachments?: TranscriptAttachmentItem[]
 }
 
 export interface TranscriptToolUseBlock {

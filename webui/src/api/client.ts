@@ -45,6 +45,35 @@ export interface ChatSendResp {
   status: 'started' | 'in_flight'
 }
 
+export interface UploadedAttachment {
+  id: string
+  ref: string
+  kind: string
+  mime: string
+  filename: string
+  url: string
+  downloadUrl: string
+  size: number
+}
+
+/** 随消息发送给后端的附件标识（仅元信息，二进制已通过 upload 落盘）。 */
+export interface ChatAttachmentInput {
+  id: string
+  filename: string
+  mime: string
+  kind: string
+  size: number
+}
+
+function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result))
+    reader.onerror = () => reject(new Error('读取文件失败'))
+    reader.readAsDataURL(file)
+  })
+}
+
 export interface ChatAbortResp {
   ok: boolean
   runId?: string
@@ -139,13 +168,28 @@ export const chatApi = {
   transcript: (sessionKey: string, limit = 200) =>
     req<ChatTranscriptHistoryResp>('GET', `/chat/transcript?sessionKey=${encodeURIComponent(sessionKey)}&limit=${limit}`),
 
-  send: (sessionKey: string, message: string, idempotencyKey: string) =>
+  send: (
+    sessionKey: string,
+    message: string,
+    idempotencyKey: string,
+    attachments: ChatAttachmentInput[] = [],
+  ) =>
     req<ChatSendResp>('POST', '/chat/send', {
       sessionKey,
       message,
       idempotencyKey,
+      attachments,
       ...webuiIdentity(),
     }),
+
+  async upload(file: File): Promise<UploadedAttachment> {
+    const dataBase64 = await fileToDataUrl(file)
+    return req<UploadedAttachment>('POST', '/chat/upload', {
+      filename: file.name || 'file',
+      mime: file.type || '',
+      dataBase64,
+    })
+  },
 
   abort: (sessionKey: string, runId?: string) =>
     req<ChatAbortResp>('POST', '/chat/abort', { sessionKey, runId }),

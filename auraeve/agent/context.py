@@ -10,7 +10,6 @@
 
 from __future__ import annotations
 
-import base64
 import mimetypes
 import os
 import platform
@@ -18,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from auraeve.agent.tools import file_read_support
+from auraeve.agent.media import encode_image_for_llm_data_url
 from auraeve.agent.skills import SkillsLoader
 from auraeve.llm.model_registry import ModelRegistry
 
@@ -555,8 +555,10 @@ class ContextBuilder:
             p = Path(path)
             mime, _ = mimetypes.guess_type(path)
             if p.is_file() and mime and mime.startswith("image/"):
-                b64 = base64.b64encode(p.read_bytes()).decode()
-                blocks.append({"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}})
+                blocks.append({
+                    "type": "image_url",
+                    "image_url": {"url": encode_image_for_llm_data_url(p.read_bytes(), mime)},
+                })
 
         # 2. attachments（FileExtractResult 列表）
         extra_text_parts: list[str] = []

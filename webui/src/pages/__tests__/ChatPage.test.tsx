@@ -65,7 +65,7 @@ describe('ChatPage', () => {
   it('keeps the first screen focused on chat', async () => {
     render(<ChatPage />)
 
-    expect(screen.getByPlaceholderText('写点什么...')).toBeInTheDocument()
+    expect(screen.getByPlaceholderText('写点什么，或拖入图片/文件…')).toBeInTheDocument()
   })
 
   it('renders thinking status outside the transcript flow but at the transcript tail', async () => {
