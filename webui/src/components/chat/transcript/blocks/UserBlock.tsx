@@ -1,14 +1,8 @@
 import { useEffect, useState } from 'react'
-import { HiOutlineArrowDownTray, HiOutlineDocumentText, HiXMark } from 'react-icons/hi2'
+import { HiXMark } from 'react-icons/hi2'
 
 import type { TranscriptAttachmentItem, TranscriptUserBlock } from '../types'
-
-function formatSize(bytes?: number): string {
-  if (!bytes) return ''
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-}
+import { DocumentCard } from './DocumentCard'
 
 function isImage(att: TranscriptAttachmentItem): boolean {
   return att.kind === 'image' || (att.mime || '').startsWith('image/')
@@ -65,37 +59,16 @@ function AttachmentList({ attachments }: { attachments: TranscriptAttachmentItem
         </div>
       )}
       {files.map((att) => (
-        <a
+        <DocumentCard
           key={att.id || att.downloadUrl || att.filename}
-          href={att.downloadUrl || att.url}
-          target="_blank"
-          rel="noreferrer"
-          className="flex items-center gap-2.5 rounded-[14px] border px-3 py-2 transition-colors"
-          style={{
-            borderColor: 'var(--glass-border)',
-            background: 'var(--surface-1)',
-            boxShadow: 'var(--shadow-soft)',
+          data={{
+            filename: att.filename || '附件',
+            mime: att.mime,
+            size: att.size,
+            url: att.url,
+            downloadUrl: att.downloadUrl,
           }}
-          title={att.filename}
-        >
-          <span
-            className="grid h-9 w-9 shrink-0 place-items-center rounded-lg"
-            style={{ background: 'var(--surface-2)', color: 'var(--accent)' }}
-          >
-            <HiOutlineDocumentText size={18} />
-          </span>
-          <span className="min-w-0 max-w-[200px]">
-            <span className="block truncate text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>
-              {att.filename || '附件'}
-            </span>
-            {formatSize(att.size) && (
-              <span className="block text-[11px]" style={{ color: 'var(--text-tertiary)' }}>
-                {formatSize(att.size)}
-              </span>
-            )}
-          </span>
-          <HiOutlineArrowDownTray size={16} style={{ color: 'var(--text-tertiary)' }} />
-        </a>
+        />
       ))}
       {preview && (
         <div

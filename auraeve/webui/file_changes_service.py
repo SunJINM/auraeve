@@ -87,6 +87,26 @@ class FileChangesService:
         self._ensure_within_workspace(path)
         return self._compute_no_git(path, old_string, new_string)
 
+    async def resolve_readable_path(self, raw_path: str) -> Path:
+        """解析并校验可读取的文件真实路径（供原始字节预览 / 下载）。
+
+        与 compute 同款边界：位于 git 仓库内的文件放行；否则必须在 workspace 内。
+        路径缺失或非文件抛 FileNotFoundError，越权抛 PermissionError。
+        """
+        path = Path(raw_path).expanduser()
+        try:
+            path = path.resolve()
+        except OSError:
+            raise FileNotFoundError(raw_path)
+
+        repo_root = await self._git_root(path)
+        if repo_root is None:
+            self._ensure_within_workspace(path)
+
+        if not path.is_file():
+            raise FileNotFoundError(str(path))
+        return path
+
     # ─── git 场景 ────────────────────────────────────────────────
 
     async def _git_root(self, path: Path) -> Path | None:

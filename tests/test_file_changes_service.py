@@ -164,6 +164,37 @@ def test_missing_file_raises_not_found(tmp_path: Path) -> None:
         asyncio.run(svc.compute(str(workspace / "nope.txt")))
 
 
+# ─── resolve_readable_path（原始字节端点的安全解析）────────────────
+
+
+def test_resolve_readable_path_returns_workspace_file(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    f = workspace / "doc.md"
+    f.write_text("# hi\n", encoding="utf-8")
+    svc = FileChangesService(workspace)
+    resolved = asyncio.run(svc.resolve_readable_path(str(f)))
+    assert resolved == f.resolve()
+
+
+def test_resolve_readable_path_escape_raises_permission(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    outside = tmp_path / "secret.bin"
+    outside.write_text("x", encoding="utf-8")
+    svc = FileChangesService(workspace)
+    with pytest.raises(PermissionError):
+        asyncio.run(svc.resolve_readable_path(str(outside)))
+
+
+def test_resolve_readable_path_missing_raises_not_found(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    svc = FileChangesService(workspace)
+    with pytest.raises(FileNotFoundError):
+        asyncio.run(svc.resolve_readable_path(str(workspace / "nope.pdf")))
+
+
 # ─── 纯函数 ──────────────────────────────────────────────────────
 
 

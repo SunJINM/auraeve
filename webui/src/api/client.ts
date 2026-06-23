@@ -40,6 +40,40 @@ async function req<T>(method: string, path: string, body?: unknown, authToken?: 
   return res.json()
 }
 
+/** 仅携带鉴权 token 的请求头（拉取二进制资源用，不带 Content-Type）。 */
+function authHeaders(): Record<string, string> {
+  const t = token()
+  return t ? { 'X-WEBUI-TOKEN': t } : {}
+}
+
+/** 工作区文件原始字节端点 URL；download=true 时作为附件下载。 */
+export function fileRawUrl(filePath: string, download = false): string {
+  const params = new URLSearchParams({ path: filePath })
+  if (download) params.set('download', '1')
+  return `${BASE}/files/raw?${params.toString()}`
+}
+
+/** 带鉴权拉取二进制资源为 Blob：<iframe>/<img> 无法携带鉴权头，文档预览统一走此通道。 */
+export async function fetchBlob(url: string): Promise<Blob> {
+  const res = await fetch(url, { headers: authHeaders() })
+  if (res.status === 401) throw new Error('UNAUTHORIZED')
+  if (!res.ok) throw new Error((await res.text()) || res.statusText)
+  return res.blob()
+}
+
+/** 拉取并触发浏览器下载（鉴权 fetch + blob，兼容资源端点与工作区 raw 端点）。 */
+export async function downloadFile(url: string, filename: string): Promise<void> {
+  const blob = await fetchBlob(url)
+  const objectUrl = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = objectUrl
+  a.download = filename || 'file'
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(objectUrl)
+}
+
 export interface ChatSendResp {
   runId: string
   status: 'started' | 'in_flight'

@@ -1,15 +1,27 @@
-import { useCallback, useEffect, useMemo } from 'react'
-import { HiXMark, HiOutlineClipboard } from 'react-icons/hi2'
+import { lazy, Suspense, useCallback, useEffect, useMemo } from 'react'
+import { HiXMark, HiOutlineClipboard, HiOutlineArrowDownTray } from 'react-icons/hi2'
 
-import { chatApi } from '../../../api/client'
+import { chatApi, downloadFile, fileRawUrl } from '../../../api/client'
 import { diffStats, lineDiff } from '../../../lib/lineDiff'
+import { detectDocType } from '../../../lib/documentKinds'
 import { useFileDrawer } from '../../../store/fileDrawer'
 import { CodeView, DiffStat, DiffView } from './DiffView'
 import { FileChangesView } from './FileChangesView'
 
+// 文档预览依赖较重（mammoth / xlsx / highlight.js），懒加载，避免拖累聊天首屏体积。
+const DocumentPreview = lazy(() =>
+  import('./DocumentPreview').then((m) => ({ default: m.DocumentPreview })),
+)
+
 const MODE_LABEL: Record<string, string> = {
   diff: 'Diff',
   content: 'File',
+}
+
+function lastSegment(path: string): string {
+  const norm = (path || '').replace(/\\/g, '/').replace(/\/+$/, '')
+  const idx = norm.lastIndexOf('/')
+  return idx >= 0 ? norm.slice(idx + 1) : norm
 }
 
 /** 文件侧栏：浮于正文区上层，展示完整文件 / 变更；左缘可拖拽调整宽度。 */
@@ -30,6 +42,7 @@ export function FileDrawer() {
   // 打开后异步拉取后端真实变更（git diff / 整文件）；失败时回退到内存 payload
   useEffect(() => {
     if (!open || !payload) return
+    if (payload.mode === 'document') return // 文档预览自渲染、自拉取，不走 files/changes
     let cancelled = false
     const oldString = payload.mode === 'diff' ? payload.oldString : undefined
     const newString = payload.mode === 'diff' ? payload.newString : undefined
@@ -71,8 +84,22 @@ export function FileDrawer() {
     [setWidthRatio, setResizing],
   )
 
-  // 头部统计 / 标题：优先用后端聚合数据，回退到内存 payload 的单段 diff
-  const headerLabel = data ? (data.git ? 'Git Diff' : 'File') : (MODE_LABEL[payload?.mode ?? ''] ?? payload?.mode ?? '')
+  // 头部统计 / 标题：document 用文档类型；否则优先后端聚合数据，回退内存 payload
+  const isDocument = payload?.mode === 'document'
+  const docFilename = payload?.filename || lastSegment(payload?.filePath ?? '')
+  const headerLabel = isDocument
+    ? detectDocType(docFilename, payload?.mime).label
+    : data
+      ? data.git
+        ? 'Git Diff'
+        : 'File'
+      : MODE_LABEL[payload?.mode ?? ''] ?? payload?.mode ?? ''
+  const onDownloadDoc = () => {
+    if (!payload) return
+    const url =
+      payload.downloadUrl || payload.url || (payload.filePath ? fileRawUrl(payload.filePath, true) : '')
+    if (url) void downloadFile(url, docFilename || 'file')
+  }
   const stats = useMemo(() => {
     if (data) {
       const added = data.files.reduce((s, f) => s + f.added, 0)
@@ -101,6 +128,17 @@ export function FileDrawer() {
               </span>
               {stats && <DiffStat added={stats.added} removed={stats.removed} />}
               <span className="flex-1" />
+              {isDocument && (
+                <button
+                  type="button"
+                  onClick={onDownloadDoc}
+                  aria-label="下载"
+                  title="下载"
+                  className="icon-btn-plain shrink-0"
+                >
+                  <HiOutlineArrowDownTray size={17} />
+                </button>
+              )}
               <button type="button" onClick={closeDrawer} aria-label="关闭" className="icon-btn-plain shrink-0">
                 <HiXMark size={18} />
               </button>
@@ -121,7 +159,17 @@ export function FileDrawer() {
           </header>
 
           <div className="min-h-0 flex-1 overflow-auto px-4 py-4">
-            {data ? (
+            {payload.mode === 'document' ? (
+              <Suspense
+                fallback={
+                  <div className="px-2 py-8 text-center text-[12px]" style={{ color: 'var(--text-tertiary)' }}>
+                    加载中…
+                  </div>
+                }
+              >
+                <DocumentPreview payload={payload} />
+              </Suspense>
+            ) : data ? (
               <FileChangesView data={data} />
             ) : loading ? (
               <div className="px-2 py-8 text-center text-[12px]" style={{ color: 'var(--text-tertiary)' }}>

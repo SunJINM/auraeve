@@ -461,6 +461,30 @@ class WebUIServer:
                 logger.warning(f"计算文件变更失败：{exc}")
                 raise HTTPException(status_code=500, detail="计算文件变更失败")
 
+        @app.get("/api/webui/files/raw", dependencies=[auth])
+        async def file_raw(
+            path: str = Query(...),
+            download: bool = Query(default=False),
+        ) -> FileResponse:
+            """返回工作区文件原始字节，供前端文档预览（docx/xlsx/pdf 等）与下载。
+
+            受 workspace / git 仓库边界约束（同 files/changes）。download=1 时作为附件下载。
+            """
+            from auraeve.agent.media import detect_mime
+
+            if not str(path or "").strip():
+                raise HTTPException(status_code=400, detail="缺少 path 参数")
+            try:
+                resolved = await self._file_changes.resolve_readable_path(path)
+            except PermissionError:
+                raise HTTPException(status_code=403, detail="路径越权")
+            except FileNotFoundError:
+                raise HTTPException(status_code=404, detail="文件不存在")
+            media_type = detect_mime(file_path=str(resolved))
+            if download:
+                return FileResponse(str(resolved), media_type=media_type, filename=resolved.name)
+            return FileResponse(str(resolved), media_type=media_type)
+
         @app.get("/api/webui/resources/{resource_id}/content")
         async def resource_content(resource_id: str) -> FileResponse:
             from auraeve import resource_store

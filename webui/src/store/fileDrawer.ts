@@ -2,17 +2,26 @@ import { create } from 'zustand'
 
 import type { FileChangesResp } from '../api/client'
 
-/** 文件侧栏载荷：从右侧滑出，展示完整文件 / 变更。作为后端实时数据的兜底快照。 */
+/** 文件侧栏载荷：从右侧滑出，展示完整文件 / 变更 / 文档预览。作为后端实时数据的兜底快照。 */
 export interface FileDrawerPayload {
   toolName: string
   /** 完整文件路径，作为标题与拉取键 */
   filePath: string
-  /** diff: 展示 old->new 变更；content: 展示完整内容 */
-  mode: 'diff' | 'content'
+  /** diff: 展示 old->new 变更；content: 整文件文本；document: 按类型渲染文档预览 */
+  mode: 'diff' | 'content' | 'document'
   oldString?: string
   newString?: string
   /** content 模式下的文件内容（Read 的输出 / Write 的写入内容） */
   content?: string
+  // ── document 模式（文档预览）字段 ──
+  /** 显示文件名（标题用）；缺省时从 filePath 推断 */
+  filename?: string
+  mime?: string
+  size?: number
+  /** 资源直链 content url（无鉴权）；缺省则用 filePath 经 files/raw 访问 */
+  url?: string
+  /** 资源 downloadUrl；缺省则用 filePath?download=1 */
+  downloadUrl?: string
 }
 
 interface FileDrawerState {
@@ -59,8 +68,9 @@ export const useFileDrawer = create<FileDrawerState>((set) => ({
   error: null,
   widthRatio: loadRatio(),
   resizing: false,
-  // 打开时重置数据态：由 FileDrawer 组件随后异步拉取后端真实变更
-  openDrawer: (payload) => set({ open: true, payload, data: null, error: null, loading: true }),
+  // 打开时重置数据态：diff/content 由 FileDrawer 异步拉取后端变更；document 模式自渲染、不拉取
+  openDrawer: (payload) =>
+    set({ open: true, payload, data: null, error: null, loading: payload.mode !== 'document' }),
   closeDrawer: () => set({ open: false }),
   setChanges: (data) => set({ data, loading: false, error: null }),
   setLoading: (loading) => set({ loading }),

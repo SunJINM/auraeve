@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { v4 as uuid } from 'uuid'
 import { HiArrowDown, HiArrowLeftOnRectangle, HiBolt, HiCircleStack, HiSparkles } from 'react-icons/hi2'
 
@@ -18,6 +18,14 @@ import { useFileDrawer } from '../store/fileDrawer'
 // 与后端 media.MAX_FILE_BYTES 对齐，避免下游附件提取时因超限失败
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024
 
+function timestampFromBlock(block: unknown): number | null {
+  if (block == null || typeof block !== 'object' || !('timestamp' in block)) return null
+  const raw = (block as { timestamp?: unknown }).timestamp
+  if (typeof raw !== 'string') return null
+  const ms = Date.parse(raw)
+  return Number.isFinite(ms) ? ms : null
+}
+
 export function ChatPage() {
   const { sessionKey, logout, loadSessions, touchSession } = useAppStore()
   const drawerOpen = useFileDrawer((s) => s.open)
@@ -29,7 +37,23 @@ export function ChatPage() {
   // 前端是否仍在平滑铺开文本；与 sending 合并为「活动中」，让指示器持续到展示结束
   const animating = useSmoothActivity()
   const [input, setInput] = useState('')
-  const [attachments, setAttachments] = useState<PendingAttachment[]>([])
+  const [attachmentState, setAttachmentState] = useState<{ sessionKey: string; items: PendingAttachment[] }>(() => ({
+    sessionKey,
+    items: [],
+  }))
+  const attachments = useMemo(
+    () => (attachmentState.sessionKey === sessionKey ? attachmentState.items : []),
+    [attachmentState, sessionKey],
+  )
+  const setAttachments = (
+    updater: PendingAttachment[] | ((prev: PendingAttachment[]) => PendingAttachment[]),
+  ) => {
+    setAttachmentState((prev) => {
+      const base = prev.sessionKey === sessionKey ? prev.items : []
+      const items = typeof updater === 'function' ? updater(base) : updater
+      return { sessionKey, items }
+    })
+  }
   const [sending, setSending] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
   const [runId, setRunId] = useState<string | null>(null)
@@ -40,6 +64,7 @@ export function ChatPage() {
   const [atBottom, setAtBottom] = useState(true)
   // 活动中：后端仍在跑、正在压缩，或前端还在铺开文本。全部停止才算一轮真正结束。
   const active = sending || animating || runtimePhase != null
+  const currentRunId = run?.runId ?? runId
   const scrollRef = useRef<HTMLDivElement>(null)
   const innerRef = useRef<HTMLDivElement>(null)
   const didInitialScrollRef = useRef(false)
@@ -63,11 +88,15 @@ export function ChatPage() {
 
         if (event.type === 'transcript.block') {
           setRuntimePhase(null)
+          if (event.block.type !== 'user') {
+            setFirstOutputAt((prev) => prev ?? Date.now())
+          }
         }
 
         if (event.type === 'transcript.done') {
           setRuntimePhase(null)
           setSending(false)
+          setFirstOutputAt(null)
           void load()
           void loadSessions()
         }
@@ -122,37 +151,6 @@ export function ChatPage() {
     stickRef.current = true
     setAtBottom(true)
   }
-
-  useEffect(() => {
-    if (run?.runId) {
-      setRunId(run.runId)
-    }
-    if (run?.status === 'idle' || run?.status === 'completed' || run?.status === 'aborted') {
-      setSending(false)
-    }
-  }, [run])
-
-  // 活动开始即计时，后端与前端都停下才清零（保留首次开始时间，跨工具执行不重置）
-  useEffect(() => {
-    if (active) {
-      setThinkingStartedAt((prev) => prev ?? Date.now())
-    } else {
-      setThinkingStartedAt(null)
-      setRuntimePhase(null)
-    }
-  }, [active])
-
-  // 本轮模型一旦产出（最后一块不再是用户消息），冻结思考用时；活动结束清零
-  useEffect(() => {
-    if (!active) {
-      setFirstOutputAt(null)
-      return
-    }
-    const last = blocks[blocks.length - 1]
-    if (last != null && last.type !== 'user') {
-      setFirstOutputAt((prev) => prev ?? Date.now())
-    }
-  }, [active, blocks])
 
   const onAddFiles = (files: File[]) => {
     const accepted: PendingAttachment[] = []
@@ -224,27 +222,18 @@ export function ChatPage() {
 
   // 跟踪最新附件，供组件卸载时释放预览 URL（不入 effect 依赖，避免重复注册）
   const attachmentsRef = useRef<PendingAttachment[]>([])
-  attachmentsRef.current = attachments
-
-  // 切换会话：清空上一会话遗留的待发附件并释放其预览 URL，避免跨会话残留
   useEffect(() => {
-    setAttachments((prev) => {
-      if (prev.length === 0) return prev
-      prev.forEach((a) => {
-        if (a.previewUrl) URL.revokeObjectURL(a.previewUrl)
-      })
-      return []
-    })
-  }, [sessionKey])
+    attachmentsRef.current = attachments
+  }, [attachments])
 
-  // 组件卸载：释放所有未发送附件的预览 URL
+  // 切换会话 / 组件卸载：释放上一会话未发送附件的预览 URL
   useEffect(
     () => () => {
       attachmentsRef.current.forEach((a) => {
         if (a.previewUrl) URL.revokeObjectURL(a.previewUrl)
       })
     },
-    [],
+    [sessionKey],
   )
 
   const send = async () => {
@@ -257,6 +246,10 @@ export function ChatPage() {
     const idempotencyKey = uuid()
     setErrorMsg('')
     setSending(true)
+    const startedAt = Date.now()
+    setThinkingStartedAt(startedAt)
+    setFirstOutputAt(null)
+    setRuntimePhase(null)
     setInput('')
 
     const blockAttachments = readyAttachments.map((a) => ({
@@ -316,8 +309,8 @@ export function ChatPage() {
   }
 
   const abort = async () => {
-    if (!runId) return
-    await chatApi.abort(sessionKey, runId)
+    if (!currentRunId) return
+    await chatApi.abort(sessionKey, currentRunId)
   }
 
   const statusText = sending ? '正在想' : run?.status === 'completed' ? '已收好' : '等你'
@@ -326,7 +319,13 @@ export function ChatPage() {
   // 前端仍在铺开文本（animating）也算「生成中」，此时只留弧与时间，不回退成「思考中」。
   const lastBlock = blocks[blocks.length - 1]
   const generating = lastBlock?.type === 'assistant_text' && (!!lastBlock.streaming || animating)
-  const showIndicator = active && thinkingStartedAt != null
+  const firstNonUserBlock = blocks.find((block) => block.type !== 'user')
+  const derivedFirstOutputAt = firstNonUserBlock ? timestampFromBlock(firstNonUserBlock) : null
+  const effectiveFirstOutputAt = active ? firstOutputAt ?? derivedFirstOutputAt : null
+  const effectiveThinkingStartedAt = active
+    ? thinkingStartedAt ?? timestampFromBlock(blocks[0]) ?? derivedFirstOutputAt
+    : null
+  const showIndicator = active && effectiveThinkingStartedAt != null
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -405,12 +404,12 @@ export function ChatPage() {
               )}
             </div>
             <div data-status-slot data-status-anchor="transcript-tail" className="pointer-events-none mt-5 h-7">
-              {showIndicator && thinkingStartedAt != null && (
+              {showIndicator && effectiveThinkingStartedAt != null && (
                 <div className="ml-10">
                   <ThinkingIndicator
-                    startedAt={thinkingStartedAt}
+                    startedAt={effectiveThinkingStartedAt}
                     generating={generating}
-                    firstOutputAt={firstOutputAt}
+                    firstOutputAt={effectiveFirstOutputAt}
                     phase={runtimePhase}
                   />
                 </div>

@@ -5,7 +5,8 @@ import { HiArrowTopRightOnSquare } from 'react-icons/hi2'
 import type { TranscriptResourceItem, TranscriptToolUseBlock } from '../types'
 import { useFileDrawer } from '../../../../store/fileDrawer'
 import { DiffView } from '../DiffView'
-import { buildDrawerPayload } from '../toolPresentation'
+import { buildDrawerPayload, getFilePath, basename } from '../toolPresentation'
+import { DocumentCard } from './DocumentCard'
 
 const PANEL_STYLE: React.CSSProperties = {
   fontFamily: 'ui-monospace, SFMono-Regular, Consolas, Monaco, monospace',
@@ -114,51 +115,71 @@ function KeyValueTable({ args }: { args: Record<string, unknown> }) {
 }
 
 function ResourceCards({ resources }: { resources: TranscriptResourceItem[] }) {
-  const items = resources.filter((item) => item.kind === 'image' || (item.mime ?? '').startsWith('image/'))
-  if (items.length === 0) return null
+  const isImg = (item: TranscriptResourceItem) =>
+    item.kind === 'image' || (item.mime ?? '').startsWith('image/')
+  const images = resources.filter(isImg)
+  const docs = resources.filter((item) => !isImg(item))
+  if (images.length === 0 && docs.length === 0) return null
 
   return (
     <div className="space-y-1">
       <DetailLabel>Resources</DetailLabel>
-      <div className="flex flex-wrap gap-3">
-        {items.map((item, index) => {
-          const src = item.displayUrl || item.url || ''
-          const ref = item.ref || item.id
-          return (
-            <div
-              key={item.id || ref || index}
-              className="overflow-hidden rounded-[10px]"
-              style={{ border: '1px solid var(--glass-border)', background: 'rgba(127,127,127,0.06)' }}
-            >
-              {src ? (
-                <img
-                  src={src}
-                  alt={item.alt || '生成的图片'}
-                  className="block max-h-[180px] max-w-[240px] object-contain"
-                />
-              ) : null}
-              <div className="flex items-center justify-between gap-3 px-2.5 py-2">
-                <span
-                  className="min-w-0 truncate text-[11px]"
-                  style={{ color: 'var(--text-secondary)', fontFamily: 'ui-monospace, SFMono-Regular, Consolas, monospace' }}
-                >
-                  {ref}
-                </span>
-                {item.downloadUrl ? (
-                  <a
-                    href={item.downloadUrl}
-                    download={item.filename || item.id}
-                    className="shrink-0 text-[11px]"
-                    style={{ color: 'var(--accent)' }}
-                  >
-                    下载
-                  </a>
+      {images.length > 0 && (
+        <div className="flex flex-wrap gap-3">
+          {images.map((item, index) => {
+            const src = item.displayUrl || item.url || ''
+            const ref = item.ref || item.id
+            return (
+              <div
+                key={item.id || ref || index}
+                className="overflow-hidden rounded-[10px]"
+                style={{ border: '1px solid var(--glass-border)', background: 'rgba(127,127,127,0.06)' }}
+              >
+                {src ? (
+                  <img
+                    src={src}
+                    alt={item.alt || '生成的图片'}
+                    className="block max-h-[180px] max-w-[240px] object-contain"
+                  />
                 ) : null}
+                <div className="flex items-center justify-between gap-3 px-2.5 py-2">
+                  <span
+                    className="min-w-0 truncate text-[11px]"
+                    style={{ color: 'var(--text-secondary)', fontFamily: 'ui-monospace, SFMono-Regular, Consolas, monospace' }}
+                  >
+                    {ref}
+                  </span>
+                  {item.downloadUrl ? (
+                    <a
+                      href={item.downloadUrl}
+                      download={item.filename || item.id}
+                      className="shrink-0 text-[11px]"
+                      style={{ color: 'var(--accent)' }}
+                    >
+                      下载
+                    </a>
+                  ) : null}
+                </div>
               </div>
-            </div>
-          )
-        })}
-      </div>
+            )
+          })}
+        </div>
+      )}
+      {docs.length > 0 && (
+        <div className="flex flex-col gap-2">
+          {docs.map((item, index) => (
+            <DocumentCard
+              key={item.id || item.ref || index}
+              data={{
+                filename: item.filename || item.id || '文件',
+                mime: item.mime,
+                url: item.displayUrl || item.url,
+                downloadUrl: item.downloadUrl,
+              }}
+            />
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -175,26 +196,30 @@ export function ToolDetail({ block }: { block: TranscriptToolUseBlock }) {
   const hasResult = result != null && result !== ''
   const resources = block.resources ?? []
 
-  // Edit：可点路径 + 行级 diff
+  // Edit：可点路径 + 行级 diff + 整文件文档预览卡片
   if (toolName === 'Edit' || toolName === 'edit') {
+    const filePath = getFilePath(a)
     return (
       <div className="space-y-2">
         <PathHeader block={block} />
         <DiffView oldString={String(a.old_string ?? '')} newString={String(a.new_string ?? '')} compact />
+        {filePath && <DocumentCard data={{ toolName, filePath, filename: basename(filePath) }} />}
         {isError && hasResult && <OutputBlock text={result!} isError />}
       </div>
     )
   }
 
-  // Write：可点路径 + 写入内容
+  // Write：文档卡片（点击预览富渲染），不再大段内联写入内容
   if (toolName === 'Write' || toolName === 'write' || toolName === 'create_file') {
+    const filePath = getFilePath(a)
+    const content = String(a.content ?? '')
     return (
       <div className="space-y-2">
-        <PathHeader block={block} />
-        <div className="space-y-1">
-          <DetailLabel>Content</DetailLabel>
-          <CodeBlock text={String(a.content ?? '')} className="tool-args" />
-        </div>
+        {filePath ? (
+          <DocumentCard data={{ toolName, filePath, filename: basename(filePath), content }} />
+        ) : (
+          <CodeBlock text={content} className="tool-args" />
+        )}
         {isError && hasResult && <OutputBlock text={result!} isError />}
       </div>
     )
