@@ -17,6 +17,8 @@ from loguru import logger
 from pydantic import BaseModel, ConfigDict
 
 import auraeve.config as cfg
+from auraeve.games.doudizhu.engine import IllegalMove
+from auraeve.games.manager import game_manager
 from auraeve.webui.auth import verify_token
 from auraeve.webui.chat_transcript_service import project_history_into_transcript_blocks
 from auraeve.webui.chat_service import ChatService
@@ -40,6 +42,19 @@ from auraeve.webui.schemas import (
 
 DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1"
 PLACEHOLDER_API_KEYS = {"YOUR_LLM_API_KEY", "your-api-key", "sk-..."}
+
+
+class GameCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    talk: bool = True
+
+
+class GameActionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    action: str
+    cards: list[str] = []
 
 
 class SetupStatusResponse(BaseModel):
@@ -502,6 +517,60 @@ class WebUIServer:
             if path is None:
                 raise HTTPException(status_code=404, detail="资源不存在")
             return FileResponse(str(path), filename=path.name)
+
+        # ---------------- 斗地主对局 ----------------
+        @app.post("/api/webui/games", dependencies=[auth])
+        async def game_create(req: GameCreateRequest) -> dict[str, Any]:
+            if not game_manager.configured:
+                raise HTTPException(status_code=503, detail="游戏未配置可用模型")
+            session = game_manager.create_game(talk_enabled=req.talk)
+            return {"gameId": session.game_id, "snapshot": session.snapshot()}
+
+        @app.get("/api/webui/games/{game_id}", dependencies=[auth])
+        async def game_state(game_id: str) -> dict[str, Any]:
+            session = game_manager.get(game_id)
+            if session is None:
+                raise HTTPException(status_code=404, detail="牌局不存在或已结束")
+            return session.snapshot()
+
+        @app.get("/api/webui/games/{game_id}/events", dependencies=[auth])
+        async def game_events(game_id: str) -> StreamingResponse:
+            session = game_manager.get(game_id)
+            if session is None:
+                raise HTTPException(status_code=404, detail="牌局不存在或已结束")
+
+            async def _stream():
+                async for snap in session.subscribe():
+                    data = json.dumps(snap, ensure_ascii=False)
+                    yield f"data: {data}\n\n"
+
+            return StreamingResponse(
+                _stream(),
+                media_type="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "X-Accel-Buffering": "no",
+                    "Connection": "keep-alive",
+                },
+            )
+
+        @app.post("/api/webui/games/{game_id}/actions", dependencies=[auth])
+        async def game_action(game_id: str, req: GameActionRequest) -> dict[str, Any]:
+            session = game_manager.get(game_id)
+            if session is None:
+                raise HTTPException(status_code=404, detail="牌局不存在或已结束")
+            try:
+                await session.act(req.action, req.cards)
+            except IllegalMove as exc:
+                raise HTTPException(status_code=400, detail=str(exc))
+            return {"ok": True, "snapshot": session.snapshot()}
+
+        @app.post("/api/webui/games/{game_id}/hint", dependencies=[auth])
+        async def game_hint(game_id: str) -> dict[str, Any]:
+            session = game_manager.get(game_id)
+            if session is None:
+                raise HTTPException(status_code=404, detail="牌局不存在或已结束")
+            return session.hint()
 
         if self._static_dir and self._static_dir.exists():
             app.mount("/", StaticFiles(directory=str(self._static_dir), html=True), name="static")

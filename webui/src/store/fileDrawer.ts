@@ -7,8 +7,10 @@ export interface FileDrawerPayload {
   toolName: string
   /** 完整文件路径，作为标题与拉取键 */
   filePath: string
-  /** diff: 展示 old->new 变更；content: 整文件文本；document: 按类型渲染文档预览 */
-  mode: 'diff' | 'content' | 'document'
+  /** diff: 展示 old->new 变更；content: 整文件文本；document: 文档预览；game: 牌桌 */
+  mode: 'diff' | 'content' | 'document' | 'game'
+  /** game 模式：牌局 id */
+  gameId?: string
   oldString?: string
   newString?: string
   /** content 模式下的文件内容（Read 的输出 / Write 的写入内容） */
@@ -68,9 +70,15 @@ export const useFileDrawer = create<FileDrawerState>((set) => ({
   error: null,
   widthRatio: loadRatio(),
   resizing: false,
-  // 打开时重置数据态：diff/content 由 FileDrawer 异步拉取后端变更；document 模式自渲染、不拉取
+  // 打开时重置数据态：diff/content 由 FileDrawer 异步拉取后端变更；document/game 自渲染、不拉取
   openDrawer: (payload) =>
-    set({ open: true, payload, data: null, error: null, loading: payload.mode !== 'document' }),
+    set({
+      open: true,
+      payload,
+      data: null,
+      error: null,
+      loading: payload.mode !== 'document' && payload.mode !== 'game',
+    }),
   closeDrawer: () => set({ open: false }),
   setChanges: (data) => set({ data, loading: false, error: null }),
   setLoading: (loading) => set({ loading }),

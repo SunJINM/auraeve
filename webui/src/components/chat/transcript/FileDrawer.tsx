@@ -13,6 +13,11 @@ const DocumentPreview = lazy(() =>
   import('./DocumentPreview').then((m) => ({ default: m.DocumentPreview })),
 )
 
+// 牌桌依赖游戏组件，懒加载，避免拖累聊天首屏体积。
+const GameTable = lazy(() =>
+  import('../../game/GameTable').then((m) => ({ default: m.GameTable })),
+)
+
 const MODE_LABEL: Record<string, string> = {
   diff: 'Diff',
   content: 'File',
@@ -42,7 +47,7 @@ export function FileDrawer() {
   // 打开后异步拉取后端真实变更（git diff / 整文件）；失败时回退到内存 payload
   useEffect(() => {
     if (!open || !payload) return
-    if (payload.mode === 'document') return // 文档预览自渲染、自拉取，不走 files/changes
+    if (payload.mode === 'document' || payload.mode === 'game') return // 自渲染、不走 files/changes
     let cancelled = false
     const oldString = payload.mode === 'diff' ? payload.oldString : undefined
     const newString = payload.mode === 'diff' ? payload.newString : undefined
@@ -84,16 +89,19 @@ export function FileDrawer() {
     [setWidthRatio, setResizing],
   )
 
-  // 头部统计 / 标题：document 用文档类型；否则优先后端聚合数据，回退内存 payload
+  // 头部统计 / 标题：document 用文档类型；game 固定为斗地主；否则优先后端聚合数据，回退内存 payload
   const isDocument = payload?.mode === 'document'
+  const isGame = payload?.mode === 'game'
   const docFilename = payload?.filename || lastSegment(payload?.filePath ?? '')
-  const headerLabel = isDocument
-    ? detectDocType(docFilename, payload?.mime).label
-    : data
-      ? data.git
-        ? 'Git Diff'
-        : 'File'
-      : MODE_LABEL[payload?.mode ?? ''] ?? payload?.mode ?? ''
+  const headerLabel = isGame
+    ? '🎮 斗地主'
+    : isDocument
+      ? detectDocType(docFilename, payload?.mime).label
+      : data
+        ? data.git
+          ? 'Git Diff'
+          : 'File'
+        : MODE_LABEL[payload?.mode ?? ''] ?? payload?.mode ?? ''
   const onDownloadDoc = () => {
     if (!payload) return
     const url =
@@ -143,23 +151,35 @@ export function FileDrawer() {
                 <HiXMark size={18} />
               </button>
             </div>
-            <div className="file-path-bar mt-2">
-              <span className="file-path-text" title={payload.filePath}>
-                &lrm;{payload.filePath}
-              </span>
-              <button
-                type="button"
-                aria-label="复制路径"
-                className="file-path-icon shrink-0"
-                onClick={() => void navigator.clipboard?.writeText(payload.filePath)}
-              >
-                <HiOutlineClipboard size={14} />
-              </button>
-            </div>
+            {!isGame && (
+              <div className="file-path-bar mt-2">
+                <span className="file-path-text" title={payload.filePath}>
+                  &lrm;{payload.filePath}
+                </span>
+                <button
+                  type="button"
+                  aria-label="复制路径"
+                  className="file-path-icon shrink-0"
+                  onClick={() => void navigator.clipboard?.writeText(payload.filePath)}
+                >
+                  <HiOutlineClipboard size={14} />
+                </button>
+              </div>
+            )}
           </header>
 
-          <div className="min-h-0 flex-1 overflow-auto px-4 py-4">
-            {payload.mode === 'document' ? (
+          <div className={`min-h-0 flex-1 overflow-auto ${isGame ? '' : 'px-4 py-4'}`}>
+            {payload.mode === 'game' ? (
+              <Suspense
+                fallback={
+                  <div className="px-2 py-8 text-center text-[12px]" style={{ color: 'var(--text-tertiary)' }}>
+                    牌桌加载中…
+                  </div>
+                }
+              >
+                <GameTable gameId={payload.gameId ?? ''} />
+              </Suspense>
+            ) : payload.mode === 'document' ? (
               <Suspense
                 fallback={
                   <div className="px-2 py-8 text-center text-[12px]" style={{ color: 'var(--text-tertiary)' }}>

@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from auraeve.agent.tools.cron import CronTool
+from auraeve.agent.tools.doudizhu import StartDoudizhuTool
 from auraeve.agent.tools.filesystem import EditTool, ReadTool, WriteTool
 from auraeve.agent.tools.search import GlobTool, GrepTool
 from auraeve.agent.tools.registry import ToolRegistry
@@ -78,5 +79,8 @@ def build_tool_registry(
         if origin_channel and origin_chat_id:
             cron_tool.set_context(origin_channel, origin_chat_id)
         registry.register(cron_tool)
+
+    if profile == "main" and getattr(provider, "api_key", None):
+        registry.register(StartDoudizhuTool(provider=provider, model=model))
 
     return registry

@@ -257,3 +257,85 @@ export const chatApi = {
     return () => es.close()
   },
 }
+
+// ---------------- 斗地主对局 ----------------
+
+export interface GameCard {
+  id: string
+  power: number
+  suit: string | null
+  text: string
+  color: 'red' | 'black'
+}
+
+export interface GameSeatAction {
+  type: 'play' | 'pass'
+  cards: GameCard[]
+}
+
+export interface GameSeat {
+  index: number
+  name: string
+  kind: 'human' | 'ai'
+  remaining: number
+  isLandlord: boolean
+  playCount: number
+  lastAction: GameSeatAction | null
+  talk: string
+  thinking: boolean
+}
+
+export interface GameSnapshot {
+  gameId: string
+  phase: 'dealing' | 'bidding' | 'playing' | 'finished'
+  turn: number
+  landlord: number | null
+  firstBidder: number
+  multiplier: number
+  baseScore: number
+  seats: GameSeat[]
+  bottom: GameCard[]
+  tableCards: GameCard[]
+  tablePlayer: number | null
+  yourSeat: number
+  yourHand: GameCard[]
+  freePlay: boolean
+  winner: number | null
+  winnerSide: 'landlord' | 'farmers' | null
+  score: number
+  talkEnabled: boolean
+}
+
+export interface GameHint {
+  type: 'play' | 'pass'
+  cards?: string[]
+}
+
+export const gamesApi = {
+  create: (talk = true) =>
+    req<{ gameId: string; snapshot: GameSnapshot }>('POST', '/games', { talk }),
+
+  state: (gameId: string) =>
+    req<GameSnapshot>('GET', `/games/${encodeURIComponent(gameId)}`),
+
+  action: (gameId: string, action: string, cards: string[] = []) =>
+    req<{ ok: boolean; snapshot: GameSnapshot }>(
+      'POST',
+      `/games/${encodeURIComponent(gameId)}/actions`,
+      { action, cards },
+    ),
+
+  hint: (gameId: string) =>
+    req<GameHint>('POST', `/games/${encodeURIComponent(gameId)}/hint`),
+
+  events(gameId: string, onSnapshot: (s: GameSnapshot) => void): () => void {
+    const t = token()
+    const url = `${BASE}/games/${encodeURIComponent(gameId)}/events${t ? `?token=${t}` : ''}`
+    const es = new EventSource(url)
+    es.onmessage = (ev) => {
+      try { onSnapshot(JSON.parse(ev.data) as GameSnapshot) } catch { /* skip malformed */ }
+    }
+    es.onerror = () => { /* keep alive, browser auto-reconnects */ }
+    return () => es.close()
+  },
+}

@@ -3,12 +3,21 @@ import { HiChevronRight } from 'react-icons/hi2'
 
 import type { TranscriptToolUseBlock } from '../types'
 import { useFileDrawer } from '../../../../store/fileDrawer'
+import { GameEntryCard } from '../../../game/GameEntryCard'
 import { buildDrawerPayload, getToolTarget, getVerb, isActiveStatus, isFileTool } from '../toolPresentation'
 import { ToolDetail } from './ToolDetail'
+
+const DOUDIZHU_RE = /\[\[doudizhu:([a-z0-9]+)\]\]/i
 
 export function ToolUseBlock({ block, nested = false }: { block: TranscriptToolUseBlock; nested?: boolean }) {
   const [open, setOpen] = useState(false)
   const openDrawer = useFileDrawer((s) => s.openDrawer)
+
+  // 斗地主开局：渲染「进入牌桌」入口卡片，替代默认工具行
+  if (block.toolName === 'start_doudizhu') {
+    const gameId = block.result?.match(DOUDIZHU_RE)?.[1]
+    if (gameId) return <div className={nested ? '' : 'ml-8'}><GameEntryCard gameId={gameId} /></div>
+  }
 
   const verb = getVerb(block.toolName, block.status)
   const target = getToolTarget(block.toolName, block.arguments)

@@ -928,3 +928,370 @@ body {
   padding-left: 0.9rem;
   color: var(--text-secondary);
 }
+
+/* ===================== 斗地主牌桌 ===================== */
+
+/* 聊天里的「进入牌桌」入口卡片 */
+.game-entry {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  max-width: 340px;
+  padding: 12px 14px;
+  border: 1px solid var(--glass-border);
+  border-radius: 16px;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 10%, var(--surface-1)), var(--surface-1));
+  box-shadow: var(--shadow-soft);
+  cursor: pointer;
+  transition: border-color 0.15s var(--ease), transform 0.15s var(--ease);
+}
+.game-entry:hover {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--glass-border));
+  transform: translateY(-1px);
+}
+.game-entry:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.game-entry-icon {
+  font-size: 26px;
+  line-height: 1;
+}
+.game-entry-body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.game-entry-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.game-entry-sub {
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+}
+.game-entry-go {
+  margin-left: auto;
+  color: var(--accent);
+  font-size: 12px;
+}
+
+/* 牌桌容器（窄竖布局，填满抽屉内容区） */
+.game-table {
+  --pcard-red: #d23a2e;
+  --pcard-black: var(--text-primary);
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: radial-gradient(circle at 50% 30%, color-mix(in srgb, var(--accent) 8%, var(--surface-2)), var(--surface-2));
+}
+.game-msg {
+  padding: 32px 16px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-tertiary);
+}
+
+/* 顶部两个 AI 座位 */
+.seat-row {
+  display: flex;
+  gap: 8px;
+  padding: 10px 10px 6px;
+  flex: 0 0 auto;
+}
+.seat-panel {
+  flex: 1 1 0;
+  min-width: 0;
+  border: 1px solid var(--glass-border);
+  border-radius: 12px;
+  background: var(--surface-1);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.seat-panel.is-turn {
+  border-color: color-mix(in srgb, var(--accent) 60%, var(--glass-border));
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.seat-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.seat-avatar {
+  font-size: 22px;
+  line-height: 1;
+}
+.seat-meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.seat-name {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.seat-tag {
+  font-size: 10px;
+  padding: 0 5px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--accent);
+}
+.seat-remain {
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+.seat-thinking {
+  font-size: 11.5px;
+  color: var(--accent);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+.seat-bubble {
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  background: var(--surface-3);
+  border-radius: 8px;
+  padding: 4px 8px;
+}
+.seat-last {
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+}
+.seat-cards {
+  display: flex;
+}
+.seat-cards .pcard-mini:not(:first-child) {
+  margin-left: -10px;
+}
+.seat-pass {
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+.seat-last-empty {
+  color: var(--text-tertiary);
+  opacity: 0.5;
+}
+
+/* 中部台面 */
+.table-center {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 8px;
+}
+.table-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.status-chip {
+  font-size: 11.5px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--surface-1);
+  border: 1px solid var(--glass-border);
+  color: var(--text-secondary);
+}
+.bottom-cards {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+.table-play {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  justify-content: center;
+  min-height: 64px;
+  align-items: center;
+}
+.table-empty {
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+/* 底部：手牌 + 操作 */
+.table-bottom {
+  flex: 0 0 auto;
+  border-top: 1px solid var(--glass-border);
+  background: var(--surface-1);
+  padding: 8px 10px 10px;
+}
+.your-label {
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+.hand-row {
+  display: flex;
+  overflow-x: auto;
+  padding: 14px 4px 8px;
+  scrollbar-width: thin;
+}
+.hand-slot {
+  flex: 0 0 auto;
+}
+.hand-slot:not(:first-child) {
+  margin-left: -16px;
+}
+.hand-empty {
+  padding: 16px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+.game-error {
+  font-size: 11.5px;
+  color: var(--danger);
+  margin: 4px 0;
+}
+
+/* 操作按钮 */
+.action-bar {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  align-items: center;
+  margin-top: 6px;
+}
+.action-wait {
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+.game-btn {
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 16px;
+  border-radius: 10px;
+  border: 1px solid var(--glass-border);
+  cursor: pointer;
+  transition: background 0.15s var(--ease), border-color 0.15s var(--ease), opacity 0.15s var(--ease);
+}
+.game-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.game-btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.game-btn.primary:not(:disabled):hover {
+  background: var(--accent-hover);
+}
+.game-btn.ghost {
+  background: var(--surface-1);
+  color: var(--text-secondary);
+}
+.game-btn.ghost:not(:disabled):hover {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--glass-border));
+}
+
+/* 扑克牌 */
+.pcard {
+  position: relative;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  background: #fff;
+  border: 1px solid #d8d8da;
+  border-radius: 7px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+  font-weight: 700;
+  line-height: 1;
+  user-select: none;
+}
+.pcard-normal {
+  width: 40px;
+  height: 58px;
+  padding: 5px 0 0;
+  font-size: 16px;
+}
+.pcard-small {
+  width: 32px;
+  height: 46px;
+  padding: 4px 0 0;
+  font-size: 13px;
+}
+.pcard-mini {
+  width: 24px;
+  height: 34px;
+  padding: 3px 0 0;
+  font-size: 11px;
+}
+.pcard-suit {
+  margin-top: 2px;
+  font-size: 0.8em;
+}
+.pcard.is-clickable {
+  cursor: pointer;
+}
+.pcard.is-selected {
+  transform: translateY(-14px);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.25);
+  border-color: var(--accent);
+}
+
+/* 结算弹层 */
+.result-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 10;
+}
+.result-card {
+  background: var(--surface-1);
+  border-radius: 16px;
+  padding: 24px 28px;
+  text-align: center;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 220px;
+}
+.result-title {
+  font-size: 22px;
+  font-weight: 700;
+}
+.result-title.win {
+  color: var(--success);
+}
+.result-title.lose {
+  color: var(--text-secondary);
+}
+.result-side {
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+.result-stats {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+  font-size: 13px;
+  color: var(--text-tertiary);
+}
+.result-close {
+  margin-top: 8px;
+}
