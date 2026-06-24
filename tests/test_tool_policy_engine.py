@@ -5,7 +5,7 @@ from auraeve.agent_runtime.tool_policy.engine import ToolPolicyEngine
 
 
 @pytest.mark.asyncio
-async def test_subagent_policy_denies_agent_tool():
+async def test_subagent_policy_no_longer_denies_agent_tool_by_default():
     engine = ToolPolicyEngine()
 
     result = await engine.evaluate(
@@ -17,9 +17,8 @@ async def test_subagent_policy_denies_agent_tool():
         )
     )
 
-    assert result.allowed is False
-    assert "agent" in result.reason
-    assert any(item.rule_id == "subagent_deny_agent" for item in result.trace)
+    assert result.allowed is True
+    assert not any(item.rule_id == "subagent_deny_agent" for item in result.trace)
 
 
 def test_infer_tool_group_treats_agent_as_agent_group():

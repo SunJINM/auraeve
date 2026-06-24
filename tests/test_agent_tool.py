@@ -32,6 +32,7 @@ def test_agent_tool_has_parameters(agent_tool):
     assert "prompt" in params["properties"]
     assert "subagent_type" in params["properties"]
     assert "execution_mode" in params["properties"]
+    assert "model" in params["properties"]
 
 
 @pytest.mark.asyncio
@@ -102,8 +103,27 @@ async def test_spawn_uses_agent_definition_max_turns_by_default(agent_tool, monk
         subagent_type="custom-worker",
     )
 
+    params = agent_tool.parameters["properties"]
+    assert "max_steps" not in params
+    assert "max_tool_calls" not in params
     call = agent_tool._executor.create_task.call_args.kwargs
-    assert call["budget"].max_steps == 17
+    assert "budget" not in call
+
+
+@pytest.mark.asyncio
+async def test_spawn_passes_explicit_model_and_parent_identity(agent_tool):
+    agent_tool.set_caller_context(caller_agent_type="coordinator", caller_task_id="parent-1")
+
+    await agent_tool.execute(
+        prompt="验证修复",
+        subagent_type="verifier",
+        model="fast",
+    )
+
+    call = agent_tool._executor.create_task.call_args.kwargs
+    assert call["model_id"] == "fast"
+    assert call["caller_agent_type"] == "coordinator"
+    assert call["parent_task_id"] == "parent-1"
 
 
 @pytest.mark.asyncio

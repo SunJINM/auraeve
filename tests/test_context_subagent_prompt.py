@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from auraeve.agent.context import ContextBuilder
-from auraeve.subagents.data.models import Task, TaskBudget
+from auraeve.subagents.data.models import Task
 from auraeve.subagents.runtime.react_loop import ReActLoop
 
 
@@ -32,7 +32,6 @@ def test_subagent_prompt_includes_tool_efficiency_protocol() -> None:
     task = Task(
         task_id="task-1",
         goal="分析仓库结构",
-        budget=TaskBudget(max_steps=12, max_tool_calls=20, max_duration_s=60),
     )
 
     prompt = loop._build_runtime_instruction(task)  # noqa: SLF001
@@ -50,7 +49,7 @@ def test_subagent_prompt_includes_tool_efficiency_protocol() -> None:
     assert "目前已获取到" in prompt
     assert "接下来我会" in prompt
     assert "不要只连续调用工具" in prompt
-    assert "无总时长超时" in prompt
+    assert "不设步数、工具次数或总时长上限" in prompt
     assert "最长 60 秒" not in prompt
 
 

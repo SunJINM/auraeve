@@ -8,7 +8,7 @@ import pytest
 
 from auraeve.agent_runtime.command_queue import RuntimeCommandQueue
 from auraeve.bus.events import OutboundMessage
-from auraeve.subagents.data.models import Task, TaskBudget, TaskStatus
+from auraeve.subagents.data.models import Task, TaskStatus
 from auraeve.subagents.data.repositories import SubagentStore
 from auraeve.session.manager import SessionManager
 from auraeve.webui.chat_console_service import ChatConsoleService
@@ -53,7 +53,6 @@ def test_chat_console_snapshot_filters_session_tasks_and_extracts_tools(tmp_path
             goal="分析任务",
             priority=8,
             status=TaskStatus.RUNNING,
-            budget=TaskBudget(),
             origin_channel="webui",
             origin_chat_id=session_key,
         )
@@ -64,7 +63,6 @@ def test_chat_console_snapshot_filters_session_tasks_and_extracts_tools(tmp_path
             goal="不相关任务",
             priority=5,
             status=TaskStatus.COMPLETED,
-            budget=TaskBudget(),
             origin_channel="webui",
             origin_chat_id="webui:other-user",
         )

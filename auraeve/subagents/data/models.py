@@ -53,14 +53,6 @@ def is_valid_transition(from_status: TaskStatus, to_status: TaskStatus) -> bool:
 # ── 数据类 ────────────────────────────────────────────────
 
 @dataclass
-class TaskBudget:
-    """子智能体执行预算。"""
-    max_steps: int = 50
-    max_duration_s: int = 0
-    max_tool_calls: int = 100
-
-
-@dataclass
 class Task:
     """子智能体任务。"""
     task_id: str
@@ -68,10 +60,10 @@ class Task:
     agent_type: str = "general-purpose"
     status: TaskStatus = TaskStatus.QUEUED
     priority: int = 5
-    budget: TaskBudget = field(default_factory=TaskBudget)
     name: str = ""
     description: str = ""
     role_prompt: str = ""
+    model_id: str = ""
     result: str = ""
     origin_channel: str = ""
     origin_chat_id: str = ""

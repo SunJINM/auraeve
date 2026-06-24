@@ -30,7 +30,9 @@ class ReActLoop:
         temperature: float = 0.0,
         max_tokens: int = 16384,
         max_iterations: int = 200,
-        thinking_budget_tokens: int = 0,
+        thinking_budget_tokens: int | None = 0,
+        runtime_loop_guard: dict | None = None,
+        token_budget: int = 120_000,
         reporter: TaskReporter | None = None,
         prompt_assembler=None,
         parent_workdir: str = "",
@@ -43,6 +45,8 @@ class ReActLoop:
         self._max_tokens = max_tokens
         self._max_iterations = max_iterations
         self._thinking_budget_tokens = thinking_budget_tokens
+        self._runtime_loop_guard = dict(runtime_loop_guard or {})
+        self._token_budget = token_budget
         self._reporter = reporter
         self._prompt_assembler = prompt_assembler
         self._parent_workdir = parent_workdir
@@ -59,13 +63,10 @@ class ReActLoop:
         """执行完整的 ReAct 循环。"""
         from auraeve.agent_runtime.session_attempt import SessionAttemptRunner
         from auraeve.agent_runtime.run_orchestrator import RunOrchestrator
-        effective_max_steps = min(self._max_iterations, task.budget.max_steps)
-        max_tc = task.budget.max_tool_calls
-        per_turn = max(4, max_tc // 4)
         runtime_execution = {
-            "maxTurns": effective_max_steps,
-            "maxToolCallsTotal": max_tc,
-            "maxToolCallsPerTurn": per_turn,
+            "maxTurns": 0,
+            "maxToolCallsTotal": 0,
+            "maxToolCallsPerTurn": 0,
             "maxWallTimeMs": 0,
         }
 
@@ -73,9 +74,11 @@ class ReActLoop:
             provider=self._provider,
             tools=self._tools,
             policy=self._policy,
-            max_iterations=effective_max_steps,
+            max_iterations=0,
             thinking_budget_tokens=self._thinking_budget_tokens,
             runtime_execution=runtime_execution,
+            runtime_loop_guard=self._runtime_loop_guard,
+            token_budget=self._token_budget,
         )
 
         orchestrator = RunOrchestrator(
@@ -144,9 +147,7 @@ class ReActLoop:
 
     def _build_runtime_instruction(self, task: Task) -> str:
         lines = [
-            f"执行预算: 最多 {task.budget.max_steps} 步, "
-            f"最多 {task.budget.max_tool_calls} 次工具调用；"
-            "无总时长超时，但必须避免空转和重复搜索。",
+            "执行预算: 不设步数、工具次数或总时长上限；必须避免空转和重复搜索。",
             "",
             "执行约束:",
             "- 专注于你的任务目标，不要偏离",

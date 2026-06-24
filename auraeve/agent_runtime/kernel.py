@@ -84,6 +84,7 @@ class RuntimeKernel:
         notify_channel: str = "",
         thinking_budget_tokens: int | None = None,
         token_budget: int = 120_000,
+        llm_models: list[dict] | None = None,
         global_deny_tools: set[str] | None = None,
         session_tool_policy: dict | None = None,
         max_global_subagent_concurrent: int = 10,
@@ -170,11 +171,15 @@ class RuntimeKernel:
             max_tokens=max_tokens,
             max_iterations=50,
             thinking_budget_tokens=thinking_budget_tokens or 0,
+            runtime_loop_guard=runtime_loop_guard,
+            token_budget=token_budget,
             prompt_assembler=self.assembler,
             max_concurrent=max_global_subagent_concurrent,
             workspace=str(workspace),
             sessions_dir=sessions_dir / "subagent_sessions",
         )
+        if llm_models is not None:
+            self._subagent_executor.configure_model_registry(list(llm_models or []))
 
         # 主执行器与统一运行编排器
         self._runner = SessionAttemptRunner(
@@ -360,6 +365,8 @@ class RuntimeKernel:
                 applied.append("LLM_MAX_TOOL_ITERATIONS")
             if "RUNTIME_LOOP_GUARD" in new_config:
                 self._runner.apply_runtime_controls(runtime_loop_guard=new_config["RUNTIME_LOOP_GUARD"])
+                if hasattr(self, "_subagent_executor"):
+                    self._subagent_executor.apply_runtime_controls(runtime_loop_guard=new_config["RUNTIME_LOOP_GUARD"])
                 applied.append("RUNTIME_LOOP_GUARD")
             if "LLM_MEMORY_WINDOW" in new_config:
                 self.assembler.apply_runtime_controls(memory_window=int(new_config["LLM_MEMORY_WINDOW"]))
@@ -394,6 +401,8 @@ class RuntimeKernel:
                 self.assembler.apply_runtime_controls(token_budget=budget)
                 self._runner.apply_runtime_controls(token_budget=budget)
                 self._orchestrator.apply_runtime_controls(token_budget=budget)
+                if hasattr(self, "_subagent_executor"):
+                    self._subagent_executor.apply_runtime_controls(token_budget=budget)
                 applied.append("TOKEN_BUDGET")
 
         return {
@@ -429,6 +438,7 @@ class RuntimeKernel:
             self._subagent_executor._temperature = self.temperature
             self._subagent_executor._max_tokens = self.max_tokens
             self._subagent_executor._thinking_budget_tokens = self.thinking_budget_tokens or 0
+            self._subagent_executor.configure_model_registry(raw_models)
 
         self._register_default_tools()
 

@@ -123,6 +123,7 @@ async def main(terminal_mode: bool = False) -> None:
         notify_channel=getattr(cfg, "NOTIFY_CHANNEL", ""),
         thinking_budget_tokens=primary_model.thinking_budget_tokens or None,
         token_budget=getattr(cfg, "TOKEN_BUDGET", 120_000),
+        llm_models=list(cfg.export_config(mask_sensitive=False).get("LLM_MODELS") or []),
         global_deny_tools=set(getattr(cfg, "GLOBAL_DENY_TOOLS", []) or []),
         session_tool_policy=getattr(cfg, "SESSION_TOOL_POLICY", {}) or {},
         max_global_subagent_concurrent=getattr(cfg, "MAX_GLOBAL_SUBAGENT_CONCURRENT", 10),

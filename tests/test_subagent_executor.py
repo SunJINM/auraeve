@@ -2,7 +2,7 @@
 import pytest
 from unittest.mock import MagicMock, AsyncMock
 from auraeve.agent_runtime.command_queue import RuntimeCommandQueue
-from auraeve.subagents.data.models import Task, TaskBudget, TaskStatus
+from auraeve.subagents.data.models import Task, TaskStatus
 from auraeve.subagents.executor import SubagentExecutor
 
 
@@ -54,6 +54,7 @@ def test_create_task(executor):
     assert loaded.execution_mode == "sync"
     assert loaded.context_mode == "fresh"
     assert loaded.session_key.startswith("sub:")
+    assert not hasattr(loaded, "budget")
 
 
 def test_create_task_respects_max_concurrent(executor):
@@ -128,12 +129,127 @@ def test_create_fork_task_uses_inherit_context(executor):
     assert task.seed_messages_json.startswith("[")
 
 
+def test_create_task_rejects_coordinator_spawning_coordinator(executor):
+    with pytest.raises(ValueError, match="coordinator"):
+        executor.create_task(
+            goal="递归协调",
+            agent_type="coordinator",
+            caller_agent_type="coordinator",
+            parent_task_id="parent-1",
+            origin_channel="t",
+            origin_chat_id="c",
+        )
+
+
+def test_create_task_allows_coordinator_spawning_worker(executor):
+    task = executor.create_task(
+        goal="执行子任务",
+        agent_type="worker",
+        caller_agent_type="coordinator",
+        parent_task_id="parent-1",
+        origin_channel="t",
+        origin_chat_id="c",
+    )
+
+    assert task.parent_task_id == "parent-1"
+
+
+def test_executor_resolves_explicit_model_card(executor, monkeypatch):
+    provider = MagicMock(name="fast-provider")
+    executor.configure_model_registry(
+        [
+            {
+                "id": "main",
+                "enabled": True,
+                "isPrimary": True,
+                "model": "main-model",
+                "apiKey": "k-main",
+                "maxTokens": 100,
+            },
+            {
+                "id": "fast",
+                "enabled": True,
+                "isPrimary": False,
+                "model": "fast-model",
+                "apiKey": "k-fast",
+                "maxTokens": 50,
+                "temperature": 0.2,
+                "thinkingBudgetTokens": 8,
+            },
+        ],
+        provider_factory=lambda _card: provider,
+    )
+    task = Task(task_id="t-model", goal="模型测试", agent_type="worker", model_id="fast")
+
+    resolved = executor._resolve_model_for_task(task)  # noqa: SLF001
+
+    assert resolved.provider is provider
+    assert resolved.model == "fast-model"
+    assert resolved.max_tokens == 50
+    assert resolved.temperature == 0.2
+    assert resolved.thinking_budget_tokens == 8
+
+
+def test_executor_explicit_missing_model_returns_visible_error(executor):
+    executor.configure_model_registry(
+        [{"id": "main", "enabled": True, "isPrimary": True, "model": "main-model", "apiKey": "k"}],
+        provider_factory=lambda _card: MagicMock(),
+    )
+    task = Task(task_id="t-model", goal="模型测试", agent_type="worker", model_id="missing")
+
+    with pytest.raises(ValueError, match="missing"):
+        executor._resolve_model_for_task(task)  # noqa: SLF001
+
+
+def test_executor_explicit_model_provider_failure_returns_visible_error(executor):
+    def fail_provider(_card):
+        raise RuntimeError("missing api key")
+
+    executor.configure_model_registry(
+        [
+            {"id": "main", "enabled": True, "isPrimary": True, "model": "main-model", "apiKey": "k"},
+            {"id": "fast", "enabled": True, "isPrimary": False, "model": "fast-model", "apiKey": ""},
+        ],
+        provider_factory=fail_provider,
+    )
+    task = Task(task_id="t-model", goal="模型测试", agent_type="worker", model_id="fast")
+
+    with pytest.raises(ValueError, match="fast"):
+        executor._resolve_model_for_task(task)  # noqa: SLF001
+
+
+def test_executor_role_model_provider_failure_falls_back_to_primary(executor, monkeypatch):
+    main_provider = MagicMock(name="main-provider")
+
+    def provider_factory(card):
+        if card["id"] == "fast":
+            raise RuntimeError("missing api key")
+        return MagicMock(name=f"provider-{card['id']}")
+
+    executor._provider = main_provider
+    executor.configure_model_registry(
+        [
+            {"id": "main", "enabled": True, "isPrimary": True, "model": "main-model", "apiKey": "k-main"},
+            {"id": "fast", "enabled": True, "isPrimary": False, "model": "fast-model", "apiKey": ""},
+        ],
+        provider_factory=provider_factory,
+    )
+    agent_def = MagicMock(model="fast")
+    monkeypatch.setattr("auraeve.subagents.executor.find_agent", lambda _agent_type: agent_def)
+    task = Task(task_id="t-model", goal="模型测试", agent_type="worker")
+
+    resolved = executor._resolve_model_for_task(task)  # noqa: SLF001
+
+    assert resolved.provider is main_provider
+    assert resolved.model == "main-model"
+
+
 def test_executor_resolves_agent_model_override(executor, monkeypatch):
-    agent_def = MagicMock(model="custom-model")
+    agent_def = MagicMock(model="fast")
     monkeypatch.setattr("auraeve.subagents.executor.find_agent", lambda _agent_type: agent_def)
     task = Task(task_id="t-model", goal="模型测试", agent_type="custom-worker")
 
-    assert executor._model_for_task(task) == "custom-model"  # noqa: SLF001
+    assert executor._model_id_for_task(task) == "fast"  # noqa: SLF001
 
 
 def test_executor_inherits_parent_model_when_agent_model_is_inherit(executor, monkeypatch):
@@ -141,4 +257,33 @@ def test_executor_inherits_parent_model_when_agent_model_is_inherit(executor, mo
     monkeypatch.setattr("auraeve.subagents.executor.find_agent", lambda _agent_type: agent_def)
     task = Task(task_id="t-model", goal="模型测试", agent_type="worker")
 
-    assert executor._model_for_task(task) == "test-model"  # noqa: SLF001
+    assert executor._model_id_for_task(task) == ""  # noqa: SLF001
+
+
+@pytest.mark.asyncio
+async def test_async_model_resolution_without_registry_inherits_parent_model(executor):
+    parent_provider = executor._provider
+    task = Task(task_id="t-model", goal="模型测试", agent_type="worker")
+
+    resolved = await executor.resolve_model_for_task(task)
+
+    assert resolved.provider is parent_provider
+    assert resolved.model == "test-model"
+
+
+@pytest.mark.asyncio
+async def test_run_task_marks_model_resolution_error_failed(executor):
+    task = executor.create_task(
+        goal="模型测试",
+        agent_type="worker",
+        model_id="missing",
+        origin_channel="t",
+        origin_chat_id="c",
+    )
+
+    result = await executor._run_task(task)  # noqa: SLF001
+    loaded = executor.get_task(task.task_id)
+
+    assert result.startswith("错误:")
+    assert loaded.status == TaskStatus.FAILED
+    assert loaded.result == result

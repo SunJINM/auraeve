@@ -10,7 +10,7 @@ from auraeve.subagents.fork_context import (
     FORK_PLACEHOLDER_RESULT,
     build_fork_messages,
 )
-from auraeve.subagents.data.models import Task, TaskBudget
+from auraeve.subagents.data.models import Task
 from auraeve.subagents.runtime.react_loop import ReActLoop
 
 
@@ -25,7 +25,6 @@ async def test_prepare_messages_requires_prompt_assembler():
     task = Task(
         task_id="task-fresh",
         goal="分析代码",
-        budget=TaskBudget(),
     )
 
     with pytest.raises(ValueError, match="prompt_assembler"):
@@ -112,7 +111,6 @@ async def test_subagent_run_uses_prompt_assembler_runtime_messages():
     task = Task(
         task_id="task-runtime",
         goal="分析代码",
-        budget=TaskBudget(),
         session_key="sub:task-runtime",
         origin_channel="webui",
         origin_chat_id="chat-1",
@@ -174,7 +172,6 @@ async def test_fork_worktree_notice_is_added_to_runtime_instruction():
     task = Task(
         task_id="task-worktree",
         goal="检查风险",
-        budget=TaskBudget(),
         execution_mode="fork",
         context_mode="inherit",
         worktree_path="D:/repo/.worktrees/agent-1234",

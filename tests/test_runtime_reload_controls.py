@@ -132,6 +132,7 @@ async def test_kernel_reload_llm_models_replaces_live_provider_and_model(monkeyp
     assert kernel._orchestrator._provider is new_provider
     assert kernel._subagent_executor._provider is new_provider
     assert kernel._subagent_executor._model == "gpt-4.1-mini"
+    kernel._subagent_executor.configure_model_registry.assert_called_once_with(llm_models)
     kernel._register_default_tools.assert_called_once()
 
 

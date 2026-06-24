@@ -12,9 +12,6 @@ from loguru import logger
 
 from .contracts import PolicyContext, PolicyDecision, PolicyResult
 
-# 子代理禁止使用的工具（防止无限递归派生）
-_SUBAGENT_DENY: frozenset[str] = frozenset({"agent"})
-
 # 高副作用工具风险标签（用于 session 层策略参考）
 _HIGH_RISK_TOOLS: frozenset[str] = frozenset({
     "Bash", "Write", "write_file", "Edit",
@@ -224,28 +221,8 @@ class ToolPolicyEngine:
             layer="session", rule_id="session_pass", allowed=True, reason="通过会话策略"
         ))
 
-        # ── 层 3：子代理策略 ──────────────────────────────────────────────
-        allow_in_subagent = False
-        if isinstance(ctx.tool_metadata, dict):
-            allow_in_subagent = bool(ctx.tool_metadata.get("allow_in_subagent"))
-
-        if ctx.is_subagent and ctx.tool_name in _SUBAGENT_DENY and not allow_in_subagent:
-            decision = PolicyDecision(
-                layer="subagent",
-                rule_id="subagent_deny_agent",
-                allowed=False,
-                reason=f"子代理策略：禁止在子代理内使用 '{ctx.tool_name}'（防止无限递归）",
-            )
-            trace.append(decision)
-            logger.info(f"[policy] {ctx.tool_name} 被子代理策略拒绝（session={ctx.session_id}）")
-            return PolicyResult(
-                allowed=False,
-                reason=decision.reason,
-                rewritten_args=rewritten_args,
-                trace=trace,
-            )
         trace.append(PolicyDecision(
-            layer="subagent", rule_id="subagent_pass", allowed=True, reason="通过子代理策略"
+            layer="subagent", rule_id="subagent_retired", allowed=True, reason="子代理专属策略已退役"
         ))
 
         return PolicyResult(

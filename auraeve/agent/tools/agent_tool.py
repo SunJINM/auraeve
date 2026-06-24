@@ -10,7 +10,7 @@ from uuid import uuid4
 from auraeve.agent.agents.definitions import find_agent
 from auraeve.agent.tools.base import Tool
 from auraeve.subagents.worktree import create_agent_worktree
-from auraeve.subagents.data.models import TaskBudget, STATUS_ICON
+from auraeve.subagents.data.models import STATUS_ICON
 
 
 class AgentTool(Tool):
@@ -66,18 +66,14 @@ class AgentTool(Tool):
                     "type": "string",
                     "description": "子智能体角色配置（身份、专业领域、输出格式等）",
                 },
+                "model": {
+                    "type": "string",
+                    "description": "本次子智能体使用的 LLM_MODELS 卡片 id（可选）",
+                },
                 "isolation": {
                     "type": "string",
                     "description": "隔离方式: worktree (git worktree 隔离工作目录)",
                     "enum": ["worktree"],
-                },
-                "max_steps": {
-                    "type": "integer",
-                    "description": "最大执行步数，默认 50",
-                },
-                "max_tool_calls": {
-                    "type": "integer",
-                    "description": "最大工具调用次数，默认 100",
                 },
                 "task_id": {
                     "type": "string",
@@ -111,11 +107,9 @@ class AgentTool(Tool):
         run_in_background = execution_mode in {"async", "fork"}
         context_mode = "inherit" if execution_mode == "fork" else "fresh"
         role_prompt = kwargs.get("role_prompt", "")
-        max_tool_calls = kwargs.get("max_tool_calls", 100)
         seed_messages = self._load_parent_history() if context_mode == "inherit" else []
 
         agent_def = find_agent(agent_type)
-        max_steps = kwargs.get("max_steps", agent_def.max_turns)
         worktree_path = ""
         worktree_branch = ""
         if kwargs.get("isolation") == "worktree":
@@ -123,18 +117,14 @@ class AgentTool(Tool):
             worktree_path = worktree.path
             worktree_branch = worktree.branch
 
-        budget = TaskBudget(
-            max_steps=max_steps,
-            max_tool_calls=max_tool_calls,
-        )
-
         task = self._executor.create_task(
             goal=prompt,
             agent_type=agent_def.agent_type,
             name=kwargs.get("name", ""),
             description=kwargs.get("description", ""),
             role_prompt=role_prompt,
-            budget=budget,
+            model_id=str(kwargs.get("model") or "").strip(),
+            caller_agent_type=getattr(self, "_caller_agent_type", ""),
             run_in_background=run_in_background,
             execution_mode=execution_mode,
             context_mode=context_mode,
@@ -142,6 +132,7 @@ class AgentTool(Tool):
             origin_chat_id=getattr(self, "_chat_id", ""),
             spawn_tool_call_id=getattr(self, "_current_tool_call_id", ""),
             parent_thread_id=getattr(self, "_thread_id", ""),
+            parent_task_id=getattr(self, "_caller_task_id", ""),
             seed_messages=seed_messages,
             worktree_path=worktree_path,
             worktree_branch=worktree_branch,
@@ -238,3 +229,8 @@ class AgentTool(Tool):
         self._chat_id = chat_id
         self._thread_id = thread_id
         self._session_history_loader = session_history_loader
+
+    def set_caller_context(self, *, caller_agent_type: str = "", caller_task_id: str = "") -> None:
+        """设置调用方子体身份，供 coordinator 派发收紧校验使用。"""
+        self._caller_agent_type = caller_agent_type
+        self._caller_task_id = caller_task_id

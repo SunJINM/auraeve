@@ -4,11 +4,10 @@
 """
 from __future__ import annotations
 
-import json
 import sqlite3
 import threading
 
-from .models import Task, TaskBudget, TaskStatus
+from .models import Task, TaskStatus
 
 
 class SubagentStore:
@@ -38,6 +37,7 @@ class SubagentStore:
                 name             TEXT NOT NULL DEFAULT '',
                 description      TEXT NOT NULL DEFAULT '',
                 role_prompt      TEXT NOT NULL DEFAULT '',
+                model_id         TEXT NOT NULL DEFAULT '',
                 result           TEXT NOT NULL DEFAULT '',
                 origin_channel   TEXT NOT NULL DEFAULT '',
                 origin_chat_id   TEXT NOT NULL DEFAULT '',
@@ -57,6 +57,7 @@ class SubagentStore:
         """)
         self._ensure_column("name", "TEXT NOT NULL DEFAULT ''")
         self._ensure_column("description", "TEXT NOT NULL DEFAULT ''")
+        self._ensure_column("model_id", "TEXT NOT NULL DEFAULT ''")
         self._ensure_column("execution_mode", "TEXT NOT NULL DEFAULT 'sync'")
         self._ensure_column("context_mode", "TEXT NOT NULL DEFAULT 'fresh'")
         self._ensure_column("session_key", "TEXT NOT NULL DEFAULT ''")
@@ -78,26 +79,21 @@ class SubagentStore:
 
     def save_task(self, task: Task) -> None:
         conn = self._get_conn()
-        budget_json = json.dumps({
-            "max_steps": task.budget.max_steps,
-            "max_duration_s": task.budget.max_duration_s,
-            "max_tool_calls": task.budget.max_tool_calls,
-        })
         conn.execute(
             """INSERT OR REPLACE INTO tasks
                (task_id, goal, agent_type, status, priority, budget_json,
-                name, description, role_prompt, result,
+                name, description, role_prompt, model_id, result,
                 origin_channel, origin_chat_id,
                 spawn_tool_call_id, run_in_background,
                 execution_mode, context_mode, session_key,
                 parent_thread_id, parent_task_id, seed_messages_json,
                 worktree_path,
                 worktree_branch, created_at, completed_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 task.task_id, task.goal, task.agent_type, task.status.value,
-                task.priority, budget_json, task.name, task.description,
-                task.role_prompt, task.result,
+                task.priority, "{}", task.name, task.description,
+                task.role_prompt, task.model_id, task.result,
                 task.origin_channel, task.origin_chat_id,
                 task.spawn_tool_call_id, int(task.run_in_background),
                 task.execution_mode, task.context_mode, task.session_key,
@@ -162,22 +158,16 @@ class SubagentStore:
         return row["cnt"] if row else 0
 
     def _row_to_task(self, row: sqlite3.Row) -> Task:
-        budget_data = json.loads(row["budget_json"]) if row["budget_json"] else {}
-        budget = TaskBudget(
-            max_steps=budget_data.get("max_steps", 50),
-            max_duration_s=budget_data.get("max_duration_s", 0),
-            max_tool_calls=budget_data.get("max_tool_calls", 100),
-        )
         return Task(
             task_id=row["task_id"],
             goal=row["goal"],
             agent_type=row["agent_type"],
             status=TaskStatus(row["status"]),
             priority=row["priority"],
-            budget=budget,
             name=row["name"] if "name" in row.keys() else "",
             description=row["description"] if "description" in row.keys() else "",
             role_prompt=row["role_prompt"],
+            model_id=row["model_id"] if "model_id" in row.keys() else "",
             result=row["result"],
             origin_channel=row["origin_channel"],
             origin_chat_id=row["origin_chat_id"],

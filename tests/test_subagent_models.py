@@ -1,6 +1,6 @@
 """子智能体数据模型测试。"""
 from auraeve.subagents.data.models import (
-    Task, TaskBudget, TaskStatus, ProgressTracker,
+    Task, TaskStatus, ProgressTracker,
     TERMINAL_STATUSES, is_terminal, is_valid_transition,
     STATUS_ICON,
 )
@@ -20,16 +20,13 @@ def test_task_default_values():
     assert t.parent_thread_id == ""
     assert t.parent_task_id == ""
     assert t.seed_messages_json == ""
-    assert t.budget.max_steps == 50
-    assert t.budget.max_duration_s == 0
-    assert t.budget.max_tool_calls == 100
+    assert t.model_id == ""
+    assert not hasattr(t, "budget")
 
 
-def test_task_budget_custom():
-    b = TaskBudget(max_steps=20, max_duration_s=120, max_tool_calls=50)
-    assert b.max_steps == 20
-    assert b.max_duration_s == 120
-    assert b.max_tool_calls == 50
+def test_task_supports_explicit_model_id():
+    t = Task(task_id="abc123", goal="测试任务", model_id="fast")
+    assert t.model_id == "fast"
 
 
 def test_task_supports_execution_and_context_modes():

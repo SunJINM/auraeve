@@ -1,6 +1,6 @@
 """子智能体数据存储测试。"""
 import pytest
-from auraeve.subagents.data.models import Task, TaskBudget, TaskStatus
+from auraeve.subagents.data.models import Task, TaskStatus
 from auraeve.subagents.data.repositories import SubagentStore
 
 
