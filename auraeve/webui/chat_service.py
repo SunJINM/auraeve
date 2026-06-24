@@ -255,7 +255,9 @@ class ChatService:
             state = self._latest_run_for_session(session_key)
             run_id = state.run_id if state else None
 
-        if state is None or not state.assistant_text_emitted:
+        command_mode = str(msg.metadata.get("command_mode") or "")
+        force_text_block = command_mode == "task-notification"
+        if state is None or force_text_block or not state.assistant_text_emitted:
             await self._broadcast(
                 session_key,
                 self._build_block_event(
@@ -271,6 +273,8 @@ class ChatService:
                     },
                 ),
             )
+            if state is not None:
+                state.assistant_text_emitted = True
         await self._broadcast(
             session_key,
             self._build_done_event(

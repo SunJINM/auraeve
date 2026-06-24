@@ -217,6 +217,43 @@ async def test_chat_service_on_outbound_broadcasts_assistant_block_and_done(tmp_
 
 
 @pytest.mark.asyncio
+async def test_chat_service_task_notification_outbound_appends_text_after_completed_run(tmp_path: Path) -> None:
+    queue = RuntimeCommandQueue()
+    session_manager = SessionManager(tmp_path / "sessions")
+    service = ChatService(session_manager=session_manager, command_queue=queue)
+    session_key = "webui:s1"
+    run_id, _ = await service.send(
+        session_key=session_key,
+        message="启动同步子体",
+        idempotency_key="idem-1",
+        user_id="u1",
+    )
+    service._runs[run_id].assistant_text_emitted = True  # noqa: SLF001
+    service._runs[run_id].done = True  # noqa: SLF001
+
+    events_task = asyncio.create_task(_collect_events(service, session_key, expected_count=2))
+    await asyncio.sleep(0)
+
+    await service.on_outbound(
+        OutboundMessage(
+            channel="webui",
+            chat_id=session_key,
+            content="后台子体完成后的整理结果",
+            metadata={"command_mode": "task-notification", "is_meta_event": True},
+        )
+    )
+    events = await asyncio.wait_for(events_task, timeout=2)
+
+    block_event = ChatTranscriptBlockEvent.model_validate(events[0]).model_dump()
+    done_event = ChatTranscriptDoneEvent.model_validate(events[1]).model_dump()
+
+    assert block_event["sessionKey"] == session_key
+    assert block_event["block"]["type"] == "assistant_text"
+    assert block_event["block"]["content"] == "后台子体完成后的整理结果"
+    assert done_event["sessionKey"] == session_key
+
+
+@pytest.mark.asyncio
 async def test_chat_service_tool_completion_keeps_arguments_in_replace_event(tmp_path: Path) -> None:
     queue = RuntimeCommandQueue()
     session_manager = SessionManager(tmp_path / "sessions")

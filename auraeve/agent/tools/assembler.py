@@ -72,6 +72,9 @@ def build_tool_registry(
 
     if subagent_executor is not None and profile == "main":
         registry.register(AgentTool(executor=subagent_executor))
+        # 子体 sync 派发会在 180s 时自行转后台，这里给工具调用留足超时缓冲（180s+30s），
+        # 避免主体侧默认 60s 工具超时在子体转后台前就把这次调用取消。
+        registry.set_metadata("agent", timeout_ms=210_000)
 
     if cron_service is not None and profile == "main":
         cron_tool = CronTool(cron_service)

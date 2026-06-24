@@ -29,6 +29,9 @@ from .runtime.reporter import TaskReporter
 
 logger = logging.getLogger(__name__)
 
+# 子体 sync 执行的前台等待上限（秒）；超过则转为后台继续执行，而非中断。
+_SYNC_TIMEOUT_S = 180
+
 
 @dataclass(frozen=True)
 class ResolvedModel:
@@ -219,8 +222,53 @@ class SubagentExecutor:
         self._running[task.task_id] = async_task
 
     async def execute_sync(self, task: Task) -> str:
-        """同步执行子智能体任务（等待结果返回）。"""
-        return await self._run_task(task, self._new_steer_queue())
+        """同步执行子智能体任务；超过 _SYNC_TIMEOUT_S 秒未完成则转后台继续。"""
+        steer_queue = self._new_steer_queue()
+        self._steer_queues[task.task_id] = steer_queue
+        state = {"promoted": False}
+        runner = asyncio.create_task(
+            self._run_sync_lifecycle(task, steer_queue, state)
+        )
+        self._running[task.task_id] = runner
+        done, _ = await asyncio.wait({runner}, timeout=_SYNC_TIMEOUT_S)
+        if runner in done:
+            return runner.result()
+        # 前台等待超时：不取消，转为后台继续执行，完成后经 task-notification 回注。
+        state["promoted"] = True
+        task.run_in_background = True
+        task.execution_mode = "async"
+        self._store.save_task(task)
+        return (
+            f"子智能体已运行超过 {_SYNC_TIMEOUT_S} 秒，转为后台继续执行"
+            f"（{task.task_id}），完成后会通知你。"
+        )
+
+    async def _run_sync_lifecycle(
+        self,
+        task: Task,
+        steer_queue: asyncio.Queue[str],
+        state: dict,
+    ) -> str:
+        """sync 执行包装：前台完成直接返回结果；若已转后台，则结束时投递通知。"""
+        try:
+            result = await self._run_task(task, steer_queue)
+            if state["promoted"]:
+                await self._lifecycle.mark_completed(task, result)
+            return result
+        except asyncio.CancelledError:
+            if state["promoted"]:
+                await self._lifecycle.mark_cancelled(task)
+            raise
+        except Exception as e:
+            if state["promoted"]:
+                logger.exception("子智能体后台执行失败: %s", task.task_id)
+                await self._lifecycle.mark_failed(task, str(e))
+                return ""
+            raise
+        finally:
+            self._running.pop(task.task_id, None)
+            self._loops.pop(task.task_id, None)
+            self._steer_queues.pop(task.task_id, None)
 
     async def continue_task(
         self,
@@ -248,7 +296,7 @@ class SubagentExecutor:
         if task.run_in_background:
             await self.execute_async(task)
             return f"子智能体 {task_id} 已继续执行（后台）。"
-        return await self._run_task(task, self._new_steer_queue())
+        return await self.execute_sync(task)
 
     def _new_steer_queue(self) -> asyncio.Queue[str]:
         return asyncio.Queue()

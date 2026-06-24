@@ -287,3 +287,57 @@ async def test_run_task_marks_model_resolution_error_failed(executor):
     assert result.startswith("错误:")
     assert loaded.status == TaskStatus.FAILED
     assert loaded.result == result
+
+
+@pytest.mark.asyncio
+async def test_execute_sync_promotes_to_background_on_timeout(executor, command_queue, monkeypatch):
+    import asyncio
+    import auraeve.subagents.executor as executor_module
+
+    monkeypatch.setattr(executor_module, "_SYNC_TIMEOUT_S", 0.05)
+
+    finished = asyncio.Event()
+
+    async def slow_run_task(task, steer_queue=None):
+        try:
+            await asyncio.sleep(0.2)
+            return "迟到的结果"
+        finally:
+            finished.set()
+
+    monkeypatch.setattr(executor, "_run_task", slow_run_task)
+    task = executor.create_task(goal="慢任务", agent_type="worker", execution_mode="sync")
+
+    result = await executor.execute_sync(task)
+
+    # 超时不中断，转为后台并给出可见提示
+    assert "后台" in result
+    assert task.task_id in result
+    assert task.run_in_background is True
+    assert task.execution_mode == "async"
+
+    # 后台执行真正结束后应投递完成通知
+    await asyncio.wait_for(finished.wait(), timeout=2)
+    for _ in range(100):
+        if command_queue.snapshot_all():
+            break
+        await asyncio.sleep(0.01)
+    commands = command_queue.snapshot_all()
+    assert any(
+        c.mode == "task-notification" and c.payload.get("status") == "completed"
+        for c in commands
+    )
+
+
+@pytest.mark.asyncio
+async def test_execute_sync_returns_result_when_within_timeout(executor):
+    async def quick_run_task(task, steer_queue=None):
+        return "及时完成"
+
+    executor._run_task = quick_run_task  # noqa: SLF001
+    task = executor.create_task(goal="快任务", agent_type="worker", execution_mode="sync")
+
+    result = await executor.execute_sync(task)
+
+    assert result == "及时完成"
+    assert task.task_id not in executor._running

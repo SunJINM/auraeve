@@ -31,8 +31,33 @@ async def test_lifecycle_marks_completed_and_enqueues_notification():
     assert commands[0].mode == "task-notification"
     assert commands[0].priority == "later"
     assert commands[0].payload["status"] == "completed"
+    assert commands[0].session_key == "webui:chat-1"
     assert commands[0].payload["channel"] == "webui"
     assert commands[0].payload["chat_id"] == "chat-1"
+
+
+@pytest.mark.asyncio
+async def test_lifecycle_uses_existing_webui_session_key_without_double_prefix():
+    store = MagicMock()
+    queue = RuntimeCommandQueue()
+    lifecycle = SubagentLifecycle(
+        store=store,
+        command_queue=queue,
+    )
+    task = Task(
+        task_id="task-1",
+        goal="分析任务",
+        origin_channel="webui",
+        origin_chat_id="webui:s1",
+        spawn_tool_call_id="call-1",
+    )
+
+    await lifecycle.mark_completed(task, "done")
+
+    commands = queue.snapshot_all()
+    assert len(commands) == 1
+    assert commands[0].session_key == "webui:s1"
+    assert commands[0].payload["chat_id"] == "webui:s1"
 
 
 @pytest.mark.asyncio

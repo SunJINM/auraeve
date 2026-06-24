@@ -74,7 +74,11 @@ class SubagentLifecycle:
         task: Task,
         notification: TaskNotification,
     ) -> None:
-        session_key = f"{task.origin_channel}:{task.origin_chat_id}".strip(":")
+        origin_chat_id = str(task.origin_chat_id or "")
+        if task.origin_channel and origin_chat_id.startswith(f"{task.origin_channel}:"):
+            session_key = origin_chat_id
+        else:
+            session_key = f"{task.origin_channel}:{origin_chat_id}".strip(":")
         payload = notification.to_payload()
         payload["channel"] = task.origin_channel
         payload["chat_id"] = task.origin_chat_id
