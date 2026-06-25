@@ -24,6 +24,7 @@ class RunState:
     run_id: str
     session_key: str
     idempotency_key: str
+    kind: str = "user"
     done: bool = False
     aborted: bool = False
     seq: int = 0
@@ -256,8 +257,12 @@ class ChatService:
             run_id = state.run_id if state else None
 
         command_mode = str(msg.metadata.get("command_mode") or "")
-        force_text_block = command_mode == "task-notification"
-        if state is None or force_text_block or not state.assistant_text_emitted:
+        is_system_command = command_mode in {"task-notification", "cron", "heartbeat"}
+        if is_system_command and (state is None or state.done):
+            state = self._active_or_system_run_for_session(session_key)
+            run_id = state.run_id
+
+        if state is None or not state.assistant_text_emitted:
             await self._broadcast(
                 session_key,
                 self._build_block_event(
@@ -340,9 +345,7 @@ class ChatService:
             return
 
         # 只处理 webui 会话
-        state = self._latest_run_for_session(session_key)
-        if state is None or state.done:
-            return
+        state = self._active_or_system_run_for_session(session_key)
         run_id = state.run_id
 
         tool_name = str(attrs.get("toolName") or "")
@@ -450,9 +453,7 @@ class ChatService:
         if not session_key:
             return
 
-        state = self._latest_run_for_session(session_key)
-        if state is None or state.done:
-            return
+        state = self._active_or_system_run_for_session(session_key)
         run_id = state.run_id
         attrs = event.get("attrs") or {}
 
@@ -541,9 +542,7 @@ class ChatService:
         if not session_key:
             return
 
-        state = self._latest_run_for_session(session_key)
-        if state is None or state.done:
-            return
+        state = self._active_or_system_run_for_session(session_key)
 
         await self._broadcast(
             session_key,
@@ -572,9 +571,7 @@ class ChatService:
         if not session_key:
             return
 
-        state = self._latest_run_for_session(session_key)
-        if state is None or state.done:
-            return
+        state = self._active_or_system_run_for_session(session_key)
         run_id = state.run_id
         attrs = event.get("attrs") or {}
         tool_call_id = str(attrs.get("toolCallId") or "")
@@ -708,6 +705,21 @@ class ChatService:
             if state.session_key == session_key:
                 return state
         return None
+
+    def _active_or_system_run_for_session(self, session_key: str) -> RunState:
+        state = self._latest_run_for_session(session_key)
+        if state is not None and not state.done:
+            return state
+
+        run_id = f"system:{uuid.uuid4()}"
+        state = RunState(
+            run_id=run_id,
+            session_key=session_key,
+            idempotency_key=run_id,
+            kind="system",
+        )
+        self._runs[run_id] = state
+        return state
 
     def _next_seq(self, run_id: str | None) -> int:
         if not run_id:

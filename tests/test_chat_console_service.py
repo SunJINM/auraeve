@@ -254,6 +254,108 @@ async def test_chat_service_task_notification_outbound_appends_text_after_comple
 
 
 @pytest.mark.asyncio
+async def test_system_runtime_delta_creates_system_run_after_completed_user_run(tmp_path: Path) -> None:
+    queue = RuntimeCommandQueue()
+    session_manager = SessionManager(tmp_path / "sessions")
+    service = ChatService(session_manager=session_manager, command_queue=queue)
+    session_key = "webui:s1"
+    run_id, _ = await service.send(
+        session_key=session_key,
+        message="启动同步子体",
+        idempotency_key="idem-1",
+        user_id="u1",
+    )
+    service._runs[run_id].assistant_text_emitted = True  # noqa: SLF001
+    service._runs[run_id].done = True  # noqa: SLF001
+
+    events_task = asyncio.create_task(_collect_events(service, session_key, expected_count=1))
+    await asyncio.sleep(0)
+
+    await service._handle_assistant_event(  # noqa: SLF001
+        {
+            "message": "assistant_text_delta",
+            "sessionKey": session_key,
+            "attrs": {"delta": "后台结果"},
+        }
+    )
+    events = await asyncio.wait_for(events_task, timeout=2)
+
+    block_event = ChatTranscriptBlockEvent.model_validate(events[0]).model_dump()
+    system_run = service._latest_run_for_session(session_key)  # noqa: SLF001
+
+    assert system_run is not None
+    assert system_run.run_id != run_id
+    assert system_run.kind == "system"
+    assert system_run.done is False
+    assert block_event["runId"] == system_run.run_id
+    assert block_event["block"]["content"] == "后台结果"
+    assert block_event["block"]["streaming"] is True
+
+
+@pytest.mark.asyncio
+async def test_system_outbound_after_streaming_only_sends_done(tmp_path: Path) -> None:
+    queue = RuntimeCommandQueue()
+    session_manager = SessionManager(tmp_path / "sessions")
+    service = ChatService(session_manager=session_manager, command_queue=queue)
+    session_key = "webui:s1"
+
+    await service._handle_assistant_event(  # noqa: SLF001
+        {
+            "message": "assistant_text_delta",
+            "sessionKey": session_key,
+            "attrs": {"delta": "流式"},
+        }
+    )
+    system_run = service._latest_run_for_session(session_key)  # noqa: SLF001
+    assert system_run is not None
+
+    events_task = asyncio.create_task(_collect_events(service, session_key, expected_count=1))
+    await asyncio.sleep(0)
+
+    await service.on_outbound(
+        OutboundMessage(
+            channel="webui",
+            chat_id=session_key,
+            content="流式完整内容",
+            metadata={"command_mode": "task-notification", "is_meta_event": True},
+        )
+    )
+    events = await asyncio.wait_for(events_task, timeout=2)
+
+    done_event = ChatTranscriptDoneEvent.model_validate(events[0]).model_dump()
+    assert done_event["type"] == "transcript.done"
+    assert done_event["runId"] == system_run.run_id
+    assert system_run.done is True
+
+
+@pytest.mark.asyncio
+async def test_system_outbound_without_streaming_appends_text_and_done(tmp_path: Path) -> None:
+    queue = RuntimeCommandQueue()
+    session_manager = SessionManager(tmp_path / "sessions")
+    service = ChatService(session_manager=session_manager, command_queue=queue)
+    session_key = "webui:s1"
+
+    events_task = asyncio.create_task(_collect_events(service, session_key, expected_count=2))
+    await asyncio.sleep(0)
+
+    await service.on_outbound(
+        OutboundMessage(
+            channel="webui",
+            chat_id=session_key,
+            content="非流式系统结果",
+            metadata={"command_mode": "task-notification", "is_meta_event": True},
+        )
+    )
+    events = await asyncio.wait_for(events_task, timeout=2)
+
+    block_event = ChatTranscriptBlockEvent.model_validate(events[0]).model_dump()
+    done_event = ChatTranscriptDoneEvent.model_validate(events[1]).model_dump()
+
+    assert block_event["block"]["content"] == "非流式系统结果"
+    assert done_event["type"] == "transcript.done"
+
+
+@pytest.mark.asyncio
 async def test_chat_service_tool_completion_keeps_arguments_in_replace_event(tmp_path: Path) -> None:
     queue = RuntimeCommandQueue()
     session_manager = SessionManager(tmp_path / "sessions")
